@@ -120,7 +120,20 @@
    - Tests for frozen dataclasses
    - All tests passing
 
-5. **Project structure created**
+5. **Restructured plan-checklist.md** as working scratch pad
+   - Three sections: Broad Plan, Next Actions, Last Handoff
+   - Updated references in README.md and philosophy.md
+   - Now serves as primary coordination tool for AI assistants
+
+6. **Git repository setup and GitHub push** ✅
+   - Initialized git repository with main branch
+   - Configured git user: Max Barfuss <max.barfuss@gmail.com>
+   - Generated SSH key (ED25519) and added to GitHub
+   - Created initial commit with full project structure
+   - Pushed to private repository: https://github.com/maxjbarfuss/max_llm
+   - All 27 files committed (2259 insertions)
+
+7. **Project structure created**
    ```
    src/
    ├── models/
@@ -141,12 +154,14 @@
 #### 📝 Notes for Next Developer
 - **Configuration is production-ready** - All configs have validation, type hints, and tests
 - **Following TDD strictly** - Write tests before implementation
+- **Repository is on GitHub** - Private repo at maxjbarfuss/max_llm, SSH configured
 - **Next up: Base model components** - Start with embeddings (simple, well-defined)
 - **Type hints are mandatory** - All code must be fully typed
 - **Max 500 lines/file** - Split if larger
 
 #### 🚧 Current State
 - **Environment:** `.venv` with PyTorch 2.10.0, CUDA 12.1, DeepSpeed 0.18.6
+- **Git:** Initialized, SSH configured, pushed to GitHub (commit 48d2ff2)
 - **No model code yet** - Only configuration system implemented
 - **Ready for embeddings** - Config supports all needed parameters
 
