@@ -1,43 +1,36 @@
-# Max LLM - Hybrid MLA-Transformer-MoE-RNN
-# Install: uv pip install -r requirements.txt
+# Python dependencies for max_llm
+# Note: torch & torch-dependent packages (xformers, deepspeed, bitsandbytes) are
+# installed separately in setup.sh Step 4 after torch is available with CUDA 12.1.
+
+# Base
+pydantic>=2.0.0
+
+# Core model
+numpy>=1.24.0
+
+# Training
+transformers>=4.36.0
+datasets>=2.14.0
+accelerate>=0.25.0
+wandb>=0.16.0
+huggingface-hub>=0.19.0
+fire>=0.5.0
+
+# Tokenization
+sentencepiece>=0.1.99
+tokenizers>=0.14.0
+
+# Monitoring
+tensorboard>=2.14.0
+tensorboard-plugin-profile>=2.14.0
+tqdm>=4.66.0
 
 # Development
-uv>=0.1.0
 black[jupyter]>=23.12.0
 ruff>=0.1.11
 isort>=5.13.0
 mypy>=1.7.0
 pytest>=7.4.0
-pytest-cov>=7.0.0
+pytest-cov>=4.1.0
 pytest-xdist>=3.5.0
 pre-commit>=3.5.0
-wandb>=0.16.0
-
-# Core ML
-# PyTorch with CUDA 12.1 support
-# Install with: pip install torch --index-url https://download.pytorch.org/whl/cu121
-torch>=2.3.0
-transformers>=4.36.0
-datasets>=2.14.0
-accelerate>=0.25.0
-
-# Performance optimization
-xformers>=0.0.22
-deepspeed>=0.11.0
-bitsandbytes>=0.41.0
-
-# Data and utilities
-numpy>=1.24.0
-pandas>=2.0.0
-sentencepiece>=0.1.99
-tokenizers>=0.14.0
-
-# Config and monitoring
-pyyaml>=6.0
-pydantic>=2.0.0
-omegaconf>=2.3.0
-tqdm>=4.66.0
-tensorboard>=2.14.0
-tensorboard-plugin-profile>=2.14.0
-huggingface-hub>=0.19.0
-fire>=0.5.0

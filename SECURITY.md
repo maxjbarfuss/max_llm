@@ -27,7 +27,7 @@ We will respond to security reports within 48 hours and work with you to develop
 
 When using max_llm:
 
-- Keep dependencies updated: `pip install --upgrade -e ".[dev]"`
+- Keep dependencies updated: `pip install --upgrade -r requirements.txt && pip install --upgrade -e .`
 - Use pre-commit hooks to catch issues early (see CONTRIBUTING.md)
 - Review type annotations and tests before running untrusted model code
 - Validate all TOML configuration files before deployment

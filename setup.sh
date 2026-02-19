@@ -1,175 +1,130 @@
 #!/bin/bash
-# Setup script for max_llm project
-# Creates virtual environment and installs all dependencies using uv
+# Unified setup for max_llm: dependencies, venv, and project packages
 # Usage: source setup.sh
 
-# Detect if script is being sourced or executed
+# Detect if sourced (needed for venv activation to persist)
+# NOTE: Do NOT use set -e here — it propagates to the calling shell when sourced
 SOURCED=0
-if [ -n "$ZSH_VERSION" ]; then
-    [[ $ZSH_EVAL_CONTEXT =~ :file$ ]] && SOURCED=1
-elif [ -n "$BASH_VERSION" ]; then
-    [[ "${BASH_SOURCE[0]}" != "${0}" ]] && SOURCED=1
-fi
+[[ -n "$ZSH_VERSION" && $ZSH_EVAL_CONTEXT =~ :file$ ]] && SOURCED=1
+[[ -n "$BASH_VERSION" && "${BASH_SOURCE[0]}" != "${0}" ]] && SOURCED=1
 
-# Function to exit/return appropriately
-exit_script() {
-    if [ $SOURCED -eq 1 ]; then
-        return "$1"
-    else
-        exit "$1"
+exit_script() { [ $SOURCED -eq 1 ] && return "$1" || exit "$1"; }
+
+# Colors
+GREEN='\033[0;32m' BLUE='\033[0;34m' YELLOW='\033[1;33m' RED='\033[0;31m' CYAN='\033[0;36m' NC='\033[0m'
+
+echo -e "${BLUE}=== Max LLM Setup ===${NC}\n"
+
+# Sanity checks
+[ -f pyproject.toml ] || { echo -e "${RED}Error: Run from max_llm root${NC}"; exit_script 1; }
+grep -qi microsoft /proc/version 2>/dev/null || { echo -e "${RED}Error: WSL2 required${NC}"; exit_script 1; }
+[ $SOURCED -eq 0 ] && echo -e "${YELLOW}Note: source setup.sh to keep venv active\n${NC}"
+
+# Pre-step: Find or install Python 3.10+
+echo -e "${BLUE}Pre-Step: Python${NC}"
+PYTHON_CMD=""
+for cmd in python3 python python3.{10..13}; do
+    if command -v "$cmd" &>/dev/null; then
+        VER=$("$cmd" --version 2>&1 | awk '{print $2}')
+        MAJOR=$(echo "$VER" | cut -d. -f1)
+        MINOR=$(echo "$VER" | cut -d. -f2)
+        [ "$MAJOR" -ge 3 ] && [ "$MINOR" -ge 10 ] && { PYTHON_CMD="$cmd"; PYTHON_VERSION="$VER"; break; }
     fi
-}
+done
 
-# Color output
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+if [ -z "$PYTHON_CMD" ]; then
+    echo "  Installing Python 3.13..."
+    sudo apt update && sudo add-apt-repository ppa:deadsnakes/ppa -y && sudo apt update
+    sudo apt install -y python3.13 python3.13-venv python3.13-dev || { echo -e "${RED}Error: Python install failed${NC}"; exit_script 1; }
+    PYTHON_CMD="python3.13"
+    PYTHON_VERSION=$("$PYTHON_CMD" --version 2>&1 | awk '{print $2}')
+fi
+echo -e "${GREEN}✓${NC} Python ${PYTHON_VERSION}\n"
 
-echo -e "${BLUE}=== Max LLM Setup ===${NC}"
-echo ""
+# Step 0: System dependencies (check + auto-install + idempotent)
+echo -e "${BLUE}Step 0: System Dependencies${NC}"
+SETUP_DEPS_SCRIPT="scripts/setup/setup_dependencies.py"
+[ -f "$SETUP_DEPS_SCRIPT" ] || { echo -e "${RED}Error: Missing $SETUP_DEPS_SCRIPT${NC}"; exit_script 1; }
+$PYTHON_CMD "$SETUP_DEPS_SCRIPT" || { echo -e "${RED}Error: System dependency setup failed${NC}"; exit_script 1; }
 
-# Check if running from correct directory
-if [ ! -f "pyproject.toml" ]; then
-    echo -e "${RED}Error: Run from max_llm directory${NC}"
-    exit_script 1
+# Add CUDA to PATH if installed (setup_dependencies.py may have just installed it;
+# the Python subprocess cannot propagate PATH changes back to this shell)
+if [ -d /usr/local/cuda-12.1/bin ]; then
+    export PATH="/usr/local/cuda-12.1/bin:$PATH"
+    export LD_LIBRARY_PATH="/usr/local/cuda-12.1/lib64:${LD_LIBRARY_PATH:-}"
 fi
 
-# Notify if not sourced
-if [ $SOURCED -eq 0 ]; then
-    echo -e "${YELLOW}Note: Script is being executed. Virtual environment will not persist after completion.${NC}"
-    echo -e "${YELLOW}To keep the virtual environment active, run: source setup.sh${NC}"
-    echo ""
-fi
-
-# Step 0: Run system requirements check
-echo -e "${BLUE}Step 0: System Requirements Check${NC}"
-if [ -f "check_system.py" ]; then
-    python3 check_system.py
-    CHECK_STATUS=$?
-    if [ $CHECK_STATUS -ne 0 ]; then
-        echo ""
-        echo -e "${YELLOW}Please install missing dependencies before continuing.${NC}"
-        exit_script 1
-    fi
-else
-    echo -e "${YELLOW}⚠${NC} check_system.py not found, skipping system check"
-fi
-echo ""
-
-set -e
-
-# Step 1: Create/activate virtual environment
-echo -e "${BLUE}Step 1: Virtual Environment${NC}"
+# Step 1: Virtual environment (reuse or create)
+echo -e "\n${BLUE}Step 1: Virtual Environment${NC}"
 if [ -z "$VIRTUAL_ENV" ]; then
-    if [ -d ".venv" ]; then
-        echo -e "${GREEN}✓${NC} Found existing virtual environment"
-        echo "  Activating..."
-        source .venv/bin/activate
+    if [ -d .venv ]; then
+        echo "  Activating existing venv..."
+        source .venv/bin/activate || { echo -e "${RED}Error: Activation failed${NC}"; exit_script 1; }
     else
-        echo "  Creating new virtual environment..."
-        python3 -m venv .venv
-        source .venv/bin/activate
-        echo -e "${GREEN}✓${NC} Virtual environment created"
+        echo "  Creating new venv..."
+        $PYTHON_CMD -m venv .venv && source .venv/bin/activate || { echo -e "${RED}Error: venv failed${NC}"; exit_script 1; }
     fi
-else
-    echo -e "${GREEN}✓${NC} Virtual environment already active: $VIRTUAL_ENV"
 fi
-echo ""
+echo -e "${GREEN}✓${NC} venv active\n"
 
-# Step 2: Install/upgrade UV package manager
-echo -e "${BLUE}Step 2: Setting up UV package manager${NC}"
+# Step 2: UV package manager
+echo -e "${BLUE}Step 2: UV${NC}"
 if ! command -v uv &>/dev/null; then
-    echo "  Installing UV..."
-    pip install --upgrade --quiet pip uv
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}Error: Failed to install UV${NC}"
-        exit_script 1
-    fi
-    echo -e "${GREEN}✓${NC} UV installed successfully"
+    pip install --upgrade --quiet pip uv || { echo -e "${RED}Error: uv install failed${NC}"; exit_script 1; }
+    echo -e "${GREEN}✓${NC} UV installed"
 else
-    UV_VERSION=$(uv --version 2>/dev/null || echo "unknown")
-    echo -e "${GREEN}✓${NC} UV already available: $UV_VERSION"
-    # Upgrade UV to latest
-    echo "  Upgrading UV to latest..."
-    uv self update --quiet 2>/dev/null || true
+    echo -e "${GREEN}✓${NC} UV ready ($(uv --version 2>/dev/null || echo 'unknown'))"
 fi
 echo ""
 
-# Step 3: Install PyTorch with CUDA 12.1 using UV
-echo -e "${BLUE}Step 3: Installing PyTorch with CUDA 12.1${NC}"
-echo "  This may take several minutes..."
-echo "  Using UV for fast installation..."
-uv pip install --quiet "torch>=2.3.0" --index-url https://download.pytorch.org/whl/cu121
-if [ $? -ne 0 ]; then
-    echo -e "${YELLOW}⚠${NC} PyTorch installation encountered issues"
-    echo "  Trying again with pip..."
-    pip install --quiet "torch>=2.3.0" --index-url https://download.pytorch.org/whl/cu121
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}Error: PyTorch installation failed${NC}"
-        exit_script 1
-    fi
-fi
-echo -e "${GREEN}✓${NC} PyTorch installed"
-echo ""
+# Step 3: Python dependencies
+echo -e "${BLUE}Step 3: Python Dependencies${NC}"
+REQ_FILE="requirements.txt"
+[ -f "$REQ_FILE" ] || { echo -e "${RED}Error: Missing $REQ_FILE${NC}"; exit_script 1; }
+uv pip install --quiet -r "$REQ_FILE" || { echo -e "${RED}Error: requirements install failed${NC}"; exit_script 1; }
+uv pip install --quiet -e . || { echo -e "${RED}Error: package install failed${NC}"; exit_script 1; }
+echo -e "${GREEN}✓${NC} Python dependencies installed\n"
 
-# Step 4: Install project dependencies using UV
-echo -e "${BLUE}Step 4: Installing project dependencies${NC}"
-echo "  Installing in editable mode with cuda121, dev, and training extras..."
-uv pip install --quiet -e ".[cuda121,dev,training]"
-if [ $? -ne 0 ]; then
-    echo -e "${RED}Error: Dependency installation failed${NC}"
-    exit_script 1
-fi
-echo -e "${GREEN}✓${NC} Project dependencies installed"
-echo ""
+# Step 4: PyTorch + GPU packages (CUDA 12.1)
+echo -e "${BLUE}Step 4: PyTorch & GPU Dependencies${NC}"
+PYTORCH_INDEX="https://download.pytorch.org/whl/cu121"
+uv pip install --quiet "torch>=2.3.0" --index-url "$PYTORCH_INDEX" || \
+  pip install --quiet "torch>=2.3.0" --index-url "$PYTORCH_INDEX" || \
+  { echo -e "${RED}Error: PyTorch install failed${NC}"; exit_script 1; }
+uv pip install --quiet "xformers>=0.0.22" "deepspeed>=0.11.0" "bitsandbytes>=0.41.0" || \
+  pip install --quiet "xformers>=0.0.22" "deepspeed>=0.11.0" "bitsandbytes>=0.41.0" || \
+  echo -e "${YELLOW}⚠${NC} Some GPU packages failed — check manually"
+echo -e "${GREEN}✓${NC} PyTorch and GPU packages installed\n"
 
-# Step 5: Compile any build dependencies
-echo -e "${BLUE}Step 5: Building optional components${NC}"
-echo "  Installing DeepSpeed for distributed training..."
-uv pip install --quiet deepspeed 2>/dev/null || {
-    echo -e "${YELLOW}⚠${NC} DeepSpeed installation optional - CPU-only training possible"
-}
-echo -e "${GREEN}✓${NC} Optional components installed"
-echo ""
+# Step 5: Verify installation
+echo -e "${BLUE}Step 5: Verification${NC}"
+python -m pip check || echo -e "${YELLOW}⚠${NC} pip check reported warnings"
+python -c "import torch; avail = torch.cuda.is_available(); print(f'  CUDA available: {avail}'); print(f'  PyTorch: {torch.__version__}')" 2>/dev/null || \
+  echo -e "${YELLOW}⚠${NC} Could not verify torch/CUDA (torch may not be importable yet)"
 
-# Step 6: Verify complete installation
-echo -e "${BLUE}Step 6: Verifying installation${NC}"
-if [ -f "check_deps.py" ]; then
-    python3 check_deps.py
-    if [ $? -ne 0 ]; then
-        echo -e "${YELLOW}⚠${NC} Some dependencies have warnings"
-    else
-        echo -e "${GREEN}✓${NC} All dependencies verified"
-    fi
-else
-    echo -e "${YELLOW}⚠${NC} check_deps.py not found, skipping detailed verification"
-fi
+# Step 6: VSCode extensions (optional)
 echo ""
+if command -v code &>/dev/null && [ -f scripts/setup/install_vscode_extensions.py ]; then
+    echo -e "${BLUE}Step 6: VSCode Extensions${NC}"
+    python scripts/setup/install_vscode_extensions.py
+fi
 
 # Summary
-echo -e "${GREEN}=== Setup Complete ===${NC}"
 echo ""
-echo -e "${CYAN}Environment Summary:${NC}"
-echo "  Virtual environment: $(python3 -c 'import sys; print(sys.prefix)')"
-echo "  Python version: $(python3 --version)"
-echo "  UV version: $(uv --version 2>/dev/null || echo 'N/A')"
+echo -e "${GREEN}=== Setup Complete ===${NC}\n"
+echo -e "${CYAN}Environment:${NC}"
+echo "  Python: $(python --version 2>&1)"
+echo "  venv: $VIRTUAL_ENV"
+echo "  UV: $(uv --version 2>/dev/null || echo 'N/A')"
 echo ""
 
 if [ $SOURCED -eq 1 ]; then
-    echo -e "${GREEN}✓${NC} Virtual environment is active in your current shell"
-    echo ""
-    echo -e "${CYAN}Next steps:${NC}"
-    echo "  • Run tests: ${BLUE}make test${NC}"
-    echo "  • Format code: ${BLUE}make format${NC}"
-    echo "  • Type check: ${BLUE}make type-check${NC}"
-    echo "  • Deactivate env: ${BLUE}deactivate${NC}"
+    echo -e "${GREEN}✓ venv active. Commands:${NC}"
+    echo "  make test          # Run tests"
+    echo "  make format        # Format code"
+    echo "  make type-check    # Type check"
+    echo "  deactivate         # Exit venv"
 else
-    echo -e "${YELLOW}Note: To activate the virtual environment, run:${NC}"
-    echo "  ${BLUE}source .venv/bin/activate${NC}"
+    echo -e "${YELLOW}To activate venv: source .venv/bin/activate${NC}"
 fi
 echo ""
-
-exit_script 0

@@ -1,0 +1,6 @@
+#pragma once
+
+#define MAX_LLM_VERSION_MAJOR 0
+#define MAX_LLM_VERSION_MINOR 1
+#define MAX_LLM_VERSION_PATCH 0
+#define MAX_LLM_VERSION_STRING "0.1.0"

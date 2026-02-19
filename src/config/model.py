@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.config.toml_utils import load_toml, section_or_root
+from .toml_utils import load_toml, section_or_root
 
 
 @dataclass(frozen=True)

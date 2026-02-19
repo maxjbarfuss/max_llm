@@ -11,40 +11,15 @@ license = { file = "LICENSE" }
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
+# Minimal base: config/core utilities only. Model and training deps are optional.
 dependencies = [
-    "transformers>=4.36.0",
-    "datasets>=2.14.0",
-    "accelerate>=0.25.0",
-    "xformers>=0.0.22",
-    "deepspeed>=0.11.0",
-    "bitsandbytes>=0.41.0",
-    "numpy>=1.24.0",
-    "pandas>=2.0.0",
-    "tensorboard>=2.14.0",
-    "tensorboard-plugin-profile>=2.14.0",
-    "sentencepiece>=0.1.99",
-    "tokenizers>=0.14.0",
-    "pyyaml>=6.0",
-    "tqdm>=4.66.0",
     "pydantic>=2.0.0",
-    "omegaconf>=2.3.0",
+    "tomli>=2.0.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
-cuda121 = ["torch>=2.3.0"]
-cpu = ["torch>=2.1.0"]
-dev = [
-    "uv>=0.1.0",
-    "black[jupyter]>=23.12.0",
-    "ruff>=0.1.11",
-    "isort>=5.13.0",
-    "mypy>=1.7.0",
-    "pytest>=7.4.0",
-    "pytest-cov>=7.0.0",
-    "pytest-xdist>=3.5.0",
-    "pre-commit>=3.5.0",
-]
-training = ["wandb>=0.16.0", "huggingface-hub>=0.19.0", "fire>=0.5.0"]
+# Python runtime/development stack is managed in requirements.txt via setup.sh.
+# Keep only docs extras here for packaging convenience.
 docs = ["sphinx>=7.0.0", "sphinx-rtd-theme>=2.0.0", "mkdocs>=1.5.0"]
 
 [project.urls]
@@ -52,7 +27,7 @@ Repository = "https://github.com/maxjbarfuss/max_llm"
 
 [tool.black]
 line-length = 100
-target-version = ['py310', 'py311', 'py312', 'py313', 'py314']
+target-version = ['py310', 'py311', 'py312', 'py313']
 
 [tool.ruff]
 line-length = 100
@@ -83,7 +58,7 @@ strict_optional = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --cov=src --cov-report=term-missing --cov-report=html"
+addopts = "-v --tb=short"
 
 [tool.coverage.run]
 source = ["src"]

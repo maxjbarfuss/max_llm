@@ -1,0 +1,37 @@
+# WSL2 Configuration for Max LLM Development
+# Place this file at ~/.wslconfig on Windows (C:\Users\<YourUsername>\.wslconfig)
+# Then restart WSL2: wsl --shutdown
+
+[wsl2]
+# Memory: Allocate 70% of system RAM for WSL2 (adjust based on your system)
+# Example: 32GB system = ~22GB for WSL2
+# Bare minimum for training: 16GB
+memory=22GB
+
+# Virtual processors: Leave some for Windows
+# Example: 12 CPUs available = 10 for WSL2
+processors=6
+
+# Swap: For paging during large training runs (adds to memory)
+swap=16GB
+
+# Localhostforwarding: Allow Windows apps to access WSL2 services on localhost
+localhostforwarding=true
+
+[interop]
+# Allow running Windows executables from WSL2 (useful for tools)
+enabled=true
+
+# Add Windows PATH to WSL2 (can cause issues with conflicting tools, disable if problems)
+appendWindowsPath=false
+
+[boot]
+# Systemd: Enable modern init system (useful for services)
+systemd=true
+
+[experimental]
+# Auto memory reclaim: Free unused memory back to Windows
+autoMemoryReclaim=gradual
+
+# Sparse VHD: Allows dynamic disk expansion (Linux filesystem only)
+sparseVhd=true

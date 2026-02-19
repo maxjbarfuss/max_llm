@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from src.config.data import DataConfig
-from src.config.inference import InferenceConfig
-from src.config.model import ModelConfig
-from src.config.toml_utils import load_toml, require_section, section_or_root
-from src.config.training import TrainingConfig
+from .data import DataConfig
+from .inference import InferenceConfig
+from .model import ModelConfig
+from .toml_utils import load_toml, require_section, section_or_root
+from .training import TrainingConfig
 
 
 @dataclass

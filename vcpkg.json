@@ -1,0 +1,16 @@
+{
+  "name": "max-llm",
+  "version-string": "0.1.0",
+  "description": "Hybrid LLM with MLA-Transformer-MoE-RNN",
+  "homepage": "https://github.com/maxjbarfuss/max_llm",
+  "dependencies": [],
+  "overrides": [],
+  "vcpkg-configuration": {
+    "registries": [
+      {
+        "kind": "builtin",
+        "baseline": "c4af3593e1f1aa9e16f053a7cf57f6c58ab3e3aa"
+      }
+    ]
+  }
+}
