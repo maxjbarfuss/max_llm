@@ -1,7 +1,36 @@
-.PHONY: help lint format format-check type-check test test-cov clean pre-commit-run
+.PHONY: help check setup install-extensions lint format format-check type-check test test-cov clean pre-commit-run
 
 help:
-	@echo "Commands: lint format format-check type-check test test-cov clean pre-commit-run"
+	@echo "Max LLM Development Commands:"
+	@echo ""
+	@echo "  Setup & Environment:"
+	@echo "    make check                - Check system requirements"
+	@echo "    make setup                - Run full setup (setup.sh)"
+	@echo "    make install-extensions   - Install required VSCode extensions"
+	@echo ""
+	@echo "  Code Quality:"
+	@echo "    make lint                 - Run ruff and mypy checks"
+	@echo "    make format               - Format code with black and isort"
+	@echo "    make format-check         - Check code formatting without changes"
+	@echo "    make type-check           - Run mypy type checker"
+	@echo ""
+	@echo "  Testing & Verification:"
+	@echo "    make test                 - Run pytest"
+	@echo "    make test-cov             - Run pytest with coverage report"
+	@echo "    make pre-commit-run       - Run pre-commit on all files"
+	@echo ""
+	@echo "  Maintenance:"
+	@echo "    make clean                - Remove build artifacts and caches"
+	@echo ""
+
+check:
+	python3 check_system.py
+
+setup:
+	bash setup.sh
+
+install-extensions:
+	bash install_vscode_extensions.sh
 
 lint:
 	ruff check src tests && mypy src

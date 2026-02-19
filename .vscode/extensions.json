@@ -1,0 +1,16 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "GitHub.copilot",
+    "ms-python.debugpy",
+    "ms-python.black-formatter",
+    "charliermarsh.ruff",
+    "ms-python.mypy-type-checker",
+    "ms-vscode.makefile-tools",
+    "ms-vscode.cmake-tools",
+    "GitHub.copilot-chat",
+    "eamodio.gitlens",
+    "me-dutour-mathieu.vscode-json-pretty-printer"
+  ]
+}

@@ -8,13 +8,18 @@ Hybrid LLM research project (100–500M params): MLA + MoE + GRU output, optimiz
 ## Quick Start
 
 ```bash
-git clone https://github.com/maxjbarfuss/max_llm.git
-cd max_llm
+# Check system requirements
+python3 check_system.py
+
+# Run setup (creates venv, installs all dependencies with uv)
 source setup.sh
+
+# (Optional) Install VSCode extensions
+bash install_vscode_extensions.sh
 ```
 
-Requirements (target): Python 3.10+, CUDA 12.1, 32GB+ RAM. Dual GPU is for training; inference targets single GPU (CPU fallback supported).  
-Full setup and verification: [GETTING_STARTED.md](GETTING_STARTED.md)
+**Requirements (target):** Python 3.10+, CUDA 12.1, 32GB+ RAM  
+**Detailed setup:** [SETUP.md](SETUP.md) | Testing: `make test`
 
 ## Architecture (Summary)
 
@@ -32,6 +37,7 @@ Full design and implementation plan: [design/plan.md](design/plan.md)
 
 ## Docs Summary
 
+- [SETUP.md](SETUP.md): environment setup for all platforms (WSL2, Linux, macOS, Windows)
 - [GETTING_STARTED.md](GETTING_STARTED.md): setup + verification
 - [CONTRIBUTING.md](CONTRIBUTING.md): workflow + PR rules
 - [design/plan-checklist.md](design/plan-checklist.md): session tracker
