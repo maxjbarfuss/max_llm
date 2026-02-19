@@ -1,0 +1,37 @@
+"""InferenceConfig definition."""
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+from src.config.toml_utils import load_toml, section_or_root
+
+
+@dataclass
+class InferenceConfig:
+    """Inference-time configuration."""
+
+    device: Literal["auto", "cpu", "cuda"]
+    max_new_tokens: int
+    temperature: float
+    top_p: float
+    top_k: int
+    use_kv_cache: bool
+    kv_cache_dtype: Literal["fp8", "bf16"]
+
+    def __post_init__(self) -> None:
+        """Validate inference configuration."""
+        if self.max_new_tokens <= 0:
+            raise ValueError("max_new_tokens must be positive")
+        if not (0 <= self.temperature <= 2.0):
+            raise ValueError("temperature must be in [0, 2.0]")
+        if not (0 < self.top_p <= 1.0):
+            raise ValueError("top_p must be in (0, 1]")
+        if self.top_k < 0:
+            raise ValueError("top_k must be >= 0")
+
+    @classmethod
+    def from_toml(cls, file_path: str | Path) -> "InferenceConfig":
+        """Create an inference config from TOML."""
+        raw = load_toml(file_path)
+        return cls(**section_or_root(raw, "inference"))

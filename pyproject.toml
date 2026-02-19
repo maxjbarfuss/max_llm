@@ -7,6 +7,10 @@ name = "max_llm"
 version = "0.1.0"
 description = "Hybrid LLM with MLA-Transformer-MoE-RNN"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+]
 dependencies = [
     "transformers>=4.36.0",
     "datasets>=2.14.0",
@@ -44,7 +48,7 @@ training = ["wandb>=0.16.0", "huggingface-hub>=0.19.0", "fire>=0.5.0"]
 docs = ["sphinx>=7.0.0", "sphinx-rtd-theme>=2.0.0", "mkdocs>=1.5.0"]
 
 [project.urls]
-Repository = "https://github.com/yourusername/max_llm"
+Repository = "https://github.com/maxjbarfuss/max_llm"
 
 [tool.black]
 line-length = 100
@@ -84,3 +88,16 @@ addopts = "-v --cov=src --cov-report=term-missing --cov-report=html"
 [tool.coverage.run]
 source = ["src"]
 omit = ["*/tests/*", "*/test_*.py", "*/__init__.py"]
+
+[tool.pylint.messages_control]
+disable = [
+    "too-few-public-methods",
+    "too-many-arguments",
+    "import-outside-toplevel",
+]
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.basic]
+good-names = ["i", "j", "k", "ex", "Run", "_", "x", "y", "z"]

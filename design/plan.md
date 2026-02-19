@@ -1,135 +1,78 @@
-# Plan: Hybrid LLM with MLA-Transformer-MoE-RNN (Expanded)
+# Plan: Hybrid LLM with MLA + MoE + GRU
 
-This plan builds a local, learning-focused LLM (100-500M params) with a hybrid architecture: input FFN for richer embeddings, MLA attention for efficient long context, MoE for capacity without full compute cost, and a GRU output stage for sequential continuity. It is designed for dual 24GB GPUs, 8 CPU cores, and a very large dataset (~5TB) using streaming and progressive precision training.
+This is the execution plan for a local-first LLM (100–500M params) targeting dual 24GB GPUs for training, with inference designed to run on a single GPU (or CPU fallback), plus 8 CPU cores and streaming-scale data.
 
-## 1) Architecture overview
+## Architecture (Current Baseline)
 
-Flow: Text -> Tokenizer -> Token Embeddings -> Input FFN -> Transformer Blocks (MLA + RoPE) -> MoE Layers -> Output GRU -> Projection (tied weights)
+Flow: `Text -> Tokenizer -> Embeddings -> Input FFN -> Transformer (MLA + RoPE) -> MoE -> GRU -> Projection (tied)`
 
-Why this design:
-- MLA reduces KV cache via latent compression, enabling longer context at lower memory cost.
-- MoE adds capacity without full compute per token.
-- GRU output adds sequential continuity for generation.
-- Input FFN enriches embeddings before attention.
+- Tokenizer baseline: GPT-2 BPE, vocab padded to 50304
+- Tokenizer exploration: Unigram tokenizer as an alternative baseline candidate
+- Max context target: 2048 (extensible)
+- Embeddings: BF16, scaled by `sqrt(hidden_size)`, tied with output projection
+- MLA: full-size Q, latent K/V (`latent_dim=512`), RoPE in latent space
+- MoE: 16–32 experts, Top-2 routing, BF16 experts + gate
+- Output: GRU stage for sequential continuity
 
-## 2) Tokenization and embeddings
+Architecture is intentionally adjustable. Changes are allowed when supported by tests and benchmark evidence.
 
-Tokenizer:
-- GPT-2 BPE tokenizer, vocab padded to 50304.
-- Left padding for batched generation.
-- Max length 2048 (extend later if needed).
+## Precision Policy (Current Baseline)
 
-Token embeddings:
-- BF16 only (never quantized).
-- Scaled by sqrt(hidden_size).
-- Tied with output projection weights for efficiency.
+- Always BF16: attention, MoE, embeddings
+- Progressive for FFN/RNN:
+  - Phase 1 (0–30%): FP4 weights + FP8 activations
+  - Phase 2 (30–80%): FP8 weights + FP8 activations
+  - Phase 3 (80–100%): FP8/BF16 mixed runtime
+- Inference KV cache: FP8
+- Transition safety: automatic rollback on divergence
 
-## 3) Attention and position encoding
+Precision policy is intentionally adjustable. Phase boundaries and runtime dtypes may be tuned based on stability and performance results.
 
-MLA attention:
-- Q stays full-size, K/V compressed to latent_dim=512.
-- RoPE applied in latent space for position signals.
-- Flash Attention 2/3 for speed and memory.
-- All MLA weights in BF16.
+## Tokenizer Exploration Track
 
-Benefit:
-- 75% KV cache reduction from MLA, plus FP8 KV cache for inference.
+- Compare GPT-2 BPE vs Unigram on the same data slices
+- Evaluate: validation perplexity, throughput, sequence length efficiency, and tokenizer memory footprint
+- Keep vocabulary alignment constraints explicit when swapping tokenizers
+- Promote Unigram only if quality/performance is neutral or better
 
-## 4) Transformer blocks and MoE
+## Training Infrastructure
 
-Transformer block:
-- Pre-LN: x + MLA(LN(x)), x + FFN(LN(x)).
-- FFN in FP8 (FP4 early phase), fused MLP kernels.
+- Data: streaming-first for multi-TB corpus
+- Cache: RAM LRU + SSD token cache
+- Dataloader baseline: 6 workers, prefetch 2, pinned memory, persistent workers
+- Distributed mode:
+  - 100–300M: DDP
+  - 300–500M: FSDP full sharding
+- Scale mechanism: microbatching + gradient accumulation
 
-MoE layer:
-- 16-32 experts, Top-2 routing.
-- Experts and gating in BF16.
-- Scheduled load-balance loss to avoid collapse.
+## Training Program
 
-## 5) Output GRU
+1. Pre-train: large mixed corpus, long schedule, precision progression
+2. Fine-tune: curated domain data, lower LR, earlier BF16 transition
+3. Post-train: SFT, optional DPO/RLHF, calibration, export-ready weights
 
-- GRU weights FP8, hidden state BF16.
-- Reset per batch during training, persistent state in inference.
+## Reliability and Observability
 
-## 6) Progressive precision training
+- Required metrics: loss, perplexity, throughput, memory, quantization error, expert utilization
+- Required alerts: NaN/Inf, loss spikes, OOM, disk pressure, thermal issues
+- Checkpoint policy: rolling recent + best, atomic writes, include RNG + precision phase
 
-Schedule:
-- Phase 1 (0-30%): FP4 weights for non-MoE FFN and RNN, FP8 activations.
-- Phase 2 (30-80%): FP8 weights for those layers.
-- Phase 3 (80-100%): Mixed BF16 (attention/MoE/embeddings) + FP8 (FFN/RNN).
+## Validation Gates
 
-Policy:
-- BF16 for attention, MoE, embeddings always.
-- Auto-rollback on divergence during transitions.
+- Smoke overfit test (small model)
+- Precision phase transition checks
+- Multi-GPU consistency checks
+- Attention backend equivalence checks
+- Periodic generation regression samples
 
-## 7) Data pipeline (5TB, 8 cores)
+## Delivery Order
 
-Constraints:
-- 5TB too large to fully pretokenize.
-- 8 CPU cores limit preprocessing throughput.
+1. Base components: embeddings, RoPE, MLA, transformer block
+2. MoE + GRU integration
+3. Data pipeline and training loop
+4. Distributed training + checkpointing
+5. Monitoring + optimization (`torch.compile`, selective checkpointing)
 
-Strategy:
-- Streaming-first, shard 64-128 pieces.
-- Pre-tokenize hot subsets, stream the rest.
-- Two-tier cache: RAM LRU + SSD cache for tokenized shards.
-- Dataloader: 6 workers, prefetch 2, pinned memory, persistent workers.
-- Deterministic validation slice cached locally.
+## Definition of Done
 
-## 8) Distributed training setup
-
-- 100-300M: DDP.
-- 300-500M: FSDP full sharding.
-- CPU offload optimizer states for large models.
-- Microbatching + grad accumulation to reach effective batch sizes.
-
-## 9) Training phases
-
-A) Pre-train:
-- 5TB mixed corpus, streaming.
-- FP4 -> FP8 -> mixed BF16/FP8.
-- Long schedule, large batch.
-
-B) Fine-tune:
-- 10-200GB curated domain data.
-- FP8 then early BF16.
-- Lower LR, higher MoE balance weight earlier.
-
-C) Post-train:
-- Instruction tuning (SFT).
-- Optional DPO/RLHF for preferences.
-- Calibration (temperature, penalties).
-- Expert pruning/merging, export BF16.
-
-## 10) Optimizations (early wins)
-
-- Flash Attention for MLA.
-- torch.compile for kernel fusion.
-- Fused LayerNorm/MLP/optimizer.
-- Selective checkpointing (attention only).
-- Dynamic batching by length.
-- Quantized KV cache for inference.
-
-## 11) Monitoring and safety
-
-Track:
-- Loss, perplexity, throughput, memory, quant error.
-- Expert utilization and balance loss.
-
-Alerts:
-- NaN/Inf, loss spikes, OOM, disk low, GPU temp.
-
-Checkpointing:
-- Rolling last 3 + best, atomic saves.
-- Store precision state and RNG state.
-
-## 12) Validation and testing
-
-- Smoke test (10M params) to overfit.
-- Verify precision transitions.
-- Multi-GPU sync tests.
-- Flash Attention equivalence checks.
-- Regular generation samples for degeneration detection.
-
-## Outcome
-
-A local, trainable hybrid LLM with efficient long-context attention, conditional MoE capacity, progressive precision training, and a full pretrain -> finetune -> post-train pipeline with monitoring and safety guardrails.
+The project is done when end-to-end pre-train/fine-tune/post-train is reproducible locally, checkpoint recovery is reliable, and quality/performance metrics remain stable across precision phases.

@@ -1,0 +1,3 @@
+[experiment]
+name = "maxllm-baseline"
+output_dir = "./outputs"

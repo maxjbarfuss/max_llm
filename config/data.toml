@@ -1,0 +1,14 @@
+dataset_path = "openwebtext"
+tokenizer_name = "gpt2"
+tokenizer_backend = "gpt2_bpe"
+unigram_model_path = ""
+max_length = 2048
+num_workers = 6
+prefetch_factor = 2
+pin_memory = true
+persistent_workers = true
+streaming = true
+cache_dir = "./data/cache"
+num_shards = 64
+validation_split = 0.01
+seed = 42

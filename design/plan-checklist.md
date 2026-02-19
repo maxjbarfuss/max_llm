@@ -1,222 +1,73 @@
-# Max LLM Development Checklist
+# Max LLM Session Checklist
 
-**Purpose:** This is the coding "scratch pad" for tracking progress. AI assistants should:
-1. Read this file at the start of every session
-2. Update "Last Handoff" when completing work
-3. Check "Next Actions" for what to work on next
+Purpose: lightweight execution tracker for humans and AI agents.
 
----
+Session rule: a session is all work since the last commit.
 
-## 🎯 Broad Plan
-
-### Phase 1: Foundation (Current)
-**Goal:** Core architecture and configuration system
-- [x] Project structure and configuration system
-- [x] Design philosophy and development guidelines
-- [ ] Base model components (embeddings, RoPE)
-- [ ] MLA attention with Flash Attention
-- [ ] Transformer blocks with Pre-LN
-- [ ] Basic forward pass validation
-
-### Phase 2: Advanced Components
-**Goal:** MoE, GRU, and quantization
-- [ ] MoE layers with Top-2 routing
-- [ ] Expert load balancing
-- [ ] GRU output layer
-- [ ] Progressive precision scheduler (FP4→FP8→BF16)
-- [ ] Quantized linear layers
-
-### Phase 3: Training Infrastructure
-**Goal:** Complete training loop with monitoring
-- [ ] Data pipeline with streaming
-- [ ] Training loop with gradient accumulation
-- [ ] Distributed training (DDP/FSDP)
-- [ ] Checkpointing and resume
-- [ ] Monitoring and drift detection
-
-### Phase 4: Optimization & Testing
-**Goal:** Performance optimization and validation
-- [ ] torch.compile integration
-- [ ] Selective gradient checkpointing
-- [ ] Smoke test (10M model overfit)
-- [ ] Multi-GPU synchronization tests
-- [ ] Memory and throughput benchmarks
-
-### Phase 5: Training Runs
-**Goal:** Pre-train, fine-tune, and deployment
-- [ ] Pre-training on 5TB dataset
-- [ ] Fine-tuning on domain data
-- [ ] Post-training (SFT/RLHF)
-- [ ] Model export and optimization
-- [ ] Evaluation benchmarks
+How to use:
+1. Read this file at session start.
+2. Work from **Next Steps**.
+3. Keep temporary notes in **Current Session Scratch Pad**.
+4. Add a short entry to **Running Session Log** before committing.
 
 ---
 
-## 📋 Next Actions
+## Roadmap (High-Level)
 
-### Immediate (Do These Next)
-1. **Create base embeddings module** (`src/models/embeddings.py`)
-   - TokenEmbedding with weight tying support
-   - Scaling by sqrt(hidden_size)
-   - Write tests first (TDD)
-   - See: design/plan.md section 2 for specs
-
-2. **Implement RoPE (Rotary Position Embeddings)** (`src/models/position.py`)
-   - RoPE cache for efficiency
-   - Support for latent space application (MLA requirement)
-   - Base frequency = 10000
-   - Write tests for rotation correctness
-
-3. **Create MLA attention module** (`src/models/attention/mla.py`)
-   - Q full-size, KV compressed to latent_dim
-   - RoPE in latent space
-   - Flash Attention backend
-   - KV cache management
-   - Tests: verify 75% cache reduction
-
-### Soon After
-4. **Transformer block** (`src/models/transformer.py`)
-   - Pre-LayerNorm architecture
-   - Residual connections
-   - Selective checkpointing support
-
-5. **Basic forward pass integration**
-   - Combine embeddings → attention → projection
-   - Shape validation tests
-   - Simple generation test (no MoE/GRU yet)
-
-### Blocked/Waiting
-- None currently
+- [x] Foundation setup (repo, docs baseline, config system)
+- [ ] Core model blocks (embeddings, RoPE, MLA, transformer forward pass)
+- [ ] Advanced model blocks (MoE, GRU, precision scheduler)
+- [ ] Training system (data pipeline, distributed training, checkpointing, monitoring)
+- [ ] Optimization and validation (compile, checkpointing strategy, smoke/perf tests)
+- [ ] Training runs and evaluation (pre-train, fine-tune, post-train)
 
 ---
 
-## 🔄 Last Handoff
+## Next Steps
 
-### Session Date: 2026-02-18
+### Immediate
+1. Build `src/models/embeddings.py` with tests first (shape, scaling, weight tying).
+2. Build `src/models/position.py` (RoPE) with correctness tests.
+3. Build `src/models/attention/mla.py` (Q full, latent KV, cache behavior) with tests.
+4. Run tokenizer benchmark slice (GPT-2 BPE vs Unigram) and record recommendation in `design/plan.md`.
 
-#### ✅ Completed This Session
-1. **Created design/philosophy.md** 
-   - Full design philosophy with KISS, TDD, SOLID principles
-   - Context window efficiency strategies
-   - AI assistant collaboration guidelines
-   - Comprehensive contributor checklist
+### Soon
+5. Implement `src/models/transformer.py` with Pre-LN residual structure.
+6. Integrate basic forward pass (embeddings -> attention -> projection) with shape tests.
 
-2. **Updated README.md**
-   - Added Design Philosophy section with key principles
-   - Included TDD as core principle
-   - Links to detailed documentation
-
-3. **Implemented configuration system** (`src/config/model_config.py`)
-   - `ModelConfig` with MLA, MoE, GRU parameters
-   - `TrainingConfig` with progressive precision schedule
-   - `DataConfig` for data pipeline
-   - `ExperimentConfig` as top-level config
-   - Full validation in `__post_init__`
-   - Computed properties (head_dim, effective_batch_size)
-
-4. **Created comprehensive test suite** (`tests/unit/test_config.py`)
-   - Tests for all config validation logic
-   - Tests for computed properties
-   - Tests for frozen dataclasses
-   - All tests passing
-
-5. **Restructured plan-checklist.md** as working scratch pad
-   - Three sections: Broad Plan, Next Actions, Last Handoff
-   - Updated references in README.md and philosophy.md
-   - Now serves as primary coordination tool for AI assistants
-
-6. **Git repository setup and GitHub push** ✅
-   - Initialized git repository with main branch
-   - Configured git user: Max Barfuss <max.barfuss@gmail.com>
-   - Generated SSH key (ED25519) and added to GitHub
-   - Created initial commit with full project structure
-   - Pushed to private repository: https://github.com/maxjbarfuss/max_llm
-   - All 27 files committed (2259 insertions)
-
-7. **Project structure created**
-   ```
-   src/
-   ├── models/
-   │   ├── attention/
-   │   ├── moe/
-   │   └── rnn/
-   ├── config/     ✓ Complete
-   ├── training/
-   ├── data/
-   ├── monitoring/
-   └── utils/
-   tests/
-   ├── unit/       ✓ Config tests
-   ├── integration/
-   └── fixtures/
-   ```
-
-#### 📝 Notes for Next Developer
-- **Configuration is production-ready** - All configs have validation, type hints, and tests
-- **Following TDD strictly** - Write tests before implementation
-- **Repository is on GitHub** - Private repo at maxjbarfuss/max_llm, SSH configured
-- **Next up: Base model components** - Start with embeddings (simple, well-defined)
-- **Type hints are mandatory** - All code must be fully typed
-- **Max 500 lines/file** - Split if larger
-
-#### 🚧 Current State
-- **Environment:** `.venv` with PyTorch 2.10.0, CUDA 12.1, DeepSpeed 0.18.6
-- **Git:** Initialized, SSH configured, pushed to GitHub (commit 48d2ff2)
-- **No model code yet** - Only configuration system implemented
-- **Ready for embeddings** - Config supports all needed parameters
-
-#### 🎯 Recommended Next Step
-Start with embeddings module following TDD:
-1. Write test for TokenEmbedding shape and initialization
-2. Implement minimal TokenEmbedding class
-3. Add weight tying test and implementation
-4. Add scaling test and implementation
-5. Refactor for clarity
-
-See `src/config/model_config.py` for reference on code style and documentation.
+### Blocked
+- None.
 
 ---
 
-## 📖 Architecture Reference
+## Current Session Scratch Pad
 
-**Core Flow:**
-```
-Input Text 
-  → Tokenizer (GPT-2 BPE)
-  → Token Embeddings (BF16, scaled, tied weights)
-  → Input FFN (enrichment)
-  → Transformer Blocks (MLA + Pre-LN)
-  → MoE Layers (every 2nd block)
-  → GRU Output (sequential continuity)
-  → Projection (tied weights)
-  → Output Logits
-```
-
-**Key Design Decisions (Locked):**
-- Vocab size: 50304 (padded to 64)
-- Hidden size: 768 (100M), 1024 (300M), 1280 (500M)
-- MLA latent_dim: 512 (75% KV cache reduction)
-- MoE: 16 experts, Top-2 routing
-- Precision: BF16 (attn/MoE/emb), FP8 (FFN/RNN)
-- Max sequence: 2048 tokens
-
-**Files to Read:**
-- `design/plan.md` - Detailed architecture
-- `design/philosophy.md` - Development guidelines
-- `src/config/model_config.py` - Configuration reference
+- Session date: 2026-02-19
+- Since commit: post-`48d2ff2`
+- Active focus: Documentation cleanup, config refactoring, engineering principles elevation, Apache-2.0 licensing
+- Decisions made: Config TOML-first + split per-class modules; docs summary-first style; simplified session tracker; Apache-2.0 for license
+- Open questions: None
+- Blockers: None
+- Files touched: ~20 files (config system, design docs, governance docs, license, pyproject.toml)
+- Before commit checklist:
+  - [x] Tests updated and passing (static analysis 0 errors)
+  - [x] Docs updated (README, CONTRIBUTING, philosophy, all crosspages)
+  - [x] Add brief log entry below
 
 ---
 
-## ✅ Quick Checklist (Copy for Commits)
+## Running Session Log (Brief)
 
-Before committing:
-- [ ] Tests written BEFORE implementation (TDD)
-- [ ] All tests passing
-- [ ] Type hints on all functions/classes
-- [ ] Docstrings (WHAT/WHY, not HOW)
-- [ ] Static analysis passes: `mypy src/`, `ruff check src/`
-- [ ] Code formatted: `black src/ tests/`
-- [ ] Max 500 lines per file
-- [ ] Updated this checklist (Last Handoff section)
-- [ ] Commit message includes context for next developer
+| Date | Since Commit | Summary |
+|---|---|---|
+| 2026-02-19 | post-`48d2ff2` | Config externalization (TOML split modules), docs/cross-ref normalization, principles elevation (Big-O/SOLID/reproducibility), Apache-2.0 license. Production-ready for model blocks. |
+| 2026-02-18 | repo init | Initial project scaffolding, config/test baseline, and first design docs. |
 
+---
+
+## Canonical References
+
+- `design/plan.md` (architecture + implementation plan)
+- `design/philosophy.md` (engineering standards)
+- `CONTRIBUTING.md` (workflow and validation gates)
+- `config/*.toml` (authoritative runtime values)
