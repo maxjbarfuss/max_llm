@@ -13,19 +13,21 @@ Defines who may contribute and merge.
 AI agents may contribute only under direct instruction or explicit written approval from @maxjbarfuss.
 
 Agent requirements:
-- Follow [design/DESIGN.md](../design/DESIGN.md)
-- Start/end each session with [design/PLAN_CHECKLIST.md](../design/PLAN_CHECKLIST.md) updates (`Current Session Scratch Pad` + `Running Session Log`)
-- Self-identify in commits/PR notes when applicable
+- Follow the [Agent Workflow in design/DESIGN.md](../design/DESIGN.md#agent-workflow) (session start/end, TDD, doc updates)
+- Self-identify in commits and PR notes (`AI agent: <name>` or similar)
 
 ## PR Validation Checklist
 
 Before opening a PR, ensure:
 
-1. **Summary**: Clear description of what changed and why
+1. **Summary**: Clear description of what changed and why (including phase/component reference)
 2. **Validation**:
-   - `make lint` (ruff, mypy, black)
-   - `make test` (Python + C++ tests)
-3. **Risks & Next**: Document any known limitations or follow-up work
+   - `make lint` (ruff, mypy)
+   - `make format-check` (black, isort, clang-format)
+   - `make test` (Python + C++ tests, appropriate to phase)
+   - All tests pass locally
+3. **Risks & Next**: Document any known limitations, incomplete components, and follow-up work
+4. **Docs updated**: If behavior/architecture changed, update [design/PLAN.md](../design/PLAN.md) and impacted docs in same PR
 
 ## Authorization Policy
 

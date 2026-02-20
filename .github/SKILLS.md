@@ -6,17 +6,18 @@ Baseline knowledge and working discipline for contributors and coding agents.
 
 - PyTorch 2.x (`nn.Module`, autograd, mixed precision, AMP, `torch.compile`)
 - Transformer internals: attention, residuals, normalization, position encodings
-- MLA, MoE, and GRU fundamentals as used here (see `design/DESIGN.md`)
+- GQA, MLA, MoE, and GRU fundamentals as used here (see [design/DESIGN.md](../design/DESIGN.md#architecture-overview))
 - Python 3.10+ with type hints, `pytest`, and `mypy`
 - Git: atomic commits, clear PRs, docs and tests updated with behavior changes
 
 ## Task-Specific (Needed When Relevant)
 
-- Distributed training (`DDP`/`FSDP`, gradient accumulation, checkpoint sharding)
-- Training efficiency tooling (Flash Attention 2, `torch.compile`, FP8, selective checkpointing, activation offloading)
-- Data streaming and token caching for large corpora
-- C++20, CMake, and CUDA kernel development
-- Monitoring, experiment reproducibility, and checkpoint reliability
+- **Phase 4+**: Distributed training (`DDP`/`FSDP`, gradient accumulation, checkpoint sharding, multi-GPU throughput)
+- **Phase 5+**: Architecture comparison experiments, benchmark design, ablation frameworks
+- **Phase 6+**: Eval benchmark selection and integration (HellaSwag, MMLU, task-specific)
+- **Anytime**: Training efficiency tooling (Flash Attention 2, `torch.compile`, FP8, selective checkpointing, activation offloading), data streaming and token caching
+- **Optional**: C++20, CMake, and CUDA kernel development for performance-critical layers
+- **Essential for all**: Experiment reproducibility, checkpoint reliability, artifact naming conventions
 
 ## Engineering Judgment
 
@@ -31,4 +32,9 @@ Speed is not the goal. Correctness, clarity, and minimal surface area are.
 
 ## Working Rule
 
-At session start, read `design/PLAN_CHECKLIST.md` (`Next Steps`, `Running Session Log`), then the relevant section of `design/DESIGN.md`. Check existing tests and interfaces before modifying code. Write a failing test before implementing new behavior. Update `PLAN_CHECKLIST.md` at session end.
+Follow the [Agent Workflow in design/DESIGN.md](../design/DESIGN.md#agent-workflow). In brief:
+
+- **Session start**: Read [design/PLAN.md](../design/PLAN.md#phase-progress) (Phase Progress, Next Steps), then relevant [design/DESIGN.md](../design/DESIGN.md) section.
+- **Before coding**: Check existing tests and interfaces.
+- **During coding**: TDD — write failing test first, implement, verify.
+- **Session end**: Update [design/PLAN.md](../design/PLAN.md#current-session-scratch-pad) (Scratch Pad, Running Session Log).

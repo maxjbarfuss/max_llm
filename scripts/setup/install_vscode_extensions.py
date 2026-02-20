@@ -3,8 +3,8 @@
 Install VSCode extensions for max_llm development.
 """
 
-import subprocess
 import shutil
+import subprocess
 
 # Color codes
 RED = "\033[0;31m"
@@ -17,6 +17,7 @@ NC = "\033[0m"
 REQUIRED = [
     "ms-python.python",
     "ms-python.vscode-pylance",
+    "anthropic.claude-code",
     "GitHub.copilot",
 ]
 
@@ -26,11 +27,15 @@ RECOMMENDED = [
     "ms-python.black-formatter",
     "charliermarsh.ruff",
     "ms-python.mypy-type-checker",
+    "ms-python.vscode-python-envs",
     "ms-vscode.makefile-tools",
     "ms-vscode.cmake-tools",
+    "ms-vscode.cpp-devtools",
     "GitHub.copilot-chat",
+    "andrepimenta.claude-code-chat",
     "eamodio.gitlens",
-    "me-dutour-mathieu.vscode-json-pretty-printer",
+    "bierner.markdown-mermaid",
+    "yzhang.markdown-all-in-one",
 ]
 
 

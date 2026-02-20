@@ -4,28 +4,32 @@ Authorized contributors are defined in [.github/CONTRIBUTORS.md](.github/CONTRIB
 
 ## What Each Doc Is For
 
-- [design/PLAN_CHECKLIST.md](design/PLAN_CHECKLIST.md): execution tracker for the current session (`Next Steps`, `Current Session Scratch Pad`, `Running Session Log`).
-- [design/DESIGN.md](design/DESIGN.md): architecture baseline, engineering rules, testing strategy, and delivery order.
-- [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md): authorization policy and PR validation checklist.
+- [design/PLAN.md](design/PLAN.md#phase-progress): session execution plan (phase progress, `Next Steps`, `Current Session Scratch Pad`, `Running Session Log`).
+- [design/DESIGN.md](design/DESIGN.md#architecture-overview): architecture baseline, engineering principles, testing strategy, phased roadmap.
+- [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md#pr-validation-checklist): authorization, PR validation checklist.
 - [.github/CODEOWNERS](.github/CODEOWNERS): review ownership.
 
-If documents conflict during implementation, follow [design/PLAN_CHECKLIST.md](design/PLAN_CHECKLIST.md) for immediate execution, then reconcile the other docs in the same PR.
+If documents conflict during implementation, follow [design/PLAN.md](design/PLAN.md) for immediate execution, then reconcile the other docs in the same PR.
 
 ## Workflow
 
-1. Start with [design/PLAN_CHECKLIST.md](design/PLAN_CHECKLIST.md) and pick from `Next Steps`.
-2. Confirm design constraints in [design/DESIGN.md](design/DESIGN.md).
-3. Implement with TDD and typed interfaces per [design/DESIGN.md](design/DESIGN.md).
-4. Run local validation.
-5. Update [design/PLAN_CHECKLIST.md](design/PLAN_CHECKLIST.md) (`Current Session Scratch Pad`, `Running Session Log`).
-6. Open PR: validate via [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md) checklist (Summary, Validation, Risks & Next).
+1. Read [design/PLAN.md](design/PLAN.md#phase-progress): check Phase Progress and pick from `Next Steps`.
+2. Read relevant section of [design/DESIGN.md](design/DESIGN.md#architecture-overview) for design constraints.
+3. Check existing tests and interfaces (avoid duplication).
+4. Implement with TDD and typed interfaces per [design/DESIGN.md](design/DESIGN.md#coding-standards).
+5. Run local validation (see below).
+6. Update [design/PLAN.md](design/PLAN.md#current-session-scratch-pad) (`Current Session Scratch Pad`, `Running Session Log`).
+7. Open PR: validate via [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md#pr-validation-checklist) checklist (Summary, Validation, Risks & Next).
 
 ## Local Validation
 
+Run the [Quality Gates from design/DESIGN.md](design/DESIGN.md#quality-gates) before merge:
+
 ```bash
-make lint       # ruff + mypy + black check
-make test       # Python + C++ tests
-make format     # Auto-format Python + C++
+make lint           # ruff + mypy
+make test           # Python + C++ tests
+make format-check   # verify formatting (black, isort, clang-format)
+make format         # auto-fix formatting
 ```
 
 ## Commit and PR Rules (Summary)

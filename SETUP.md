@@ -37,6 +37,20 @@ See [config/.wslconfig](config/.wslconfig) for full documentation.
 
 ## After Setup
 
+Verify your environment works:
+
+```bash
+make test       # Python + C++ tests
+```
+
+Then read [CONTRIBUTING.md](CONTRIBUTING.md#workflow) and [design/PLAN.md](design/PLAN.md#next-steps) to begin.
+
+---
+
+## Troubleshooting
+
+Useful commands:
+
 ```bash
 make test       # Run tests
 make build      # Build C++ components
@@ -51,6 +65,6 @@ Read: [NVIDIA WSL User Guide](https://docs.nvidia.com/cuda/wsl-user-guide/)
 
 ## Next Read
 
-- [README.md](README.md): Project overview
-- [CONTRIBUTING.md](CONTRIBUTING.md): Development workflow
-- [design/PLAN_CHECKLIST.md](design/PLAN_CHECKLIST.md): Session execution tracker
+- [README.md](README.md): Project overview and status
+- [CONTRIBUTING.md](CONTRIBUTING.md): Workflow and contribution rules
+- [design/PLAN.md](design/PLAN.md): Session execution plan (phase progress, next steps)
