@@ -5,7 +5,7 @@
 **WSL2 on Windows is required.** This project does not support native Linux, macOS, or legacy WSL1.
 
 - Install WSL2: https://docs.microsoft.com/en-us/windows/wsl/install
-- Required: Ubuntu 22.04 LTS distro
+- Required: Ubuntu 22.04+ LTS distro (24.04 tested)
 
 ## Quick Start
 
