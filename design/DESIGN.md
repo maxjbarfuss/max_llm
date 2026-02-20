@@ -151,24 +151,6 @@ Training: Logits → Cross-Entropy Loss (all phases). Inference: Logits → Soft
 
 ---
 
-## Data Strategy Summary
-
-**Philosophy**: Build a complete, unrestricted world model across Phases 2–5 (1–500M tokens) by incorporating diverse content sources including adult, controversial, and harmful data. Layers of safety guardrails are applied via fine-tuning (SFT) in Phase 6 and alignment (DPO/RL) in Phases 7–9. This approach ensures comprehensive generalization and robust behavior under adversarial conditions before safety constraints are applied.
-
-**Execution**:
-- **Phases 2–4 (1–100M tokens)**: Toy datasets (TinyStories, WikiText-103), small corpus (OpenWebText subset), and medium corpus (FineWeb / FineWeb-Edu subset). Establishes training stability and tokenizer selection.
-- **Phase 5 (100–500M tokens, multi-phase curriculum)**: Full unrestricted pretraining corpus with staged content introduction:
-  - **Stage P5a** (neutral+technical): 75% FineWeb, Wikipedia, GitHub, UCI structured data (medical, scientific), and curated data (Cosmopedia)
-  - **Stage P5b** (adult/controversial): 20% NSFW content (Tor forums, Reddit NSFW subreddits)
-  - **Stage P5c** (harmful): 5% mlabonne harmful datasets (jailbreaks, refusals)
-  - **Curriculum learning**: Gradual stage progression based on validation loss without catastrophic forgetting; enables robust generalization before alignment.
-- **Phases 6–7 (instruction tuning + alignment)**: Domain-specific SFT (1–5M instruction pairs) with continual learning to prevent forgetting of P5 generalization. Preference data (10K–100K pairs) includes intentional harmful examples for robust rejection learning.
-- **Phases 8–9 (expert routing + comprehensive evaluation)**: Expert specialization on partitioned domains; continual evaluation on incremental domain streams to measure catastrophic forgetting and real-world continual learning performance.
-
-**Data sourcing principles**: Respect data licenses, exclude PII, document provenance, deduplicate 5–10% across sources, and track curriculum stage assignments for reproducibility.
-
----
-
 | Component | Phase | Phases Used | Notes |
 |-----------|-------|-------------|-------|
 | Embeddings | 2 | 2–9 | Token + positional (learned, then RoPE) |
@@ -219,6 +201,22 @@ Stable baseline: **BF16 + AMP** throughout (well-supported, numerically safe). L
 - **Dataloader**: 6 workers, prefetch 2, pinned memory, persistent workers
 - **Distributed**: DDP for 100–300M params; FSDP full sharding for 300–500M (introduced Phase 4)
 - **Scale**: microbatching + gradient accumulation
+
+### Data Strategy
+
+**Philosophy**: Build a complete, unrestricted world model across Phases 2–5 (1–500M tokens) by incorporating diverse content sources including adult, controversial, and harmful data. Layers of safety guardrails are applied via fine-tuning (SFT) in Phase 6 and alignment (DPO/RL) in Phases 7–9. This approach ensures comprehensive generalization and robust behavior under adversarial conditions before safety constraints are applied.
+
+**Execution**:
+- **Phases 2–4 (1–100M tokens)**: Toy datasets (TinyStories, WikiText-103), small corpus (OpenWebText subset), and medium corpus (FineWeb / FineWeb-Edu subset). Establishes training stability and tokenizer selection.
+- **Phase 5 (100–500M tokens, multi-phase curriculum)**: Full unrestricted pretraining corpus with staged content introduction:
+  - **Stage P5a** (neutral+technical): 75% FineWeb, Wikipedia, GitHub, UCI structured data (medical, scientific), and curated data (Cosmopedia)
+  - **Stage P5b** (adult/controversial): 20% NSFW content (Tor forums, Reddit NSFW subreddits)
+  - **Stage P5c** (harmful): 5% mlabonne harmful datasets (jailbreaks, refusals)
+  - **Curriculum learning**: Gradual stage progression based on validation loss without catastrophic forgetting; enables robust generalization before alignment.
+- **Phases 6–7 (instruction tuning + alignment)**: Domain-specific SFT (1–5M instruction pairs) with continual learning to prevent forgetting of P5 generalization. Preference data (10K–100K pairs) includes intentional harmful examples for robust rejection learning.
+- **Phases 8–9 (expert routing + comprehensive evaluation)**: Expert specialization on partitioned domains; continual evaluation on incremental domain streams to measure catastrophic forgetting and real-world continual learning performance.
+
+**Data sourcing principles**: Respect data licenses, exclude PII, document provenance, deduplicate 5–10% across sources, and track curriculum stage assignments for reproducibility.
 
 **Training program:**
 1. Pre-train: large mixed corpus, long schedule, precision progression
