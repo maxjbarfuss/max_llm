@@ -44,14 +44,15 @@ help:
 CMAKE_BUILD_DIR ?= build
 CMAKE_BUILD_TYPE ?= Release
 
+
 cmake-configure:
 	@echo "Configuring CMake ($(CMAKE_BUILD_TYPE))..."
-	cmake -B $(CMAKE_BUILD_DIR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -GNinja
+	cmake -B $(CMAKE_BUILD_DIR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DCMAKE_CUDA_ARCHITECTURES=all -GNinja
 	@echo "✓ CMake configured"
 
 cmake-configure-debug:
 	@echo "Configuring CMake (Debug)..."
-	cmake -B $(CMAKE_BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug -GNinja
+	cmake -B $(CMAKE_BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CUDA_ARCHITECTURES=all -GNinja
 	@echo "✓ CMake configured (Debug)"
 
 build: cmake-configure
@@ -82,12 +83,13 @@ test-py:
 	pytest tests/ -v --tb=short
 	@echo "✓ Python tests complete"
 
-test-cpp: build
+test-cpp:
 	@echo "Running C++ tests..."
-	@if [ -d "$(CMAKE_BUILD_DIR)" ]; then \
-		cd $(CMAKE_BUILD_DIR) && ctest --output-on-failure -j$$(nproc) || echo "Note: GTest may not be installed"; \
+	@if command -v nvcc >/dev/null 2>&1 || test -n "${CUDACXX}"; then \
+		$(MAKE) cmake-configure; \
+		cd $(CMAKE_BUILD_DIR) && ctest --output-on-failure -j$(nproc) || echo "Note: GTest may not be installed"; \
 	else \
-		echo "Run 'make build' first to build C++ tests"; \
+		echo "CUDA compiler not found; skipping C++ tests"; \
 	fi
 
 test-cov:

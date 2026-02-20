@@ -17,7 +17,7 @@ def make_model_config(**overrides):
         "num_heads": 12,
         "vocab_size": 50304,
         "max_seq_length": 2048,
-        "mla_latent_dim": 512,
+        "mla_latent_dim": 768,
         "rope_base": 10000,
         "intermediate_size": None,
         "num_experts": 16,
@@ -305,7 +305,7 @@ class TestExperimentConfig:
             model=model_config,
             training=make_training_config(),
             inference=make_inference_config(),
-            data=data_config
+            data=data_config,
         )
         assert config.data.max_length <= config.model.max_seq_length
 
@@ -322,7 +322,7 @@ class TestExperimentConfig:
 
     def test_custom_configs(self):
         """Custom sub-configurations should be used."""
-        custom_model = make_model_config(hidden_size=1024, num_layers=24)
+        custom_model = make_model_config(hidden_size=1024, num_layers=24, num_heads=16)
         custom_training = make_training_config(batch_size=64)
         custom_inference = make_inference_config(device="cpu")
         custom_data = make_data_config(num_workers=8)
@@ -333,7 +333,7 @@ class TestExperimentConfig:
             model=custom_model,
             training=custom_training,
             inference=custom_inference,
-            data=custom_data
+            data=custom_data,
         )
 
         assert config.model.hidden_size == 1024
@@ -356,7 +356,7 @@ num_layers = 12
 num_heads = 12
 vocab_size = 50304
 max_seq_length = 2048
-mla_latent_dim = 512
+mla_latent_dim = 768
 rope_base = 10000
 intermediate_size = 3072
 num_experts = 16
@@ -441,7 +441,7 @@ seed = 42
                     "num_heads = 12",
                     "vocab_size = 50304",
                     "max_seq_length = 2048",
-                    "mla_latent_dim = 512",
+                    "mla_latent_dim = 768",
                     "rope_base = 10000",
                     "intermediate_size = 3072",
                     "num_experts = 16",
@@ -465,7 +465,7 @@ seed = 42
                     "betas = [0.9, 0.95]",
                     "epsilon = 1e-8",
                     "gradient_clip_norm = 1.0",
-                    "precision_schedule = [[0, 1000, \"fp4\"], [1000, 5000, \"fp8\"], [5000, -1, \"mixed\"]]",
+                    'precision_schedule = [[0, 1000, "fp4"], [1000, 5000, "fp8"], [5000, -1, "mixed"]]',
                     "moe_balance_loss_weight = 0.01",
                     'distributed_backend = "ddp"',
                     "checkpoint_interval = 500",

@@ -36,19 +36,15 @@ class ModelConfig:
             raise ValueError("max_seq_length must be positive")
         if not (0 <= self.dropout < 1):
             raise ValueError("dropout must be in [0, 1)")
+        if self.hidden_size % 64 != 0:
+            raise ValueError(f"hidden_size ({self.hidden_size}) must be multiple of 64")
         if self.hidden_size % self.num_heads != 0:
             raise ValueError(
                 f"hidden_size ({self.hidden_size}) must be divisible by "
                 f"num_heads ({self.num_heads})"
             )
-        if self.hidden_size % 64 != 0:
-            raise ValueError(
-                f"hidden_size ({self.hidden_size}) must be multiple of 64"
-            )
         if self.vocab_size % 64 != 0:
-            raise ValueError(
-                f"vocab_size ({self.vocab_size}) must be multiple of 64"
-            )
+            raise ValueError(f"vocab_size ({self.vocab_size}) must be multiple of 64")
 
         if self.mla_latent_dim <= 0:
             raise ValueError("mla_latent_dim must be positive")
