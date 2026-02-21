@@ -1,10 +1,21 @@
 cmake_minimum_required(VERSION 3.20)
+
+if(NOT DEFINED CMAKE_CUDA_COMPILER)
+    if(DEFINED ENV{CUDACXX})
+        set(CMAKE_CUDA_COMPILER $ENV{CUDACXX} CACHE FILEPATH "CUDA compiler" FORCE)
+    elseif(EXISTS "/usr/local/cuda/bin/nvcc")
+        set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc" CACHE FILEPATH "CUDA compiler" FORCE)
+    endif()
+endif()
+
 project(
     max_llm
     VERSION 0.1.0
     LANGUAGES C CXX CUDA
     DESCRIPTION "Hybrid LLM with MLA-Transformer-MoE-RNN"
 )
+
+option(MAX_LLM_ENABLE_GTEST "Enable GTest-based C++ tests" OFF)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
@@ -31,11 +42,24 @@ if(MSVC)
     add_compile_options(/O2)
 else()
     # GCC/Clang
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror)
-    add_compile_options(-O3 -march=native)
-
-    # Debug symbols
-    add_compile_options(-g)
+    add_compile_options(
+        $<$<COMPILE_LANGUAGE:C>:-Wall>
+        $<$<COMPILE_LANGUAGE:C>:-Wextra>
+        $<$<COMPILE_LANGUAGE:C>:-Wpedantic>
+        $<$<COMPILE_LANGUAGE:C>:-Werror>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wpedantic>
+        $<$<COMPILE_LANGUAGE:CXX>:-Werror>
+    )
+    add_compile_options(
+        $<$<COMPILE_LANGUAGE:C>:-O3>
+        $<$<COMPILE_LANGUAGE:C>:-march=native>
+        $<$<COMPILE_LANGUAGE:C>:-g>
+        $<$<COMPILE_LANGUAGE:CXX>:-O3>
+        $<$<COMPILE_LANGUAGE:CXX>:-march=native>
+        $<$<COMPILE_LANGUAGE:CXX>:-g>
+    )
 endif()
 
 # CUDA configuration
@@ -56,6 +80,10 @@ include_directories(${Python3_INCLUDE_DIRS})
 include_directories(${Python3_NumPy_INCLUDE_DIRS})
 include_directories(${CUDA_INCLUDE_DIRS})
 
+# Enable testing
+include(CTest)
+enable_testing()
+
 # Add subdirectories for vertical slices
 message(STATUS "Building core infrastructure...")
 add_subdirectory(src/core)
@@ -66,9 +94,6 @@ add_subdirectory(src/models/position/kernels)
 add_subdirectory(src/models/attention/kernels)
 add_subdirectory(src/models/moe/kernels)
 add_subdirectory(src/models/rnn/kernels)
-
-# Enable testing
-enable_testing()
 
 # Print build configuration summary
 message(STATUS "Max LLM Build Configuration")

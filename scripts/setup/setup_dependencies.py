@@ -32,6 +32,8 @@ CHECKS = {
     "ninja": ("build", "ninja-build"),
 }
 
+PYTHON_DEV_PKGS = ["python3-dev", "python3-numpy"]
+
 COMPILERS = {
     "C": ["gcc", "clang"],
     "C++": ["g++", "clang++"],
@@ -367,6 +369,21 @@ def main() -> int:
         icon = f"{GREEN}✓{NC}" if result.passed else f"{RED}✗{NC}"
         print(f"  {icon} {result.name:<20} {result.version or result.msg}")
         if not result.passed:
+            errors += 1
+
+    # Python dev headers / NumPy for CMake
+    print(f"\n{CYAN}Python Dev{NC}")
+    missing_py: list[str] = [pkg for pkg in PYTHON_DEV_PKGS if not package_installed(pkg)]
+    if missing_py:
+        if not missing_system:
+            apt_update()
+        apt_install(missing_py)
+
+    for pkg in PYTHON_DEV_PKGS:
+        installed = package_installed(pkg)
+        icon = f"{GREEN}✓{NC}" if installed else f"{RED}✗{NC}"
+        print(f"  {icon} {pkg:<20} {'installed' if installed else 'missing'}")
+        if not installed:
             errors += 1
 
     # Compilers

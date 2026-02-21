@@ -43,6 +43,7 @@ env/
 .mypy_cache/
 .coverage
 htmlcov/
+artifacts/
 .tox/
 .ruff_cache/
 

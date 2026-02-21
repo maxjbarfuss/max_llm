@@ -1,8 +1,10 @@
 # Position (RoPE) tests
 
-find_package(GTest CONFIG)
+if(MAX_LLM_ENABLE_GTEST)
+    find_package(GTest CONFIG)
+endif()
 
-if(GTest_FOUND)
+if(MAX_LLM_ENABLE_GTEST AND GTest_FOUND)
     add_executable(test_position test_placeholder.cpp)
 
     target_link_libraries(test_position
@@ -21,5 +23,5 @@ if(GTest_FOUND)
 
     message(STATUS "Position tests enabled")
 else()
-    message(STATUS "GTest not found; skipping position tests")
+    message(STATUS "GTest disabled or not found; skipping position tests")
 endif()

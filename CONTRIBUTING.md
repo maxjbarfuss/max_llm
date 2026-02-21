@@ -19,7 +19,8 @@ If documents conflict during implementation, follow [design/PLAN.md](design/PLAN
 4. Implement with TDD and typed interfaces per [design/DESIGN.md](design/DESIGN.md#coding-standards).
 5. Run local validation (see below).
 6. Update [design/PLAN.md](design/PLAN.md#current-session-scratch-pad) (`Current Session Scratch Pad`, `Running Session Log`).
-7. Open PR: validate via [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md#pr-validation-checklist) checklist (Summary, Validation, Risks & Next).
+7. Commit locally with small commit message.
+8. Open PR (optional): validate via [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md#pr-validation-checklist) checklist (Summary, Validation, Risks & Next).
 
 ## Local Validation
 

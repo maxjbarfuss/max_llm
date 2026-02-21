@@ -333,6 +333,7 @@ Stable baseline: **BF16 + AMP** throughout (well-supported, numerically safe). L
 - Keep edits focused and atomic
 - Preserve API stability unless the change is intentional and documented
 - Add/adjust tests with each behavior change
+- Commit local frequently after passing quick tests
 
 **Session end:**
 - Update [PLAN.md](PLAN.md#current-session-scratch-pad) (`Scratch Pad` + `Running Session Log`) with completed work, next step, and any blockers

@@ -1,7 +1,22 @@
 .PHONY: help lint format format-check type-check \
 		 build build-release build-debug cmake-configure cmake-configure-debug cmake-build cmake-test \
-		 test tests test-py test-cpp test-cov cpp-lint cpp-format cpp-format-check \
+		 test tests test-quick test-py test-py-quick test-cpp test-cov cpp-lint cpp-format cpp-format-check \
          clean clean-py clean-cmake pre-commit-run
+
+ARTIFACTS_DIR ?= artifacts/test
+PYTEST_JUNIT ?= $(ARTIFACTS_DIR)/junit-py.xml
+PYTEST_COV_XML ?= $(ARTIFACTS_DIR)/coverage-py.xml
+PYTEST_SUMMARY ?= $(ARTIFACTS_DIR)/summary-py.md
+PYTEST_QUICK_JUNIT ?= $(ARTIFACTS_DIR)/junit-py-quick.xml
+PYTEST_QUICK_COV_XML ?= $(ARTIFACTS_DIR)/coverage-py-quick.xml
+PYTEST_QUICK_SUMMARY ?= $(ARTIFACTS_DIR)/summary-py-quick.md
+PYTEST_COV_JUNIT ?= $(ARTIFACTS_DIR)/junit-py-cov.xml
+PYTEST_COV_XML ?= $(ARTIFACTS_DIR)/coverage-py-cov.xml
+PYTEST_COV_SUMMARY ?= $(ARTIFACTS_DIR)/summary-py-cov.md
+PYTEST_COV_HTML ?= $(ARTIFACTS_DIR)/htmlcov
+CTEST_JUNIT ?= $(ARTIFACTS_DIR)/junit-cpp.xml
+CTEST_SUMMARY ?= $(ARTIFACTS_DIR)/summary-cpp.md
+TEST_QUICK_SUMMARY ?= $(ARTIFACTS_DIR)/summary-quick.md
 
 help:
 	@echo "Max LLM Development Commands:"
@@ -21,7 +36,9 @@ help:
 	@echo "  ✅ Testing:"
 	@echo "    make test                 - Run all tests (Python + C++)"
 	@echo "    make tests                - Run all tests (Python + C++), alias for make test"
+	@echo "    make test-quick            - Run fast mixed tests (Python unit + C++ tests)"
 	@echo "    make test-py              - Run pytest (Python unit tests)"
+	@echo "    make test-py-quick        - Run pytest on tests/unit only"
 	@echo "    make test-cpp             - Run ctest (C++ unit tests, if configured)"
 	@echo "    make test-cov             - Run pytest with coverage report"
 	@echo ""
@@ -78,24 +95,54 @@ test: test-py test-cpp
 
 tests: test
 
+test-quick: test-py-quick test-cpp
+	@echo "✓ Quick mixed tests complete"
+	@printf "# Test Summary (Quick)\n\n- Python: $(PYTEST_QUICK_JUNIT)\n- Python coverage: $(PYTEST_QUICK_COV_XML)\n- C++: $(CTEST_JUNIT)\n" > $(TEST_QUICK_SUMMARY)
+	@echo "✓ Summary written to $(TEST_QUICK_SUMMARY)"
+
 test-py:
 	@echo "Running Python tests..."
-	pytest tests/ -v --tb=short
+	@mkdir -p $(ARTIFACTS_DIR)
+	@status=0; \
+	pytest tests/ -v --tb=short --junitxml=$(PYTEST_JUNIT) \
+		--cov=src --cov-report=xml:$(PYTEST_COV_XML) --cov-report=term-missing || status=$$?; \
+	printf "# Test Summary (Python)\n\n- JUnit: $(PYTEST_JUNIT)\n- Coverage: $(PYTEST_COV_XML)\n" > $(PYTEST_SUMMARY); \
+	exit $$status
 	@echo "✓ Python tests complete"
+
+test-py-quick:
+	@echo "Running Python unit tests (quick)..."
+	@mkdir -p $(ARTIFACTS_DIR)
+	@status=0; \
+	pytest tests/unit -v --tb=short --junitxml=$(PYTEST_QUICK_JUNIT) \
+		--cov=src --cov-report=xml:$(PYTEST_QUICK_COV_XML) --cov-report=term-missing || status=$$?; \
+	printf "# Test Summary (Python Quick)\n\n- JUnit: $(PYTEST_QUICK_JUNIT)\n- Coverage: $(PYTEST_QUICK_COV_XML)\n" > $(PYTEST_QUICK_SUMMARY); \
+	exit $$status
+	@echo "✓ Python quick tests complete"
 
 test-cpp:
 	@echo "Running C++ tests..."
-	@if command -v nvcc >/dev/null 2>&1 || test -n "${CUDACXX}"; then \
+	@mkdir -p $(ARTIFACTS_DIR)
+	@if command -v nvcc >/dev/null 2>&1 || command -v nvcc.exe >/dev/null 2>&1 || test -n "${CUDACXX}"; then \
 		$(MAKE) cmake-configure; \
-		cd $(CMAKE_BUILD_DIR) && ctest --output-on-failure -j$(nproc) || echo "Note: GTest may not be installed"; \
+		status=0; \
+		cd $(CMAKE_BUILD_DIR) && ctest --output-on-failure -j$(nproc) --output-junit $(CTEST_JUNIT) || status=$$?; \
+		printf "# Test Summary (C++)\n\n- JUnit: $(CTEST_JUNIT)\n" > $(CTEST_SUMMARY); \
+		exit $$status; \
 	else \
+		printf "# Test Summary (C++)\n\n- JUnit: skipped (no CUDA compiler)\n" > $(CTEST_SUMMARY); \
 		echo "CUDA compiler not found; skipping C++ tests"; \
 	fi
 
 test-cov:
 	@echo "Running Python tests with coverage..."
-	pytest tests/ --cov=src --cov-report=html --cov-report=term-missing -v
-	@echo "✓ Coverage report generated (htmlcov/index.html)"
+	@mkdir -p $(ARTIFACTS_DIR)
+	@status=0; \
+	pytest tests/ -v --tb=short --junitxml=$(PYTEST_COV_JUNIT) \
+		--cov=src --cov-report=xml:$(PYTEST_COV_XML) --cov-report=html:$(PYTEST_COV_HTML) --cov-report=term-missing || status=$$?; \
+	printf "# Test Summary (Python Coverage)\n\n- JUnit: $(PYTEST_COV_JUNIT)\n- Coverage XML: $(PYTEST_COV_XML)\n- Coverage HTML: $(PYTEST_COV_HTML)/index.html\n" > $(PYTEST_COV_SUMMARY); \
+	exit $$status
+	@echo "✓ Coverage report generated ($(PYTEST_COV_HTML)/index.html)"
 
 # Code Quality
 lint:
