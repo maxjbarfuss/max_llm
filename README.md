@@ -88,6 +88,10 @@ graph TD
 | 🟡 Yellow | 9 | GRU hybrid blocks |
 | Rounded pill | — | Replaced predecessors (colored by introducing phase) |
 
+## CI/CD
+
+Continuous integration runs on every push via GitHub Actions. See [scripts/ci/README.md](scripts/ci/README.md) for CI monitoring tools and working commands.
+
 ## Docs Summary
 
 - [SETUP.md](SETUP.md): environment setup (WSL2 on Windows; Linux/macOS/WSL1 not supported)
