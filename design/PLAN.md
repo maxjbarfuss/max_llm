@@ -441,15 +441,10 @@ Evaluation:
 
 > *Ephemeral — clear this section at commit time. Use for in-progress notes only.*
 
-- Implemented test artifact outputs (JUnit XML, coverage XML, summaries) and added `test-quick` target.
-- CI test job now runs both `make test-py` and `make test-cpp`.
-- Added detection for nvcc.exe so WSL/Windows CUDA installs run C++ tests instead of skipping.
-- Added CMake fallback to pick up `CUDACXX` or `/usr/local/cuda/bin/nvcc` during configure.
-- Added a CUDA smoke test that does not depend on GTest.
-- Added Python dev package checks to setup for CMake FindPython3 requirements.
-- Limited GCC/Clang warning/opt flags to C/C++ only so nvcc build works.
-- Included CTest to generate DartConfiguration.tcl for CMake Tools test runs.
-- Moved CTest/enable_testing before subdirectories so tests register.
+- **Phase 2 kickoff:** Implemented CI/local CUDA strategy.
+  - **CI Fix (already in place):** Pip caching + CPU-only PyTorch in `.github/workflows/ci.yml` prevents timeout.
+  - **Local CUDA Requirement:** Added Step 4b to `setup.sh` — verifies `torch.cuda.is_available()` after install; fails with clear error if CUDA not detected. Ensures local dev always uses CUDA while CI runs CPU-only safely.
+- Previous session (listed below): Test artifacts, CUDA smoke test, GTest guarding, CMake fixes.
 
 ## Running Session Log (Brief)
 
@@ -457,11 +452,11 @@ Evaluation:
 
 | Date | Commit | Summary |
 |---|---|---|
+| 2026-02-20 | post-`cfe06c6`+unstaged | CI/local CUDA strategy: Verified pip caching + CPU-only PyTorch already in `.github/workflows/ci.yml` (timeout fix in place). Added Step 4b to `setup.sh` with strict `torch.cuda.is_available()` enforcement—now fails with clear message if CUDA unavailable locally, ensuring local dev always uses CUDA while CI safely runs CPU-only PyTorch. |
+| 2026-02-20 | `cfe06c6` | Test infrastructure hardening and local commit: Added test artifact outputs (JUnit XML, coverage XML, summaries), created `test-quick`/`test-py-quick` targets, extended CUDA detection in Makefile for nvcc.exe (WSL compat), added CMake CUDA compiler fallback, integrated CTest/enable_testing, created CUDA smoke test (no GTest), added Python dev packages to setup, limited GCC/Clang flags to C/C++ only, and guarded GTest by `MAX_LLM_ENABLE_GTEST` across 5 test CMakeLists.txt files. All tests pass: 31 Python + 1 CUDA. |
 | 2026-02-20 | post-`5aced98`+unstaged | Added test artifacts and quick-test targets in Makefile (JUnit XML, coverage XML, summaries), ignored artifacts/, aligned CI test job to run Python + C++ targets, expanded CUDA detection for nvcc.exe so tests no longer skip on WSL installs, added CMake CUDA compiler fallback for `CUDACXX`/`/usr/local/cuda/bin/nvcc`, introduced a CUDA smoke test that runs without GTest, added Python dev package checks to setup for CMake FindPython3, limited GCC/Clang flags to C/C++ so nvcc builds succeed, included CTest so DartConfiguration.tcl is generated, and moved CTest/enable_testing before subdirectories to register tests. |
 | 2026-02-20 (cont'd) | post-`5aced98`+unstaged | Final doc sync and consistency sweep: unified phased roadmap/data strategy and governance (tasks grouping, effort/risk, kill criteria, decision tags P1–P9, artifact naming, regression gate), synced extensions (install script + .vscode), fixed README anchor, corrected Phase 2 overfit criterion (10K subset), tightened tokenizer promotion criterion, removed duplicate test-target line, added `make format-check` to docs, and renumbered phases to 1–9 everywhere. |
 | 2026-02-20 | post-`5aced98` | Setup hardening: fixed `source setup.sh` WSL2 failures (Python 3.13→3.10 fallback, CUDA auto-detect 12.9, venv corruption fix). All tests pass: Python 3.13.12, PyTorch 2.10.0+cu128, CUDA available. |
-| 2026-02-19 | post-`48d2ff2` | Setup optimization: merged system-check/install scripts (231→114 lines, 54% reduction). Idempotent, re-runnable, zero user input. |
-| 2026-02-19 (earlier) | post-`48d2ff2` | Dependency + testing finalization: phase-based Python deps, GTest + pytest scaffolding, unified Makefile (18 targets), vertical slice architecture (embeddings/position/attention/moe/rnn), removed legacy cpp/. |
 
 ---
 

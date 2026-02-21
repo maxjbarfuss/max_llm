@@ -115,11 +115,21 @@ uv pip install --quiet "xformers>=0.0.22" "deepspeed>=0.11.0" "bitsandbytes>=0.4
   echo -e "${YELLOW}⚠${NC} Some GPU packages failed — check manually"
 echo -e "${GREEN}✓${NC} PyTorch and GPU packages installed\n"
 
+# Step 4b: Verify CUDA is available (required for local development)
+echo -e "${BLUE}Step 4b: CUDA Requirement Check${NC}"
+if ! $PYTHON_CMD -c "import torch; assert torch.cuda.is_available(), 'CUDA not available'; print(f'  ✓ CUDA available: {torch.cuda.get_device_name(0)}'); print(f'  ✓ Compute capability: {torch.cuda.get_device_capability(0)}')" 2>/dev/null; then
+  echo -e "${RED}Error: CUDA is required for local development but not available.${NC}"
+  echo -e "  Make sure CUDA 12.1+ is installed and NVIDIA drivers are up to date."
+  echo -e "  For CI environments, use CPU-only PyTorch (see .github/workflows/ci.yml)."
+  exit_script 1
+fi
+echo ""
+
 # Step 5: Verify installation
 echo -e "${BLUE}Step 5: Verification${NC}"
 $PYTHON_CMD -m pip check || echo -e "${YELLOW}⚠${NC} pip check reported warnings"
-$PYTHON_CMD -c "import torch; avail = torch.cuda.is_available(); print(f'  CUDA available: {avail}'); print(f'  PyTorch: {torch.__version__}')" 2>/dev/null || \
-  echo -e "${YELLOW}⚠${NC} Could not verify torch/CUDA (torch may not be importable yet)"
+$PYTHON_CMD -c "import torch; print(f'  PyTorch: {torch.__version__}')" 2>/dev/null || \
+  echo -e "${YELLOW}⚠${NC} Could not verify torch (torch may not be importable yet)"
 
 # Step 6: VSCode extensions (optional)
 echo ""
