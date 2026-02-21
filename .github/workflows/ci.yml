@@ -7,38 +7,7 @@ on:
     branches: [main, develop]
 
 jobs:
-  lint-and-type-check:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12"]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-
-      - name: Lint with ruff
-        run: ruff check src tests
-
-      - name: Format check with black
-        run: black --check src tests
-
-      - name: Type check with mypy
-        run: mypy src
-
-  test:
-    needs: lint-and-type-check
+  ci:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -60,11 +29,11 @@ jobs:
           pip install -e .
           pip install torch --index-url https://download.pytorch.org/whl/cpu
 
-      - name: Lint
-        run: make lint
+      - name: Lint with ruff
+        run: ruff check src tests
 
-      - name: Run Python tests
-        run: make test-py
+      - name: Format check with black
+        run: black --check src tests
 
-      - name: Run C++ tests
-        run: make test-cpp
+      - name: Type check with mypy
+        run: mypy src
