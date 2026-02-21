@@ -1,8 +1,8 @@
 """TOML loading helpers for configuration modules."""
 
 import importlib
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any, cast
 
 if sys.version_info >= (3, 11):

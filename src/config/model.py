@@ -26,6 +26,13 @@ class ModelConfig:
 
     def __post_init__(self) -> None:
         """Validate model configuration."""
+        self._validate_basic()
+        self._validate_dims()
+        self._validate_moe()
+        self._set_defaults()
+
+    def _validate_basic(self) -> None:
+        """Validate basic scalar constraints."""
         if self.hidden_size <= 0:
             raise ValueError("hidden_size must be positive")
         if self.num_layers <= 0:
@@ -36,6 +43,9 @@ class ModelConfig:
             raise ValueError("max_seq_length must be positive")
         if not (0 <= self.dropout < 1):
             raise ValueError("dropout must be in [0, 1)")
+
+    def _validate_dims(self) -> None:
+        """Validate dimension alignments and divisibility."""
         if self.hidden_size % 64 != 0:
             raise ValueError(f"hidden_size ({self.hidden_size}) must be multiple of 64")
         if self.hidden_size % self.num_heads != 0:
@@ -45,7 +55,6 @@ class ModelConfig:
             )
         if self.vocab_size % 64 != 0:
             raise ValueError(f"vocab_size ({self.vocab_size}) must be multiple of 64")
-
         if self.mla_latent_dim <= 0:
             raise ValueError("mla_latent_dim must be positive")
         if self.mla_latent_dim % self.num_heads != 0:
@@ -53,12 +62,13 @@ class ModelConfig:
                 f"mla_latent_dim ({self.mla_latent_dim}) must be divisible by "
                 f"num_heads ({self.num_heads})"
             )
-
         if self.intermediate_size is not None and self.intermediate_size <= 0:
             raise ValueError("intermediate_size must be positive when provided")
         if self.gru_hidden_size is not None and self.gru_hidden_size <= 0:
             raise ValueError("gru_hidden_size must be positive when provided")
 
+    def _validate_moe(self) -> None:
+        """Validate mixture-of-experts configuration."""
         if self.moe_frequency > 0:
             if self.num_experts < 2:
                 raise ValueError("Need at least 2 experts for MoE")
@@ -68,6 +78,8 @@ class ModelConfig:
                     f"between 1 and num_experts ({self.num_experts})"
                 )
 
+    def _set_defaults(self) -> None:
+        """Set default values for optional fields."""
         if self.intermediate_size is None:
             object.__setattr__(self, "intermediate_size", 4 * self.hidden_size)
         if self.gru_hidden_size is None:

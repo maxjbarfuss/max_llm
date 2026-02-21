@@ -40,7 +40,7 @@ for r in d.get('workflow_runs', []):
     branch = r.get('head_branch', '?')
     created = r.get('created_at', '')[:10]
     title = r['display_title'][:48]
-    
+
     print(f"{run_num:<5} {status:<12} {conclusion:<10} {branch:<15} {created:<16} {title:<50}")
 
 print(f"\nTotal: {d.get('total_count', 0)} runs")

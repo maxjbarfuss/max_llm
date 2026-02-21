@@ -20,6 +20,23 @@ echo -e "${BLUE}=== Max LLM Setup ===${NC}\n"
 grep -qi microsoft /proc/version 2>/dev/null || { echo -e "${RED}Error: WSL2 required${NC}"; exit_script 1; }
 [ $SOURCED -eq 0 ] && echo -e "${YELLOW}Note: source setup.sh to keep venv active\n${NC}"
 
+# Pre-step: GitHub Token (for API access in CI debugging)
+echo -e "${BLUE}Pre-Step: GitHub Token${NC}"
+if [ -z "$GITHUB_TOKEN" ]; then
+    if [ -f ".github/.github_token" ]; then
+        export GITHUB_TOKEN=$(cat ".github/.github_token")
+        echo -e "${GREEN}✓${NC} GitHub token loaded from .github/.github_token"
+    else
+        echo -e "${YELLOW}⚠${NC} No GitHub token found. To enable API access:"
+        echo -e "  1. Create a personal access token at https://github.com/settings/tokens"
+        echo -e "  2. Save it to .github/.github_token (will be in .gitignore)"
+        echo -e "  3. Run: export GITHUB_TOKEN=\$(cat .github/.github_token)"
+    fi
+else
+    echo -e "${GREEN}✓${NC} GitHub token set via environment variable"
+fi
+echo ""
+
 # Pre-step: Find Python 3.10+ with venv support; install 3.13 only if none found
 echo -e "${BLUE}Pre-Step: Python${NC}"
 PYTHON_CMD=""

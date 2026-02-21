@@ -33,7 +33,12 @@ class TrainingConfig:
 
     def __post_init__(self) -> None:
         """Validate training configuration."""
-        # Coerce TOML-loaded types
+        self._coerce_toml_types()
+        self._validate_basics()
+        self._validate_schedule()
+
+    def _coerce_toml_types(self) -> None:
+        """Coerce TOML-loaded types to expected Python types."""
         if isinstance(self.betas, list):
             self.betas = tuple(self.betas)
         self.precision_schedule = [
@@ -41,6 +46,8 @@ class TrainingConfig:
             for entry in self.precision_schedule
         ]
 
+    def _validate_basics(self) -> None:
+        """Validate basic training hyperparameters."""
         if self.batch_size <= 0:
             raise ValueError("batch_size must be positive")
         if self.gradient_accumulation_steps <= 0:
@@ -53,9 +60,11 @@ class TrainingConfig:
             raise ValueError("weight_decay must be in [0, 1)")
         if self.warmup_steps > self.max_steps:
             raise ValueError("warmup_steps must be <= max_steps")
+
+    def _validate_schedule(self) -> None:
+        """Validate precision schedule."""
         if not self.precision_schedule:
             raise ValueError("precision_schedule cannot be empty")
-
         for start, end, precision in self.precision_schedule:
             if precision not in ("fp4", "fp8", "bf16", "mixed"):
                 raise ValueError(f"Invalid precision: {precision}")

@@ -47,6 +47,9 @@ artifacts/
 .tox/
 .ruff_cache/
 
+# Credentials (never commit)
+.github/.github_token
+
 # Build and dist
 *.dist-info/
 *.egg-info/

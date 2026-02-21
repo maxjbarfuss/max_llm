@@ -156,8 +156,10 @@ class TestModelConfig:
 
     def test_frozen_config(self):
         """Config should be immutable after creation."""
+        from dataclasses import FrozenInstanceError
+
         config = make_model_config()
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(FrozenInstanceError):
             config.hidden_size = 1024
 
 
