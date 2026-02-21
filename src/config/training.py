@@ -42,8 +42,7 @@ class TrainingConfig:
         if isinstance(self.betas, list):
             self.betas = tuple(self.betas)
         self.precision_schedule = [
-            tuple(entry) if isinstance(entry, list) else entry
-            for entry in self.precision_schedule
+            tuple(entry) if isinstance(entry, list) else entry for entry in self.precision_schedule
         ]
 
     def _validate_basics(self) -> None:
