@@ -27,10 +27,14 @@ echo "=== Jobs for Run #$RUN_ID ==="
 echo ""
 
 curl -s -H "Authorization: token $GITHUB_TOKEN" \
-    "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/jobs" | python3 << EOF
-import json, sys
+    "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/jobs" > /tmp/jobs_data.json
 
-d = json.load(sys.stdin)
+python3 << 'EOF'
+import json
+
+with open('/tmp/jobs_data.json') as f:
+    d = json.load(f)
+
 print(f"{'Job Name':<50} {'Status':<12} {'Conclusion':<12}")
 print("-" * 80)
 
@@ -40,7 +44,7 @@ for job in d.get('jobs', []):
     conclusion = job.get('conclusion') or '-'
     print(f"{name:<50} {status:<12} {conclusion:<12}")
 
-print(f"\n{'Job URLs:'}")
+print(f"\nJob URLs:")
 for job in d.get('jobs', []):
     url = job['html_url']
     print(f"  {job['name']}: {url}")

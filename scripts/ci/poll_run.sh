@@ -22,13 +22,22 @@ poll_count=0
 while [ $poll_count -lt $MAX_POLLS ]; do
     if [ -z "$RUN_NUMBER" ]; then
         # Get latest run
-        RUN_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/$REPO/actions/runs?per_page=1")
-        RUN_ID=$(echo "$RUN_DATA" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['workflow_runs'][0]['id'] if d.get('workflow_runs') else '')")
+        curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO/actions/runs?per_page=1" > /tmp/latest_run.json
+        RUN_DATA=$(cat /tmp/latest_run.json | python3 -c "import json, sys; d=json.load(sys.stdin); print(json.dumps(d['workflow_runs'][0] if d.get('workflow_runs') else {}))")
+        RUN_ID=$(echo "$RUN_DATA" | python3 -c "import json, sys; d=json.load(sys.stdin); print(d.get('id', ''))")
     else
-        RUN_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/$REPO/actions/runs" | python3 -c "import sys, json; d=json.load(sys.stdin); runs=[r for r in d.get('workflow_runs',[]) if r['run_number']==$RUN_NUMBER]; print(json.dumps(runs[0] if runs else {}))")
-        RUN_ID=$(echo "$RUN_DATA" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('id', ''))")
+        curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO/actions/runs" > /tmp/all_runs.json
+        RUN_DATA=$(python3 << PYEOF
+import json
+with open('/tmp/all_runs.json') as f:
+    d = json.load(f)
+runs = [r for r in d.get('workflow_runs', []) if r['run_number'] == $RUN_NUMBER]
+print(json.dumps(runs[0] if runs else {}))
+PYEOF
+)
+        RUN_ID=$(echo "$RUN_DATA" | python3 -c "import json, sys; d=json.load(sys.stdin); print(d.get('id', ''))")
     fi
 
     if [ -z "$RUN_ID" ]; then
@@ -36,11 +45,11 @@ while [ $poll_count -lt $MAX_POLLS ]; do
         exit 1
     fi
 
-    STATUS=$(echo "$RUN_DATA" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('status', 'unknown'))")
-    CONCLUSION=$(echo "$RUN_DATA" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('conclusion', '-'))")
-    RUN_NUM=$(echo "$RUN_DATA" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('run_number', '?'))")
-    BRANCH=$(echo "$RUN_DATA" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('head_branch', '?'))")
-    TITLE=$(echo "$RUN_DATA" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('display_title', '')[:50])")
+    STATUS=$(echo "$RUN_DATA" | python3 -c "import json, sys; d=json.load(sys.stdin); print(d.get('status', 'unknown'))")
+    CONCLUSION=$(echo "$RUN_DATA" | python3 -c "import json, sys; d=json.load(sys.stdin); print(d.get('conclusion', '-'))")
+    RUN_NUM=$(echo "$RUN_DATA" | python3 -c "import json, sys; d=json.load(sys.stdin); print(d.get('run_number', '?'))")
+    BRANCH=$(echo "$RUN_DATA" | python3 -c "import json, sys; d=json.load(sys.stdin); print(d.get('head_branch', '?'))")
+    TITLE=$(echo "$RUN_DATA" | python3 -c "import json, sys; d=json.load(sys.stdin); print(d.get('display_title', '')[:50])")
 
     TIMESTAMP=$(date '+%H:%M:%S')
     echo "[$TIMESTAMP] Run #$RUN_NUM ($BRANCH): $STATUS [$CONCLUSION] - $TITLE"

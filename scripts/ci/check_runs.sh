@@ -21,11 +21,15 @@ echo "=== GitHub Workflow Runs (Latest $COUNT) ==="
 echo ""
 
 curl -s -H "Authorization: token $GITHUB_TOKEN" \
-    "https://api.github.com/repos/$REPO/actions/runs?per_page=$COUNT" | python3 << 'EOF'
-import json, sys
+    "https://api.github.com/repos/$REPO/actions/runs?per_page=$COUNT" > /tmp/runs_list.json
+
+python3 << 'EOF'
+import json
 from datetime import datetime
 
-d = json.load(sys.stdin)
+with open('/tmp/runs_list.json') as f:
+    d = json.load(f)
+
 print(f"{'Run':<5} {'Status':<12} {'Conclusion':<10} {'Branch':<15} {'Created':<16} {'Title':<50}")
 print("-" * 130)
 
