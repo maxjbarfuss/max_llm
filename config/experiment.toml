@@ -1,3 +1,67 @@
+# Phase 2 experiment config — prototype baseline
+# Small model + short runs for fast iteration and overfit testing.
+
 [experiment]
-name = "maxllm-baseline"
-output_dir = "./outputs"
+name = "maxllm-p2-baseline"
+output_dir = "./outputs/p2-baseline"
+
+[model]
+hidden_size = 128
+num_layers = 1
+num_heads = 4
+vocab_size = 128          # 128-char printable ASCII tokenizer
+max_seq_length = 256
+mla_latent_dim = 64       # placeholder — used from Phase 8
+rope_base = 10000         # placeholder — used from Phase 5
+intermediate_size = 512   # 4 × hidden_size
+num_experts = 1           # MoE disabled (moe_frequency = 0)
+experts_per_token = 1
+moe_frequency = 0         # 0 = MoE disabled in Phase 2
+gru_hidden_size = 128     # placeholder — used from Phase 9
+dropout = 0.0             # no dropout; overfitting is the Phase 2 goal
+
+[training]
+batch_size = 4
+gradient_accumulation_steps = 1
+max_steps = 500
+warmup_steps = 10
+learning_rate = 0.001
+weight_decay = 0.0
+betas = [0.9, 0.95]
+epsilon = 1e-8
+gradient_clip_norm = 1.0
+precision_schedule = [[0, -1, "bf16"]]
+moe_balance_loss_weight = 0.0
+distributed_backend = "ddp"
+checkpoint_interval = 100
+eval_interval = 50
+log_interval = 10
+keep_last_n_checkpoints = 3
+use_torch_compile = false
+use_flash_attention = false
+selective_checkpointing = false
+
+[inference]
+device = "auto"
+max_new_tokens = 32
+temperature = 1.0
+top_p = 0.9
+top_k = 0
+use_kv_cache = false      # no KV cache in Phase 2
+kv_cache_dtype = "bf16"   # required field; unused until Phase 6
+
+[data]
+dataset_path = "./data/tinystories"
+tokenizer_name = "char"   # Phase 2 uses char tokenizer; not loaded through DataConfig
+tokenizer_backend = "gpt2_bpe"  # placeholder; actual backend wired in src/tokenizer/
+unigram_model_path = ""
+max_length = 128          # chunk size fed to the model (≤ model.max_seq_length)
+num_workers = 0
+prefetch_factor = 2
+pin_memory = false
+persistent_workers = false
+streaming = false
+cache_dir = "./data/cache"
+num_shards = 1
+validation_split = 0.1
+seed = 42

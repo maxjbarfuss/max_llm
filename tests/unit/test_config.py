@@ -530,3 +530,30 @@ seed = 42
         assert config.training.batch_size == 16
         assert config.inference.max_new_tokens == 128
         assert config.data.tokenizer_name == "gpt2"
+
+
+class TestP2ExperimentToml:
+    """Smoke tests for the on-disk Phase 2 experiment.toml config file."""
+
+    def test_p2_toml_loads(self):
+        """config/experiment.toml loads and reflects Phase 2 model values."""
+        config_path = Path(__file__).parents[2] / "config" / "experiment.toml"
+        config = ExperimentConfig.from_toml(config_path)
+        assert config.name == "maxllm-p2-baseline"
+        assert config.model.hidden_size == 128
+        assert config.model.vocab_size == 128
+        assert config.model.num_layers == 1
+
+    def test_p2_toml_training_values(self):
+        """P2 training config reflects prototype-scale hyperparameters."""
+        config_path = Path(__file__).parents[2] / "config" / "experiment.toml"
+        config = ExperimentConfig.from_toml(config_path)
+        assert config.training.max_steps == 500
+        assert config.training.use_torch_compile is False
+        assert config.training.use_flash_attention is False
+
+    def test_p2_toml_data_seq_length(self):
+        """P2 data max_length is within model max_seq_length."""
+        config_path = Path(__file__).parents[2] / "config" / "experiment.toml"
+        config = ExperimentConfig.from_toml(config_path)
+        assert config.data.max_length <= config.model.max_seq_length
