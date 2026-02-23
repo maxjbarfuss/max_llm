@@ -36,20 +36,36 @@ For detailed execution: read below. For architectural context: see [DESIGN.md](D
 
 ## Next Steps
 
-**Current focus: Phase 2 kickoff review**
+**Current focus: Phase 2 — prototype baseline**
 
-Phase 1 is complete. Next step is reviewing and confirming the Phase 2 plan and priorities.
+Phase 1 is complete. Phase 2 starts with a prototype-first path to get a runnable baseline quickly, then harden for reproducibility.
 
-**Phase 2 immediate priorities (after Phase 1):**
-1. Implement Phase 2 concrete components: `ExperimentConfig`, character-level tokenizer, SimpleLM (token emb → FFN → LM head), training loop skeleton
-2. Source TinyStories + WikiText-103 subset (~1–10M tokens preformatted)
-3. Build data pipeline: load text, split train/val, emit token chunks
-4. Verify reproducible overfit on single batch
-5. Add Phase 9-shaped placeholder interfaces (attention, moe, rnn, inference, alignment) with explicit stub guards (import-safe + `NotImplementedError` boundaries)
-6. Add unit tests: config loading, tokenizer roundtrip (encode/decode), data splitting, model forward shape, loss computation, checkpoint save/load, seed determinism
-7. Implement seed control (Python, NumPy, PyTorch) and basic training loop: forward → loss → backward → step → checkpoint
-8. Verify bit-identical reproduction: same seed → same loss trajectory
-9. Run overfit test: train loss < 0.1 on 10K-token subset within 500 steps
+**Phase 2 kickoff flow (prototype-first):**
+
+1. **Bootstrap runnable baseline (MVP)**
+	- Implement `ExperimentConfig` wiring and minimal `train.py` entrypoint
+	- Add character-level tokenizer (encode/decode, 128-char ASCII)
+	- Add `BaseLearningModel` interface (`src/models/learning_model/`) and `SimpleLM` implementation
+	- Add minimal training loop (`forward → loss → backward → step`)
+
+2. **Wire minimal data path**
+	- Source TinyStories + WikiText-103 subset (~1–10M tokens)
+	- Build simple train/val split + chunked batch loader
+	- Run first end-to-end train command successfully
+
+3. **Prove quick learning signal**
+	- Overfit a tiny subset (10K tokens)
+	- Target: train loss < 0.1 within 500 steps
+
+4. **Lock reproducibility and reliability**
+	- Add seed control (Python, NumPy, PyTorch CPU/CUDA)
+	- Add checkpoint save/restore (model + optimizer + step)
+	- Verify deterministic replay (same seed → same loss trajectory)
+
+5. **Add tests and interface guards**
+	- Unit tests: config, tokenizer, data split, model forward shape, loss, checkpoint, seed
+	- Add Phase 9-shaped placeholder interfaces (attention/moe/rnn/inference/alignment) with explicit stub guards
+	- Add placeholder boundary tests (import-safe + `NotImplementedError` contract)
 
 **Phase 2 exit criteria:**
 - ☐ `python train.py --config config/experiment.toml` trains end-to-end, loss decreases monotonically over 100 steps
@@ -57,6 +73,16 @@ Phase 1 is complete. Next step is reviewing and confirming the Phase 2 plan and 
 - ☐ ≥8 unit tests passing (config, tokenizer, data, model, loss, checkpoint, seed, metrics)
 - ☐ TinyStories + WikiText-103 subset validated (token count matches expected)
 - ☐ Overfit test achieves target loss < 0.1 within 500 steps
+
+**Immediate execution order (start now):**
+1. Fill `config/experiment.toml` all sections (P2 values: `hidden_size=128`, `vocab_size=128`, 1 layer); `train.py` skeleton loads config, validates, exits 0
+2. `src/tokenizer/char_tokenizer.py` — 128-char printable ASCII; `encode`/`decode` with roundtrip tests
+3. `src/models/learning_model/` — `BaseLearningModel` ABC; `SimpleLM` (embedding → FFN → weight-tied LM head) with shape tests
+4. `src/data/loader.py` — in-memory text → token chunks; `src/training/loop.py` — forward → CE loss → backward → optimizer step
+5. Wire into `train.py`; first end-to-end run: loss is finite and decreases over 10 steps
+6. Overfit 10K-token subset (target: loss < 0.1 in 500 steps)
+7. Seed control + checkpoint save/restore; verify deterministic replay (same seed → same loss at step N+1)
+8. Phase 9-shaped placeholder stubs + contract tests; TinyStories/WikiText-103 data pipeline
 
 **Running tests:**
 - Quick mixed suite: `make test-quick` (fast Python + C++ quick gate)
@@ -133,8 +159,9 @@ Data:
 
 Components:
 - ☐ `ExperimentConfig` orchestrates `ModelConfig`, `TrainingConfig`, `DataConfig`, `InferenceConfig`
-- ☐ Character-level tokenizer with encode/decode tests
-- ☐ SimpleLM model: token embedding → single-layer linear FFN → LM head (weight-tied to embedding)
+- ☐ Character-level tokenizer (`src/tokenizer/char_tokenizer.py`): 128-char printable ASCII, encode/decode with roundtrip tests
+- ☐ `BaseLearningModel` ABC (`src/models/learning_model/base.py`): `forward` and factory interface; evolves across phases
+- ☐ `SimpleLM` (`src/models/learning_model/simple_lm.py`): token embedding → single-layer linear FFN → weight-tied LM head
 - ☐ Option B stubbing (now): implement Phase 2 concrete stubs plus Phase 9-shaped placeholder interfaces (attention, moe, rnn, inference, alignment) with import/compile-safe boundaries
 
 Training and evaluation:

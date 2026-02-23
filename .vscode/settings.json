@@ -35,5 +35,6 @@
   "chat.tools.terminal.autoApprove": {
     "./scripts/ci/check_runs.sh": true,
     "./scripts/ci/poll_run.sh": true
-  }
+  },
+  "markdown-preview-github-styles.colorTheme": "dark"
 }
