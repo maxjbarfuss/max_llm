@@ -17,12 +17,12 @@
 title: Phase 2 – Skeleton
 ---
 graph LR
-    A[Text]:::io --> B[Char Tokenizer]:::p2 --> C[Token Emb + Learned Pos]:::p2 --> D[Linear FFN]:::p2 --> E[LM Head]:::p2 --> F[Logits]:::io --> G[Greedy Sampling]:::p2 --> H[Text]:::io
+    A[Text]:::io --> B[Char Tokenizer]:::p2 --> C[Token Emb + Learned Pos]:::p2 --> D[GELU MLP]:::p2 --> E[LM Head]:::p2 --> F[Logits]:::io --> G[Greedy Sampling]:::p2 --> H[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
     classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
 ```
 
-- **Phase 2**: Text → Char Tokenizer → Token Emb + Learned Pos → Linear FFN → LM Head → Logits → Sampling → Text
+- **Phase 2**: Text → Char Tokenizer → Token Emb + Learned Pos → GELU MLP → LM Head → Logits → Sampling → Text
 
 ```mermaid
 ---

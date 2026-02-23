@@ -1,9 +1,8 @@
-"""Unit tests for the in-memory text data loader."""
+"""Unit tests for the in-memory token data loader."""
 
 import torch
 
 from src.data.loader import TextChunkDataset, make_data_loaders
-from src.tokenizer import CharTokenizer
 
 
 def _tokens(n: int) -> list[int]:
@@ -65,48 +64,67 @@ class TestTextChunkDataset:
 class TestMakeDataLoaders:
     """make_data_loaders split and batch behaviour."""
 
-    def _make_text(self, n_chars: int) -> str:
-        """Produce n_chars of ASCII text (cycling through a–z)."""
-        alphabet = "abcdefghijklmnopqrstuvwxyz "
-        return (alphabet * ((n_chars // len(alphabet)) + 1))[:n_chars]
-
     def test_returns_two_loaders(self):
         """Returns a (train_loader, val_loader) pair."""
-        tok = CharTokenizer()
-        text = self._make_text(200)
-        train_loader, val_loader = make_data_loaders(
-            text, tok, seq_len=10, batch_size=4
-        )
+        train_loader, val_loader = make_data_loaders(_tokens(200), seq_len=10, batch_size=4)
         assert train_loader is not None
         assert val_loader is not None
 
     def test_train_larger_than_val(self):
-        """Train split is larger than validation split."""
-        tok = CharTokenizer()
-        text = self._make_text(1000)
+        """Train split holds at least 85% of total chunks with a 0.1 validation split."""
         train_loader, val_loader = make_data_loaders(
-            text, tok, seq_len=10, batch_size=4, validation_split=0.1
+            _tokens(1000), seq_len=10, batch_size=4, validation_split=0.1
         )
-        assert len(train_loader.dataset) > len(val_loader.dataset)  # type: ignore[arg-type]
+        n_train = len(train_loader.dataset)  # type: ignore[arg-type]
+        n_val = len(val_loader.dataset)  # type: ignore[arg-type]
+        assert n_train > n_val
+        assert n_train / (n_train + n_val) > 0.85
 
     def test_batch_shapes(self):
         """Batches from train_loader have shape (batch_size, seq_len)."""
-        tok = CharTokenizer()
-        text = self._make_text(500)
-        train_loader, _ = make_data_loaders(
-            text, tok, seq_len=16, batch_size=4
-        )
+        train_loader, _ = make_data_loaders(_tokens(500), seq_len=16, batch_size=4)
         x, y = next(iter(train_loader))
         assert x.shape == (4, 16)
         assert y.shape == (4, 16)
 
     def test_val_batch_shapes(self):
         """Batches from val_loader have shape (batch_size, seq_len)."""
-        tok = CharTokenizer()
-        text = self._make_text(500)
-        _, val_loader = make_data_loaders(
-            text, tok, seq_len=8, batch_size=2
-        )
+        _, val_loader = make_data_loaders(_tokens(500), seq_len=8, batch_size=2)
         x, y = next(iter(val_loader))
         assert x.shape[1] == 8
         assert y.shape[1] == 8
+
+    def test_same_seed_produces_same_order(self):
+        """Identical seeds yield identical first-batch order."""
+        train1, _ = make_data_loaders(_tokens(200), seq_len=10, batch_size=4, seed=42)
+        train2, _ = make_data_loaders(_tokens(200), seq_len=10, batch_size=4, seed=42)
+        x1, _ = next(iter(train1))
+        x2, _ = next(iter(train2))
+        assert torch.equal(x1, x2)
+
+    def test_different_seeds_produce_different_order(self):
+        """Different seeds yield different first-batch orders."""
+        train1, _ = make_data_loaders(_tokens(200), seq_len=10, batch_size=4, seed=42)
+        train2, _ = make_data_loaders(_tokens(200), seq_len=10, batch_size=4, seed=99)
+        x1, _ = next(iter(train1))
+        x2, _ = next(iter(train2))
+        assert not torch.equal(x1, x2)
+
+    def test_validation_split_zero(self):
+        """validation_split=0.0 yields a full train set and an empty val dataset."""
+        train_loader, val_loader = make_data_loaders(
+            _tokens(100), seq_len=10, batch_size=4, validation_split=0.0
+        )
+        assert len(train_loader.dataset) > 0  # type: ignore[arg-type]
+        assert len(val_loader.dataset) == 0  # type: ignore[arg-type]
+
+    def test_val_loader_does_not_shuffle(self):
+        """Iterating val_loader twice yields identical batch order."""
+        _, val_loader = make_data_loaders(
+            _tokens(200), seq_len=10, batch_size=4, validation_split=0.3
+        )
+        first_pass = [x.clone() for x, _ in val_loader]
+        second_pass = [x.clone() for x, _ in val_loader]
+        assert len(first_pass) > 0, "val_loader should not be empty"
+        for b1, b2 in zip(first_pass, second_pass, strict=True):
+            assert torch.equal(b1, b2)

@@ -103,12 +103,15 @@ class TestTrain:
         y = torch.randint(0, 128, (4, 8))
         loader = DataLoader(TensorDataset(x, y), batch_size=4)
         losses = train(
-            model, loader, torch.optim.Adam(model.parameters(), lr=1e-2),
-            max_steps=100, log_interval=0,
+            model,
+            loader,
+            torch.optim.Adam(model.parameters(), lr=1e-2),
+            max_steps=100,
+            log_interval=0,
         )
-        assert losses[-1] < losses[0], (
-            f"Expected loss to decrease: initial={losses[0]:.4f}, final={losses[-1]:.4f}"
-        )
+        assert (
+            losses[-1] < losses[0]
+        ), f"Expected loss to decrease: initial={losses[0]:.4f}, final={losses[-1]:.4f}"
 
     def test_cycles_loader_when_steps_exceed_dataset(self):
         """train() cycles through the loader until max_steps is reached."""
@@ -121,3 +124,30 @@ class TestTrain:
         loader = DataLoader(TensorDataset(x, y), batch_size=4)
         losses = train(model, loader, _make_optimizer(model), max_steps=7, log_interval=0)
         assert len(losses) == 7
+
+    def test_train_sets_model_training_mode(self):
+        """train() sets model.training = True even if model starts in eval mode."""
+        from torch.utils.data import DataLoader, TensorDataset
+
+        model = _make_model()
+        model.eval()  # deliberately put model in eval mode
+        assert not model.training
+
+        x = torch.randint(0, 128, (8, 8))
+        y = torch.randint(0, 128, (8, 8))
+        loader = DataLoader(TensorDataset(x, y), batch_size=4)
+        train(model, loader, _make_optimizer(model), max_steps=2, log_interval=0)
+        assert model.training
+
+    def test_max_steps_one(self):
+        """train() with max_steps=1 returns exactly one loss."""
+        from torch.utils.data import DataLoader, TensorDataset
+
+        model = _make_model()
+        x = torch.randint(0, 128, (8, 8))
+        y = torch.randint(0, 128, (8, 8))
+        loader = DataLoader(TensorDataset(x, y), batch_size=4)
+        losses = train(model, loader, _make_optimizer(model), max_steps=1, log_interval=0)
+        assert len(losses) == 1
+        assert isinstance(losses[0], float)
+        assert losses[0] > 0.0

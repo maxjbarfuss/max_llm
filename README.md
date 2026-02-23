@@ -50,7 +50,7 @@ graph TD
         direction LR
         CT([Char Tokenizer]):::p2
         LPE([Learned Pos Emb]):::p2
-        LF([Linear FFN]):::p2
+        LF([GELU MLP]):::p2
         LN([LayerNorm]):::p3
         MHA([Multi-Head Attn]):::p3
         GF([GELU FFN]):::p3

@@ -92,6 +92,11 @@ Phase 1 is complete. Phase 2 starts with a prototype-first path to get a runnabl
 - With coverage: `make test-cov`
 - Linting/format: `make lint`, `make format-check`, `make format`
 
+6. **Add logging framework**
+	- Replace bare `print()` in training loop with structured logging (`logging` module or `loguru`)
+	- Add `log_interval` integration test (`capsys` / log capture) to verify logging output
+	- Establish log format conventions for reproducibility (step, loss, lr, wallclock)
+
 **Execution rule:** Write failing tests first (TDD), then implement minimal code to satisfy contracts.
 
 ---
@@ -161,7 +166,7 @@ Components:
 - ☑ Fill `config/experiment.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128`, 1 layer); wire into `train.py` entrypoint
 - ☑ Character-level tokenizer (`src/tokenizer/char_tokenizer.py`): 128-char printable ASCII, encode/decode with roundtrip tests
 - ☑ `BaseLearningModel` ABC (`src/models/learning_model/base.py`): `forward` and factory interface; evolves across phases
-- ☑ `SimpleLM` (`src/models/learning_model/simple_lm.py`): token embedding → single-layer linear FFN → weight-tied LM head
+- ☑ `SimpleLM` (`src/models/learning_model/simple_lm.py`): token embedding → GELU MLP → weight-tied LM head
 - ☐ Option B stubbing (now): implement Phase 2 concrete stubs plus Phase 9-shaped placeholder interfaces (attention, moe, rnn, inference, alignment) with import/compile-safe boundaries
 
 Training and evaluation:

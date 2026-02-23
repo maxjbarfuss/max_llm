@@ -18,7 +18,7 @@ def train_step(
     """Single forward + backward + optimizer step.
 
     Args:
-        model: The model to train. Must be in training mode.
+        model: The model to train.
         x: Input token indices of shape (batch_size, seq_len).
         y: Target token indices of shape (batch_size, seq_len).
         optimizer: Optimizer to step.
@@ -26,6 +26,7 @@ def train_step(
     Returns:
         Scalar cross-entropy loss for this batch.
     """
+    model.train()
     device = next(model.parameters()).device
     x, y = x.to(device), y.to(device)
 

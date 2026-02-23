@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 
 import torch
 import torch.nn as nn
+from typing_extensions import Self
 
 from src.config.model import ModelConfig
 
@@ -34,5 +35,5 @@ class BaseLearningModel(nn.Module, ABC):
 
     @classmethod
     @abstractmethod
-    def from_config(cls, config: ModelConfig) -> BaseLearningModel:
+    def from_config(cls, config: ModelConfig) -> Self:
         """Construct a model from a ModelConfig."""

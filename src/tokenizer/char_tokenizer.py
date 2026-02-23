@@ -17,7 +17,8 @@ class CharTokenizer:
     Out-of-range IDs are dropped during decode.
     """
 
-    vocab_size: int = _VOCAB_SIZE
+    def __init__(self) -> None:
+        self.vocab_size: int = _VOCAB_SIZE
 
     def encode(self, text: str) -> list[int]:
         """Convert a string to a list of token IDs.
@@ -42,4 +43,4 @@ class CharTokenizer:
         return "".join(chr(i) for i in ids if 0 <= i < _VOCAB_SIZE)
 
     def __len__(self) -> int:
-        return _VOCAB_SIZE
+        return self.vocab_size

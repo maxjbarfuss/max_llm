@@ -1,5 +1,7 @@
 """Unit tests for BaseLearningModel and SimpleLM."""
 
+import io
+
 import pytest
 import torch
 
@@ -60,6 +62,27 @@ class TestSimpleLMConstruction:
         model = SimpleLM.from_config(make_p2_model_config())
         assert model.lm_head.bias is None
 
+    def test_weight_tying_survives_checkpoint_roundtrip(self):
+        """Weight tying is re-established after save/load of state_dict."""
+        model = SimpleLM.from_config(make_p2_model_config())
+        buf = io.BytesIO()
+        torch.save(model.state_dict(), buf)
+        buf.seek(0)
+        model2 = SimpleLM.from_config(make_p2_model_config())
+        model2.load_state_dict(torch.load(buf, weights_only=True))
+        assert model2.lm_head.weight is model2.token_emb.weight
+
+    def test_parameter_count(self):
+        """Unique parameter count matches expected value (weight tying not double-counted)."""
+        config = make_p2_model_config(vocab_size=128, hidden_size=128, max_seq_length=256)
+        model = SimpleLM.from_config(config)
+        # token_emb: V*H, pos_emb: S*H, ffn.weight: H*H, ffn.bias: H
+        # lm_head.weight is tied to token_emb.weight — not counted again
+        V, H, S = 128, 128, 256
+        expected = V * H + S * H + H * H + H
+        actual = sum(p.numel() for p in model.parameters())
+        assert actual == expected
+
 
 class TestSimpleLMForward:
     """SimpleLM forward pass shape and dtype contracts."""
@@ -114,3 +137,11 @@ class TestSimpleLMForward:
         model = SimpleLM.from_config(config)
         x = torch.randint(0, config.vocab_size, (2, 16))
         assert torch.isfinite(model(x)).all()
+
+    def test_seq_len_exceeds_max_raises(self):
+        """Forward raises AssertionError when seq_len > max_seq_length."""
+        config = make_p2_model_config(max_seq_length=16)
+        model = SimpleLM.from_config(config)
+        x = torch.randint(0, config.vocab_size, (1, 17))
+        with pytest.raises(AssertionError, match="seq_len 17 exceeds max_seq_length 16"):
+            model(x)

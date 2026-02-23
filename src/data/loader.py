@@ -1,7 +1,8 @@
-"""In-memory text data loader for Phase 2 LM training.
+"""In-memory token data loader for Phase 2 LM training.
 
-Converts raw text into non-overlapping (input, target) chunk pairs suitable
-for next-token-prediction training. Target is input shifted right by one.
+Converts a pre-encoded token sequence into non-overlapping (input, target)
+chunk pairs suitable for next-token-prediction training.
+Target is input shifted right by one.
 """
 
 from __future__ import annotations
@@ -9,10 +10,10 @@ from __future__ import annotations
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from src.tokenizer import CharTokenizer
+_Batch = tuple[torch.Tensor, torch.Tensor]
 
 
-class TextChunkDataset(Dataset):
+class TextChunkDataset(Dataset[_Batch]):
     """LM dataset: splits a flat token sequence into (input, target) chunks.
 
     Each chunk is seq_len tokens long. Target is input shifted right by one::
@@ -32,7 +33,7 @@ class TextChunkDataset(Dataset):
     def __len__(self) -> int:
         return self._n_samples
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> _Batch:
         start = idx * self._seq_len
         x = self._tokens[start : start + self._seq_len]
         y = self._tokens[start + 1 : start + self._seq_len + 1]
@@ -40,18 +41,16 @@ class TextChunkDataset(Dataset):
 
 
 def make_data_loaders(
-    text: str,
-    tokenizer: CharTokenizer,
+    tokens: list[int],
     seq_len: int,
     batch_size: int,
     validation_split: float = 0.1,
     seed: int = 42,
-) -> tuple[DataLoader, DataLoader]:
-    """Encode text and return (train_loader, val_loader).
+) -> tuple[DataLoader[_Batch], DataLoader[_Batch]]:
+    """Split a pre-encoded token sequence and return (train_loader, val_loader).
 
     Args:
-        text: Raw text to tokenize.
-        tokenizer: Tokenizer used to encode the text.
+        tokens: Pre-encoded token IDs.
         seq_len: Chunk size (context window).
         batch_size: Number of chunks per batch.
         validation_split: Fraction of tokens reserved for validation.
@@ -60,17 +59,16 @@ def make_data_loaders(
     Returns:
         (train_loader, val_loader) pair.
     """
-    tokens = tokenizer.encode(text)
     split = int(len(tokens) * (1.0 - validation_split))
 
     train_ds = TextChunkDataset(tokens[:split], seq_len)
     val_ds = TextChunkDataset(tokens[split:], seq_len)
 
     g = torch.Generator().manual_seed(seed)
-    train_loader: DataLoader = DataLoader(
+    train_loader: DataLoader[_Batch] = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True, generator=g
     )
-    val_loader: DataLoader = DataLoader(
+    val_loader: DataLoader[_Batch] = DataLoader(
         val_ds, batch_size=batch_size, shuffle=False
     )
     return train_loader, val_loader
