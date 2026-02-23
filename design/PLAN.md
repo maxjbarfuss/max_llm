@@ -160,8 +160,8 @@ Data:
 Components:
 - ☑ Fill `config/experiment.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128`, 1 layer); wire into `train.py` entrypoint
 - ☑ Character-level tokenizer (`src/tokenizer/char_tokenizer.py`): 128-char printable ASCII, encode/decode with roundtrip tests
-- ☐ `BaseLearningModel` ABC (`src/models/learning_model/base.py`): `forward` and factory interface; evolves across phases
-- ☐ `SimpleLM` (`src/models/learning_model/simple_lm.py`): token embedding → single-layer linear FFN → weight-tied LM head
+- ☑ `BaseLearningModel` ABC (`src/models/learning_model/base.py`): `forward` and factory interface; evolves across phases
+- ☑ `SimpleLM` (`src/models/learning_model/simple_lm.py`): token embedding → single-layer linear FFN → weight-tied LM head
 - ☐ Option B stubbing (now): implement Phase 2 concrete stubs plus Phase 9-shaped placeholder interfaces (attention, moe, rnn, inference, alignment) with import/compile-safe boundaries
 
 Training and evaluation:
@@ -485,7 +485,7 @@ Evaluation:
 
 | Date | Commit | Summary |
 |---|---|---|
-| 2026-02-23 | `a5807c9` (Phase 2 steps 1–2) | `config/experiment.toml` all sections + `train.py` skeleton (step 1); `CharTokenizer` 128-char ASCII, encode/decode/roundtrip, 14 tests (step 2). 52 Python tests passing, lint clean. |
+| 2026-02-23 | `HEAD` (Phase 2 steps 1–3) | Step 1: `config/experiment.toml` + `train.py`. Step 2: `CharTokenizer` 14 tests. Step 3: `BaseLearningModel` ABC + `SimpleLM` (token emb + pos emb + FFN + weight-tied LM head), 12 tests. 64 Python tests passing, lint clean. |
 | 2026-02-23 | post-`main`+unstaged | Consolidated session summary: setup hardening landed (CUDA preflight, post-venv CUDA path export, Step 4 torch-dependent install ordering, and improved build parallelism controls), then Phase 1 closure/docs governance cleanup completed (`CONTRIBUTING` refactor, checklist canonicalized there, `CONTRIBUTORS` now policy + guidance pointer, torchao coverage added to acceleration tests). Local validation passed: `make lint`, `make format-check`, `make test` (35 Python + 1 C++). |
 | 2026-02-20 | `main` | ✅ **Phase 1 near-complete**: Fixed Makefile pytest invocation (`python -m pytest` instead of bare `pytest`) resolving test-py-quick ImportError. Verified: tests (30 Python + 1 C++ PASSED, 1.990s total), quick sanity (0.440s <3 min), CI passing (Run #13), documentation consistent. Acceleration libs still pending functional tests at that time. |
 | 2026-02-20 | post-`f31f5cc`+unstaged | CI consolidation final pass: Merged test-ci→main; deleted test-ci branch; trimmed Python matrix to 3.12 only; consolidated lint+test into single `ci` job to eliminate redundant pip installs. Run #13 passed with unified job structure. Updated PLAN.md Phase 1 status (CI pipeline ☑, lint rules ☑, tests ✓30/30). |
