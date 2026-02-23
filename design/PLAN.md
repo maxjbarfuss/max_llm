@@ -17,7 +17,7 @@ Purpose: phased execution roadmap and session tracker for both human contributor
 | Phase | Status | Focus | Effort | Risk | Data Strategy | Key Artifacts |
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation & Tests | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, reproducible env notes |
-| **2** | — | Skeleton | M | Low (scope clarity) | TinyStories + Wiki-103 subset (1M+) | Baseline training logs, checkpoints, tokenizer report |
+| **2** | 🔄 In Progress | Skeleton | M | Low (scope clarity) | TinyStories + Wiki-103 subset (1M+) | Baseline training logs, checkpoints, tokenizer report |
 | **3** | — | Transformer | L | Med (training stability) | OpenWebText subset + Gutenberg (10M+) | Decoder baseline metrics, sampling outputs, integration test evidence |
 | **4** | — | Stability | L | High (scale + distributed) | FineWeb / FineWeb-Edu subset | Throughput benchmark report, tokenizer decision memo, distributed training logs |
 | **5** | — | Curriculum | XL | High (data complexity) | 100M+ tokens; staged curriculum | Architecture A/B report, curriculum manifest, stage-transition metrics |
