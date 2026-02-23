@@ -86,6 +86,18 @@ Then read [CONTRIBUTING.md](CONTRIBUTING.md#workflow) and [design/PLAN.md](desig
 
 ---
 
+## Dataset Tooling
+
+Dataset tooling lives under `scripts/data/` and is designed to support slow-drive
+corpus storage with fast local subsets for training runs. See
+[scripts/data/wikitext_tools.py](scripts/data/wikitext_tools.py) for WikiText-103
+and run `--help` on any tool for usage details.
+
+For higher download rate limits, place a Hugging Face token in
+`.huggingface/.hf_token` (ignored by git) or export `HF_TOKEN`.
+
+---
+
 ## Troubleshooting
 
 Useful commands:

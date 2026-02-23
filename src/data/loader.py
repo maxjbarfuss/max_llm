@@ -7,6 +7,8 @@ Target is input shifted right by one.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 from torch.utils.data import DataLoader, Dataset
 
@@ -40,11 +42,41 @@ class TextChunkDataset(Dataset[_Batch]):
         return x, y
 
 
+def load_corpus_text(dataset_path: str) -> str:
+    """Load plain-text corpus content from a file or directory.
+
+    For directories, all files are read recursively in deterministic sorted
+    path order and concatenated with newlines.
+    """
+    path = Path(dataset_path)
+    if not path.exists():
+        raise FileNotFoundError(f"dataset_path does not exist: {dataset_path}")
+
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+
+    files = sorted(p for p in path.rglob("*") if p.is_file())
+    if not files:
+        raise ValueError(f"dataset_path directory has no files: {dataset_path}")
+
+    chunks = [p.read_text(encoding="utf-8", errors="ignore") for p in files]
+    return "\n".join(chunks)
+
+
+def _train_val_split_index(token_count: int, validation_split: float | int) -> int:
+    """Compute split index into train tokens for float or absolute val split."""
+    if isinstance(validation_split, float):
+        return int(token_count * (1.0 - validation_split))
+
+    val_token_count = max(0, validation_split)
+    return max(0, token_count - val_token_count)
+
+
 def make_data_loaders(
     tokens: list[int],
     seq_len: int,
     batch_size: int,
-    validation_split: float = 0.1,
+    validation_split: float | int = 0.1,
     seed: int = 42,
 ) -> tuple[DataLoader[_Batch], DataLoader[_Batch]]:
     """Split a pre-encoded token sequence and return (train_loader, val_loader).
@@ -53,13 +85,14 @@ def make_data_loaders(
         tokens: Pre-encoded token IDs.
         seq_len: Chunk size (context window).
         batch_size: Number of chunks per batch.
-        validation_split: Fraction of tokens reserved for validation.
+        validation_split: Fraction of tokens or absolute token count reserved
+            for validation.
         seed: RNG seed for training-set shuffle.
 
     Returns:
         (train_loader, val_loader) pair.
     """
-    split = int(len(tokens) * (1.0 - validation_split))
+    split = _train_val_split_index(len(tokens), validation_split)
 
     train_ds = TextChunkDataset(tokens[:split], seq_len)
     val_ds = TextChunkDataset(tokens[split:], seq_len)
@@ -68,7 +101,5 @@ def make_data_loaders(
     train_loader: DataLoader[_Batch] = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True, generator=g
     )
-    val_loader: DataLoader[_Batch] = DataLoader(
-        val_ds, batch_size=batch_size, shuffle=False
-    )
+    val_loader: DataLoader[_Batch] = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
     return train_loader, val_loader

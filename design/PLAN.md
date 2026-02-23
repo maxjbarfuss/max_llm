@@ -42,13 +42,13 @@ Phase 1 is complete. Phase 2 starts with a prototype-first path to get a runnabl
 
 **Phase 2 kickoff flow (prototype-first):**
 
-1. **Bootstrap runnable baseline (MVP)**
+1. ✅ **Bootstrap runnable baseline (MVP)**
 	- Implement `ExperimentConfig` wiring and minimal `train.py` entrypoint
 	- Add character-level tokenizer (encode/decode, 128-char ASCII)
 	- Add `BaseLearningModel` interface (`src/models/learning_model/`) and `SimpleLM` implementation
 	- Add minimal training loop (`forward → loss → backward → step`)
 
-2. **Wire minimal data path**
+2. ✅ **Wire minimal data path**
 	- Source TinyStories + WikiText-103 subset (~1–10M tokens)
 	- Build simple train/val split + chunked batch loader
 	- Run first end-to-end train command successfully
@@ -79,7 +79,7 @@ Phase 1 is complete. Phase 2 starts with a prototype-first path to get a runnabl
 2. `src/tokenizer/char_tokenizer.py` — 128-char printable ASCII; `encode`/`decode` with roundtrip tests
 3. `src/models/learning_model/` — `BaseLearningModel` ABC; `SimpleLM` (embedding → FFN → weight-tied LM head) with shape tests
 4. `src/data/loader.py` — in-memory text → token chunks; `src/training/loop.py` — forward → CE loss → backward → optimizer step
-5. Wire into `train.py`; first end-to-end run: loss is finite and decreases over 10 steps
+5. ✅ Wire into `train.py`; first end-to-end run: loss is finite and decreases over 10 steps
 6. Overfit 10K-token subset (target: loss < 0.1 in 500 steps)
 7. Seed control + checkpoint save/restore; verify deterministic replay (same seed → same loss at step N+1)
 8. Phase 9-shaped placeholder stubs + contract tests; TinyStories/WikiText-103 data pipeline
@@ -160,7 +160,7 @@ Quality:
 
 Data:
 - ☑ `src/data/loader.py`: in-memory text → char token ids → chunked batches (MVP; no file I/O required)
-- ☐ Source TinyStories + WikiText-103 subset (~1–10M tokens); wire file-based train/val split + validated token counts
+- ☐ Source TinyStories + WikiText-103 subset (~1–10M tokens); add tooling to stage slow-drive corpus and fast subsets
 
 Components:
 - ☑ Fill `config/experiment.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128`, 1 layer); wire into `train.py` entrypoint

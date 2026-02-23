@@ -47,8 +47,12 @@ artifacts/
 .tox/
 .ruff_cache/
 
+# Local data caches
+data/
+
 # Credentials (never commit)
 .github/.github_token
+.huggingface/.hf_token
 
 # Build and dist
 *.dist-info/

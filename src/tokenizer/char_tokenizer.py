@@ -6,10 +6,12 @@ Characters outside this range are silently dropped during encoding.
 
 from __future__ import annotations
 
+from .tokenizer import Tokenizer
+
 _VOCAB_SIZE = 128
 
 
-class CharTokenizer:
+class CharTokenizer(Tokenizer):
     """Bijective tokenizer mapping ASCII characters to token IDs.
 
     Token IDs are identical to ASCII ordinals: encode('A') == [65].
@@ -41,6 +43,17 @@ class CharTokenizer:
             Decoded string.
         """
         return "".join(chr(i) for i in ids if 0 <= i < _VOCAB_SIZE)
+
+    def count_tokens(self, text: str) -> int:
+        """Count tokens in text.
+
+        Args:
+            text: Input text
+
+        Returns:
+            Number of tokens
+        """
+        return len(self.encode(text))
 
     def __len__(self) -> int:
         return self.vocab_size

@@ -1,8 +1,11 @@
 """Unit tests for the in-memory token data loader."""
 
+from pathlib import Path
+
+import pytest
 import torch
 
-from src.data.loader import TextChunkDataset, make_data_loaders
+from src.data.loader import TextChunkDataset, load_corpus_text, make_data_loaders
 
 
 def _tokens(n: int) -> list[int]:
@@ -128,3 +131,38 @@ class TestMakeDataLoaders:
         assert len(first_pass) > 0, "val_loader should not be empty"
         for b1, b2 in zip(first_pass, second_pass, strict=True):
             assert torch.equal(b1, b2)
+
+    def test_validation_split_absolute_token_count(self):
+        """Integer validation_split reserves that many tokens for validation."""
+        tokens = _tokens(100)
+        train_loader, val_loader = make_data_loaders(
+            tokens, seq_len=10, batch_size=4, validation_split=20
+        )
+        expected_train = (80 - 1) // 10
+        expected_val = (20 - 1) // 10
+        assert len(train_loader.dataset) == expected_train  # type: ignore[arg-type]
+        assert len(val_loader.dataset) == expected_val  # type: ignore[arg-type]
+
+
+class TestLoadCorpusText:
+    """load_corpus_text file and directory loading behavior."""
+
+    def test_loads_single_file(self, tmp_path: Path):
+        corpus = tmp_path / "corpus.txt"
+        corpus.write_text("hello\nworld", encoding="utf-8")
+        assert load_corpus_text(str(corpus)) == "hello\nworld"
+
+    def test_loads_directory_recursively(self, tmp_path: Path):
+        (tmp_path / "a.txt").write_text("alpha", encoding="utf-8")
+        nested = tmp_path / "nested"
+        nested.mkdir()
+        (nested / "b.txt").write_text("beta", encoding="utf-8")
+
+        text = load_corpus_text(str(tmp_path))
+        assert "alpha" in text
+        assert "beta" in text
+
+    def test_missing_path_raises(self, tmp_path: Path):
+        missing = tmp_path / "does_not_exist"
+        with pytest.raises(FileNotFoundError):
+            load_corpus_text(str(missing))

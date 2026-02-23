@@ -39,6 +39,16 @@ repos:
 
   - repo: local
     hooks:
+      - id: block-github-token
+        name: block-github-token
+        entry: bash -c 'if git diff --cached --name-only | grep -q "^\.github/\.github_token$"; then echo "ERROR: .github/.github_token is staged. Remove it before committing."; exit 1; fi'
+        language: system
+        stages: [commit]
+      - id: block-hf-token
+        name: block-hf-token
+        entry: bash -c 'if git diff --cached --name-only | grep -q "^\.huggingface/\.hf_token$"; then echo "ERROR: .huggingface/.hf_token is staged. Remove it before committing."; exit 1; fi'
+        language: system
+        stages: [commit]
       - id: pytest
         name: pytest
         entry: pytest
