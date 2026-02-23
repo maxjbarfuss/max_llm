@@ -2,7 +2,7 @@
 
 Hybrid LLM research project (100–500M params): GQA/MLA + MoE + GRU output, optimized for local training on consumer hardware.
 
-**Status:** Phase 1 (foundation ⏳ in progress) → Phase 2 (skeleton) next
+**Status:** Phase 1 ✅ complete → Phase 2 (skeleton) kickoff next
 **Repository:** [github.com/maxjbarfuss/max_llm](https://github.com/maxjbarfuss/max_llm)
 
 ## Why This Project?
@@ -98,7 +98,7 @@ Continuous integration runs on every push via GitHub Actions. See [scripts/ci/RE
 - [CONTRIBUTING.md](CONTRIBUTING.md): workflow and PR rules
 - [design/DESIGN.md](design/DESIGN.md): architecture, engineering principles, phased roadmap, testing strategy
 - [design/PLAN.md](design/PLAN.md): phase progress, next steps, execution tracking
-- [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md): contributor authorization and PR validation checklist
+- [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md): contributor authorization policy
 - [.github/SKILLS.md](.github/SKILLS.md): required technical skills and working discipline
 - [.github/CODEOWNERS](.github/CODEOWNERS): code review ownership
 

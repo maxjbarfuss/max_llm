@@ -31,5 +31,9 @@
   "claudeCodeChat.wsl.enabled": true,
   "claudeCodeChat.wsl.distro": "Ubuntu-24.04",
   "claudeCodeChat.wsl.nodePath": "/usr/bin/node",
-  "claudeCodeChat.wsl.claudePath": "/usr/local/bin/claude"
+  "claudeCodeChat.wsl.claudePath": "/usr/local/bin/claude",
+  "chat.tools.terminal.autoApprove": {
+    "./scripts/ci/check_runs.sh": true,
+    "./scripts/ci/poll_run.sh": true
+  }
 }

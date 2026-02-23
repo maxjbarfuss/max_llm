@@ -289,10 +289,10 @@ Stable baseline: **BF16 + AMP** throughout (well-supported, numerically safe). L
 - **Unit tests** (Python + C++): module-level functionality, no dependencies
 - **Integration tests** (Python): multi-component workflows
 - **Contract tests**: shape/dtype validation, config validation
-- **Smoke tests**: small model overfit, convergence check, generation samples
+- **Quick validation tests**: small model overfit, convergence check, generation samples
 
 **Continual test scripts contract**:
-- `make test-quick`: fast mixed-language smoke gate (Python + C++, target <3 minutes locally)
+- `make test-quick`: fast mixed-language quick gate (Python + C++, target <3 minutes locally)
 - `make test-py`: Python-only rapid loop
 - `make test-cpp`: C++-only rapid loop
 - `make test`: full suite
@@ -301,7 +301,7 @@ Stable baseline: **BF16 + AMP** throughout (well-supported, numerically safe). L
 
 **Test coverage expectations**:
 - Phase 2: Config validation tests (no torch required)
-- Phase 3+: Model layer tests (torch required), training loop smoke tests
+- Phase 3+: Model layer tests (torch required), training loop quick checks
 - Phase 5+: Architecture comparison tests (A/B), throughput benchmarks
 - Phase 6+: SFT pipeline tests, LoRA merge correctness, KV-cache equivalence, evaluation harness integration
 - Phase 7+: Preference data loading, DPO/RL loss computation, reward model accuracy, safety evaluation suite
@@ -371,7 +371,7 @@ Stable baseline: **BF16 + AMP** throughout (well-supported, numerically safe). L
 **Before merge**: Run `make lint` (ruff, mypy), `make format-check` (black, isort, clang-format), `make test` (Python + C++ tests), and `make format` (auto-fix formatting).
 
 **Validation checks** (run as appropriate per phase):
-- Smoke overfit test (small model, quick convergence check)
+- Quick overfit test (small model, quick convergence check)
 - Precision stage transition stability checks
 - Multi-GPU consistency checks (Phase 4+)
 - Attention backend equivalence checks (Phase 5+)
@@ -405,5 +405,5 @@ Runs missing any of these are exploratory only — not baseline-comparable.
 - **Lint**: Every PR (ruff, mypy)
 - **Format check**: Every PR (black, isort, clang-format)
 - **Test**: Every PR (Python tests from current phase)
-- **GPU build**: Nightly/manual (CUDA build, GTest, integration smoke tests)
+- **GPU build**: Nightly/manual (CUDA build, GTest, integration checks)
 - **Artifact naming**: per Reproducibility Contract above

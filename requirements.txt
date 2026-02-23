@@ -1,12 +1,14 @@
 # Python dependencies for max_llm
 # Note: torch & torch-dependent packages (xformers, deepspeed, bitsandbytes) are
-# installed separately in setup.sh Step 4 after torch is available with CUDA 12.1.
+# installed separately in setup.sh Step 4 using pinned CUDA 12.8 / Python 3.12 wheels.
 
 # Base
 pydantic>=2.0.0
 
 # Core model
 numpy>=1.24.0
+# flash-attn>=2.3.0  # Moved to setup.sh Step 4 (requires torch as build dependency)
+# torchao>=0.2.0     # Moved to setup.sh Step 4 (requires torch)
 
 # Training
 transformers>=4.36.0

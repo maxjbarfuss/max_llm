@@ -1,42 +1,68 @@
 # Contributing
 
-Authorized contributors are defined in [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md).
+This guide is for both human contributors and AI agents.
 
-## What Each Doc Is For
+Contributor authorization is defined in [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md).
 
-- [design/PLAN.md](design/PLAN.md#phase-progress): session execution plan (phase progress, `Next Steps`, `Current Session Scratch Pad`, `Running Session Log`).
-- [design/DESIGN.md](design/DESIGN.md#architecture-overview): architecture baseline, engineering principles, testing strategy, phased roadmap.
-- [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md#pr-validation-checklist): authorization, PR validation checklist.
-- [.github/CODEOWNERS](.github/CODEOWNERS): review ownership.
+## Source of Truth
 
-If documents conflict during implementation, follow [design/PLAN.md](design/PLAN.md) for immediate execution, then reconcile the other docs in the same PR.
+- [design/PLAN.md](design/PLAN.md): current execution state and immediate next tasks
+- [design/DESIGN.md](design/DESIGN.md): architecture and engineering constraints
+- [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md): authorization policy
+- [.github/CODEOWNERS](.github/CODEOWNERS): review ownership
 
-## Workflow
+If docs conflict, follow [design/PLAN.md](design/PLAN.md) for active execution and reconcile docs in the same PR.
 
-1. Read [design/PLAN.md](design/PLAN.md#phase-progress): check Phase Progress and pick from `Next Steps`.
-2. Read relevant section of [design/DESIGN.md](design/DESIGN.md#architecture-overview) for design constraints.
-3. Check existing tests and interfaces (avoid duplication).
-4. Implement with TDD and typed interfaces per [design/DESIGN.md](design/DESIGN.md#coding-standards).
-5. Run local validation (see below).
-6. Update [design/PLAN.md](design/PLAN.md#current-session-scratch-pad) (`Current Session Scratch Pad`, `Running Session Log`).
-7. Commit locally with small commit message.
-8. Open PR (optional): validate via [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md#pr-validation-checklist) checklist (Summary, Validation, Risks & Next).
+## Standard Workflow
 
-## Local Validation
+1. Read [design/PLAN.md](design/PLAN.md#next-steps) and choose a scoped task.
+2. Check relevant constraints in [design/DESIGN.md](design/DESIGN.md#coding-standards).
+3. Implement in small, testable steps (TDD preferred).
+4. Run validation commands.
+5. Update impacted docs (including [design/PLAN.md](design/PLAN.md) session/log sections).
+6. Commit one logical change.
 
-Run the [Quality Gates from design/DESIGN.md](design/DESIGN.md#quality-gates) before merge:
+Tooling policy: prefer not to use any MCP servers; default to local repository-native tools and workflows.
+
+## Validation Commands
+
+Run before opening a PR:
 
 ```bash
-make lint           # ruff + mypy
-make test           # Python + C++ tests
-make format-check   # verify formatting (black, isort, clang-format)
-make format         # auto-fix formatting
+source .venv/bin/activate
+make lint
+make format-check
+make test
 ```
 
-## Commit and PR Rules (Summary)
+Optional but recommended:
 
-- One logical change per PR
-- Keep commits atomic and descriptive (`feat|fix|refactor|test|docs|chore(scope): summary`)
-- Update affected docs when behavior/architecture changes
-- Include a short `Next steps` handoff note
-- Only [@maxjbarfuss](https://github.com/maxjbarfuss) may merge to `main`
+```bash
+make test-quick
+make test-cov
+```
+
+Optional acceleration dependency probes (may fail if not installed):
+
+```bash
+python3 -c "import flash_attn; print(flash_attn.__version__)"
+python3 -c "import torchao; print(torchao.__version__)"
+python3 -c "import xformers; print(xformers.__version__)"
+```
+
+## PR Validation Checklist
+
+Before opening a PR, confirm:
+
+1. **Summary**: what changed and why.
+2. **Validation**: `make lint`, `make format-check`, `make test` all pass locally.
+3. **Risks & Next**: known limitations and follow-up tasks are documented.
+4. **Docs**: behavior/architecture changes are reflected in [design/PLAN.md](design/PLAN.md) and affected docs.
+
+## Commit and PR Rules
+
+- One logical change per PR.
+- Use clear commit messages: `feat|fix|refactor|test|docs|chore(scope): summary`.
+- Keep changes minimal and reviewable.
+- Include a short handoff note when there is follow-up work.
+- Only [@maxjbarfuss](https://github.com/maxjbarfuss) may merge to `main`.
