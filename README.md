@@ -39,6 +39,7 @@ Docs and policies:
 - [docs/DESIGN.md](docs/DESIGN.md): architecture, engineering constraints, and data strategy
 - [CONTRIBUTING.md](CONTRIBUTING.md): repository workflow and contributor authorization
 - [.github/SKILLS.md](.github/SKILLS.md): AI agent instructions and working discipline
+- [.github/LESSONS.md](.github/LESSONS.md): recorded agent mistake patterns (read before each session)
 - [.github/CODEOWNERS](.github/CODEOWNERS): code ownership and review responsibility
 
 ## Architecture

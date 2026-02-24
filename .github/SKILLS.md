@@ -1,6 +1,13 @@
+---
+version: "1.1"
+updated: "2026-02-24"
+---
+
 # Agent Capability Baseline
 
 Baseline knowledge and working discipline for contributors and coding agents.
+
+> **Before starting any session**: Read [LESSONS.md](LESSONS.md) — recorded patterns of past agent mistakes to avoid repeating.
 
 ## Required Technical Skills
 
@@ -64,7 +71,10 @@ Work is complete only when all are true:
 
 Follow the [Agent Workflow in docs/DESIGN.md](../docs/DESIGN.md#agent-workflow). In brief:
 
-- **Session start**: Read [docs/SESSION.md](../docs/SESSION.md) (current focus, next steps), then [docs/PLAN.md](../docs/PLAN.md#phase-progress) current phase tasks.
+- **Session start**:
+  1. Read [LESSONS.md](LESSONS.md) — avoid repeating recorded mistakes.
+  2. Read [docs/SESSION.md](../docs/SESSION.md) — current focus and next steps.
+  3. Read [docs/PLAN.md](../docs/PLAN.md#phase-progress) — current phase tasks.
 - **Before coding**: Check existing tests and interfaces.
 - **During coding**: TDD — write failing test first, implement, verify.
 - **Session end (MANDATORY)**:
