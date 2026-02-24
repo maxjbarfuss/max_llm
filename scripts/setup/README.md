@@ -90,7 +90,7 @@ Then read [CONTRIBUTING.md](../../CONTRIBUTING.md) and [docs/SESSION.md](../../d
 
 ## Dataset Tooling
 
-Dataset preparation scripts live under `scripts/data/`. See [scripts/data/README.md](../data/README.md) for quickstart, config reference, and size guide.
+Dataset preparation scripts live under `scripts/data/`. See [scripts/data/README.md](../data/README.md) for Quick Start, config reference, and size guide.
 
 For higher download rate limits, place a Hugging Face token in `.huggingface/.hf_token` (ignored by git) or export `HF_TOKEN`.
 

@@ -31,38 +31,6 @@ For detailed execution: read below. For architectural context: see [DESIGN.md](D
 
 ---
 
-## Next Steps
-
-**Current focus: Phase 2 — data sourcing and end-to-end training validation**
-
-Phase 1 complete. Phase 2 ~90% done: infrastructure, tokenizers, config, training loop all working. WikiText-103 validates end-to-end. Remaining: TinyStories, mixed sampling, seed hardening, Option B stubs.
-
-**Completed sequence:**
-1. ✅ Tokenizer + config system (done — p2-step1)
-2. ✅ Data pipeline framework — YAML-driven normalize/tokenize/extract runners (done — p2-step2 through refactors)
-3. ✅ CharTokenizer: UTF-8/16/32 + codepoint modes, roundtrip tests (done — p2-step2)
-4. ✅ Config system: `config/experiment.toml` fully populated, `train.py` wired (done — p2-step1)
-5. ✅ BaseLearningModel ABC + SimpleLM: token embedding → GELU MLP → LM head (done — p2-step3)
-6. ✅ Data loader + training loop: DataLoader, train_step, loss computation (done — p2-step4)
-7. ✅ WikiText-103 pipeline: normalize → tokenize → extract subset (done — recent refactors)
-8. ✅ Training validated: 100k-token subset, loss 16.01→2.61 over 500 steps (done)
-
-**Remaining (in priority order):**
-1. 🎯 TinyStories: add YAML, run normalize/tokenize, validate token counts/boundaries
-2. (Stretch) Mixed sampler: interleave TinyStories + WikiText caches by weight
-3. Seed + checkpoint hardening (Python/NumPy/PyTorch CPU/CUDA; deterministic replay)
-4. Overfit 10K-token subset (target: loss < 0.1 within 500 steps)
-5. Option B placeholder stubs (Phase 9-shaped interfaces + import guards)
-
-**Config-driven execution**: All data-prep driven by YAML configs in `scripts/data/<dataset>/`. Single runner:
-```bash
-python scripts/data/run_data_prep.py --config scripts/data/<dataset>/<config>.yaml
-```
-See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) for config anatomy and size guide.
-
-See Phase 2 section below for full task list and exit criteria.
-
-
 ---
 
 ### Phase 1: Foundation & Testing Scaffolding
@@ -136,7 +104,7 @@ Data:
 - ☐ Mixed sampler (stretch): interleave TinyStories + WikiText caches by weight in DataLoader
 
 Components:
-- ☑ Fill `config/experiment.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128/256/512`, tokenizer_mode); wire into `train.py` entrypoint
+- ☑ Fill `config/experiment.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128/256/512`, tokenizer_mode); wire into `src.training.train` entrypoint
 - ☑ Character-level tokenizer (`src/tokenizer/char_tokenizer.py`): multi-mode (codepoint/utf8/utf16/utf32), encode/decode with roundtrip tests
 - ☑ TokenizerFactory (`src/tokenizer/tokenizer.py`): **kwargs-based parameterization for mode and vocab_size
 - ☑ `BaseLearningModel` ABC (`src/models/learning_model/base.py`): `forward` and factory interface; evolves across phases
@@ -155,8 +123,8 @@ Quality:
 - ☐ Stub boundary tests: Phase 9-shaped placeholders import cleanly, expose stable interfaces, fail with `NotImplementedError`
 
 **Exit Criteria** (status after refactor commit 44470bf):
-- ✅ `python train.py --config config/experiment.toml` trains end-to-end on WikiText-103 100k tokens, loss decreases (16.01→2.61)
-- ☐ `python train.py --config config/experiment.toml` trains end-to-end on TinyStories, loss decreases monotonically over 100 steps (pending TinyStories data)
+- ✅ `python -m src.training.train --config config/experiment.toml` trains end-to-end on WikiText-103 100k tokens, loss decreases (16.01→2.61)
+- ☐ `python -m src.training.train --config config/experiment.toml` trains end-to-end on TinyStories, loss decreases monotonically over 100 steps (pending TinyStories data)
 - ☐ Save/restore checkpoint with same seed produces bit-identical loss at step N+1 (seed hardening pending)
 - ✅ ≥8 unit tests pass: 189 tests passing including config, tokenizer modes, data splits, model forward, loss computation
 - ☐ Option B stub contract passes: Phase 2 path runnable; Phase 9-shaped placeholders present with validated interfaces (pending)
@@ -229,7 +197,7 @@ Data:
 - ☐ Implement heuristic data filters for length, language, and perplexity
 - ☐ Benchmark BPE vs Unigram on identical corpus slices; select tokenizer for Phase 5+
 - ☐ `ChunkedTokenCache(slow_dir, fast_dir, chunk_size_mb)`: slow→fast staging with LRU eviction and async background prefetch (`threading.Thread`); status tracked in `staging_status.parquet`
-- ☐ `CachedTokenDataset`: lazy-load via `ChunkedTokenCache`; prefetch next chunk at 80% consumption; wire into `train.py` via `DataConfig`
+- ☐ `CachedTokenDataset`: lazy-load via `ChunkedTokenCache`; prefetch next chunk at 80% consumption; wire into `src.training.train` via `DataConfig`
 - ☐ Upgrade token metadata to Parquet: chunk_id, token_count, byte_offset, split, sha256 hash (enables efficient split/range queries at scale)
 - ☐ Memory-mapped data reads and DataLoader shuffling at scale; verify I/O does not bottleneck training
 

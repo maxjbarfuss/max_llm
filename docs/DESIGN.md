@@ -240,7 +240,7 @@ flowchart LR
     D --> E["Fast Train<br/>fast disk"]
 ```
 
-**Execution**: YAML-driven; see [scripts/data/README.md](../scripts/data/README.md) for quickstart, config reference, and size guide.
+**Execution**: YAML-driven; see [scripts/data/README.md](../scripts/data/README.md) for Quick Start, config reference, and size guide.
 
 **Pipeline design decisions** (implemented progressively across phases):
 - **Pre-tokenize once, cache forever**: Tokenize on slow disk during preprocessing; eliminates runtime overhead and enables reproducible chunking
@@ -342,24 +342,9 @@ flowchart LR
 
 ---
 
-## Agent Workflow
+## Contributor Workflow
 
-**Session start:**
-1. Read [SESSION.md](SESSION.md) (current focus, immediate next steps, scratch pad, log)
-2. Read [PLAN.md](PLAN.md#phase-progress) (Phase Progress, current phase task list and exit criteria)
-3. Check existing tests and interfaces before modifying code
-
-**During work:**
-- Keep edits focused and atomic
-- Preserve API stability unless the change is intentional and documented
-- Add/adjust tests with each behavior change
-- Commit local frequently after passing quick tests
-- **Use local git commands only** (`git add`, `git commit`, etc.) — never use MCP/Kraken tools
-- Push to remote only with explicit human confirmation
-
-**Session end:**
-- Update [SESSION.md](SESSION.md) (Scratch Pad + Running Session Log) with completed work, next step, and any blockers
-- Update docs impacted by the change in the same PR
+Workflow, git flow, and validation rules live in [CONTRIBUTING.md](../CONTRIBUTING.md). This design document focuses on architecture and engineering constraints.
 
 ---
 

@@ -9,7 +9,7 @@ This is the recommended workflow for Phase 2-4 training:
 
 Usage:
     # Full workflow: normalize + tokenize + extract 500K token subset
-    python -m scripts/data/prepare_training_data.py \\
+    python -m scripts/data/prepare_training_data.py \
         --source /mnt/d/dev/data/wikitext-103-raw/train.txt \\
         --output data/fast/wikitext_500k_tokens.npy \\
         --size 500K \\
@@ -18,7 +18,7 @@ Usage:
         --tokenizer char
 
     # Extract token subset from already-cached tokens
-    python -m scripts/data/prepare_training_data.py \\
+    python -m scripts/data/prepare_training_data.py \
         --source /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
         --output data/fast/wikitext_1m_tokens.npy \\
         --size 1M
@@ -217,7 +217,7 @@ def prepare_training_data(
     console.print("  1. Update config/experiment.toml:")
     console.print(f'     dataset_path = "{output_path}"')
     console.print("  2. Run training:")
-    console.print("     python train.py --config config/experiment.toml")
+    console.print("     python -m src.training.train --config config/experiment.toml")
 
 
 def main() -> None:
@@ -230,7 +230,7 @@ Workflow:
   1. Optional: Normalize text on slow storage (cached for reuse)
   2. Optional: Tokenize to .npy on slow storage (cached for reuse)
   3. Extract subset to fast storage for training
-  4. Update config and run training
+    4. Update config and run training
 
 Size formats:
   500K  = 500,000 tokens
@@ -239,7 +239,7 @@ Size formats:
 
 Examples:
   # Full workflow: normalize + tokenize + extract 500K tokens
-  python -m scripts/data/prepare_training_data.py \\
+    python -m scripts/data/prepare_training_data.py \
       --source /mnt/d/dev/data/wikitext-103-raw/train.txt \\
       --output data/fast/wikitext_500k_tokens.npy \\
       --size 500K \\
@@ -248,19 +248,19 @@ Examples:
       --tokenizer char
 
   # Extract from already-cached tokens
-  python -m scripts/data/prepare_training_data.py \\
+    python -m scripts/data/prepare_training_data.py \
       --source /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
       --output data/fast/wikitext_1m_tokens.npy \\
       --size 1M
 
   # Legacy text extraction (without tokenization)
-  python -m scripts/data/prepare_training_data.py \\
+    python -m scripts/data/prepare_training_data.py \
       --source /mnt/d/dev/data/wikitext-103-raw/train_normalized.txt \\
       --output data/fast/wikitext_10mb.txt \\
       --size 10M
 
   # Overwrite existing files
-  python -m scripts/data/prepare_training_data.py \\
+    python -m scripts/data/prepare_training_data.py \
       --source /mnt/d/dev/data/wikitext-103-raw/train.txt \\
       --output data/fast/wikitext_new_tokens.npy \\
       --size 1M \\
