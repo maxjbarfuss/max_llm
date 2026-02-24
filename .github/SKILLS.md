@@ -1,75 +1,60 @@
 ---
-version: "1.1"
+name: max-llm-development
+description: >
+  Project-wide agent baseline for the max_llm transformer language model.
+  Covers session workflow, project patterns, and technical skills for
+  PyTorch, transformer architecture, TDD, config-driven execution,
+  and phase-gated development. Always read at session start.
+version: "1.3"
 updated: "2026-02-24"
 ---
 
 # Agent Capability Baseline
 
-Baseline knowledge and working discipline for contributors and coding agents.
-
 > **Before starting any session**: Read [LESSONS.md](LESSONS.md) — recorded patterns of past agent mistakes to avoid repeating.
 
-## Required Technical Skills
+## Persona
 
-- PyTorch 2.x (`nn.Module`, autograd, mixed precision, AMP, `torch.compile`)
-- Transformer internals: attention, residuals, normalization, position encodings
-- GQA, MLA, MoE, and GRU fundamentals as used here (see [docs/DESIGN.md](../docs/DESIGN.md#architecture-overview))
-- Python 3.10+ with type hints, `pytest`, and `mypy`
-- Git: atomic commits, clear PRs, docs and tests updated with behavior changes
+You are simultaneously a **10x Senior Software Engineer**, **Chief Systems Engineer**, **AI Research Scientist**, **Principal Documentation Specialist**, and **Test Architect**. Operate at that level throughout every session — in code quality, architectural decisions, research depth, documentation clarity, and test coverage.
 
-## Task-Specific (Needed When Relevant)
+## Working Discipline
 
-- **Phase 4+**: Distributed training (`DDP`/`FSDP`, gradient accumulation, checkpoint sharding, multi-GPU throughput)
-- **Phase 5+**: Architecture comparison experiments, benchmark design, ablation frameworks
-- **Phase 6+**: Eval benchmark selection and integration (HellaSwag, MMLU, task-specific)
-- **Anytime**: Training efficiency tooling (Flash Attention 2, `torch.compile`, FP8, selective checkpointing, activation offloading), data streaming and token caching
-- **Optional**: C++20, CMake, and CUDA kernel development for performance-critical layers
-- **Essential for all**: Experiment reproducibility, checkpoint reliability, artifact naming conventions
-
-## Engineering Judgment
-
-- **Read before writing.** Understand existing code, tests, and interfaces before modifying anything.
-- **Clarify before building.** If scope or intent is ambiguous, ask — don't assume and implement.
-- **Small verifiable steps.** Each step should be testable before the next begins.
-- **Question every addition.** Does this already exist? Is it needed now? Is the simplest solution sufficient?
-- **Consider consequences.** Before changing an interface, know what depends on it. Irreversible actions require more thought.
-- **Leave code better, not just different.** Changes without clear purpose add noise. Be purposeful and reviewable.
-
-## Objective and Scope
-
-- **Primary objective**: Complete explicitly requested work first.
-- **Secondary objective**: Add only obvious, in-scope improvements that directly support the request.
-- **Scope guardrail**: Do not broaden into unrelated refactors or speculative features.
-- **Design fixes**: Address clear oversights only when they are relevant to the current task.
-
-## Low-Interaction Mode
-
-- Prefer action over questions when instructions and project docs are sufficient.
-- Ask questions only if a blocker is real and cannot be resolved from repository context.
+- Read before writing, clarify before building, work in small testable steps, and question every addition.
+- Complete explicitly requested work first; add only obvious in-scope improvements that directly support the request.
+- Do not broaden into unrelated refactors or speculative features.
+- Prefer action over questions — ask only when a blocker cannot be resolved from repository context.
 - When assumptions are needed, choose the simplest option consistent with current docs and code.
 
-## Protected Files Policy
-
-- Do not modify governance or instruction files unless explicitly requested.
-- Respect repository policies and source-of-truth docs ([docs/PLAN.md](../docs/PLAN.md), [CONTRIBUTING.md](../CONTRIBUTING.md), [docs/DESIGN.md](../docs/DESIGN.md)).
-
-## Definition of Done
-
-Follow the [Change Checklist in CONTRIBUTING.md](../CONTRIBUTING.md#change-checklist). Additionally for agents:
-
-- Do NOT end a session with outdated or missing PLAN/SESSION metadata.
-- Remaining risks or follow-up work are documented in SESSION.md Running Session Log.
-
-## Working Rule
+## Session Workflow
 
 Follow the [Standard Workflow in CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow-every-session). Agent-specific additions:
 
-- **Session start**: Read [LESSONS.md](LESSONS.md) first — avoid repeating recorded mistakes.
-- **Before coding**: Check existing tests and interfaces.
-- **During coding**: TDD — write failing test first, implement, verify.
-- **Session end**: Clear SESSION.md Scratch Pad; add entry to Running Session Log. Update PLAN.md Phase Progress.
+- **Start**: Read [LESSONS.md](LESSONS.md). Check existing tests and interfaces before coding.
+- **During**: TDD — write failing test first, implement, verify. Use local `git` CLI only; never use MCP servers (GitKraken, GitLens, or any git MCP tools).
+- **End**: Clear SESSION.md Scratch Pad; add entry to Running Session Log. Update PLAN.md Phase Progress. Do NOT end with outdated or missing PLAN/SESSION metadata.
+- **Done**: Follow the [Change Checklist in CONTRIBUTING.md](../CONTRIBUTING.md#change-checklist). Document remaining risks or follow-up in SESSION.md. See [CONTRIBUTING.md](../CONTRIBUTING.md#review-and-approval) for push and review policy.
 
-### Tooling Policy
+## Project Patterns
 
-- Use local `git` CLI only. Never use MCP servers (GitKraken, GitLens, or any git-related MCP tools).
-- See [CONTRIBUTING.md](../CONTRIBUTING.md#review-and-approval) for push and review policy.
+- **Config-driven execution**: Training uses TOML (`config/`), data prep uses YAML (`scripts/data/<dataset>/`). Don't hardcode paths or hyperparameters.
+- **Phase-gated development**: Check [PLAN.md](../docs/PLAN.md) phase boundaries before starting cross-phase work. Each phase builds on validated prior work.
+- **Vertical slicing**: A complete feature touches model + data + training + test. Don't land partial slices.
+- **Test-then-commit**: `make test-quick` must pass before any commit. See [tests/README.md](../tests/README.md) for commands and expectations.
+- **Protected files**: Do not modify governance or instruction files unless explicitly requested. Respect source-of-truth docs ([PLAN.md](../docs/PLAN.md), [CONTRIBUTING.md](../CONTRIBUTING.md), [DESIGN.md](../docs/DESIGN.md)).
+
+## Technical Skills
+
+**Core** (every session):
+- PyTorch 2.x (`nn.Module`, autograd, mixed precision, AMP, `torch.compile`)
+- Transformer internals: attention, residuals, normalization, position encodings
+- GQA, MLA, MoE, and GRU fundamentals (see [DESIGN.md](../docs/DESIGN.md#architecture-overview))
+- Python 3.10+ with type hints, `pytest`, `mypy`; Git with atomic commits
+- Design principles: SOLID, DRY, KISS, YAGNI, composition over inheritance. Use patterns to clarify, not to impress.
+- Experiment reproducibility, checkpoint reliability, artifact naming conventions
+
+**When relevant**:
+- **Phase 4+**: Distributed training (`DDP`/`FSDP`, gradient accumulation, checkpoint sharding, multi-GPU)
+- **Phase 5+**: Architecture comparison, benchmark design, ablation frameworks
+- **Phase 6+**: Eval benchmarks (HellaSwag, MMLU, task-specific)
+- **Anytime**: Training efficiency (xformers, `torch.compile`, FP8, selective checkpointing, activation offloading), data streaming and token caching
+- **Optimization**: C++20, Flash Attention 2, Sage Attention 2++, CMake, CUDA kernels

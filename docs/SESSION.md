@@ -47,24 +47,6 @@ See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) f
 
 > Ephemeral — clear this section at commit time. Use for in-progress notes only.
 
-**Session: 2026-02-24 | Documentation Reorganization + Data Pipeline Refactor**
-
-- Deleted docs/data/DATA_WORKFLOW.md and docs/data/DATA_PLAN.md; distributed content: workflow diagram + design decisions → DESIGN.md; operational Quick Start → scripts/data/README.md; phase-appropriate implementation tasks → each phase's Data section in PLAN.md
-- Created docs/SESSION.md for live session state (current focus, next steps, scratch pad, log)
-- Created scripts/data/README.md with all operational data prep docs (Quick Start, config anatomy, size guide, tips)
-- Merged .github/CONTRIBUTORS.md into CONTRIBUTING.md (Authorization section); deleted CONTRIBUTORS.md
-- Moved SETUP.md → scripts/setup/README.md; updated all references
-- Updated Agent Workflow in DESIGN.md and SKILLS.md to read SESSION.md first
-- Fixed broken anchors: README.md `#data-strategy-summary` → `#data-strategy`; PLAN.md `#workflow` → `#standard-workflow`
-- Restructured src/data/: `cli/` → `pipeline/` (generic tools); `processors/` → `datasets/wikitext/` (dataset-specific); added `datasets/tinystories/` placeholder; moved `prepare_training_data.py` → `scripts/data/`
-- Created `src/data/datasets/boundary.py`: `BoundaryDetector` ABC + `WikiTextBoundary`, `TinyStoriesBoundary`, `PatternBoundary`, `NoBoundary`, `get_boundary_detector()` factory
-- Refactored `extract_text.py`: removed hardcoded WikiText default + `--no-boundaries`; now uses `--dataset NAME` or `--boundary-pattern REGEX`; YAML configs gain `cutoff.dataset: wikitext`
-- Fixed stale test import in `test_normalize_wikitext.py` (`normalize_wikitext` → `src.data.datasets.wikitext.normalize`)
-- Ran full test suite (189 tests passing) after refactor
-- Ran `python -m src.training.train --config config/experiment.toml` on `data/fast/wikitext_100k_tokens__utf8.npy`: loss 16.01 → 2.61 over 500 steps (train_samples=697, val_samples=78)
-- WikiText-103 small subset: normalized/tokenized/token-subset done; training signal verified
-- **Next priority**: TinyStories prep + comparison; explore mixed-source sampling
-
 ---
 
 ## Running Session Log
@@ -73,6 +55,7 @@ See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) f
 
 | Date | Commit | Summary |
 |---|---|---|
+| 2026-02-24 | post-phase2+unstaged | **SKILLS.md consolidation + governance**: Refactored `.github/SKILLS.md` (71→62 lines, 7→4 sections). Added explicit Persona section (5 roles); consolidated Working Discipline, Session Workflow (Start/During/End/Done), Project Patterns (absorbed Protected Files), and Technical Skills (Core + When-relevant, added design principles: SOLID/DRY/KISS/YAGNI/composition). Updated frontmatter (v1.2→v1.3, agentskills.io compatible). Reduced duplication: LESSONS read centralized, git CLI policy stated once. Updated CONTRIBUTING.md to route agents to SKILLS.md + LESSONS.md before Standard Workflow. All tests passing. Ready for commit. |
 | 2026-02-24 | post-`main`+unstaged | **Docs reorganization + Phase 2 status update**: Renamed design/ → docs/; moved data-specific docs to docs/data/ (DATA_PLAN.md, DATA_WORKFLOW.md); updated 9+ cross-references in main docs; modernized WORKFLOW_DATA_PREP diagram (ASCII → Mermaid flowchart); removed legacy manual CLI sections; refactored docs to config-first approach. Phase 2 status updated to reflect completed tokenizer modes (UTF-8/16/32/codepoint via TokenizerFactory), config-driven data tools, and pipeline infrastructure (normalize/tokenize/extract runners). Consolidated DATA_WORKFLOW + DATA_PLAN into DESIGN.md and PLAN.md; created SESSION.md. Ready for commit. |
 | 2026-02-23 | `ad510b1` (Phase 2 steps 1–4) | Steps 1–3 as before. Step 4: `TextChunkDataset` + `make_data_loaders` (12 tests); `train_step` + `train` loop (8 tests). 82 Python tests passing, lint clean. |
 | 2026-02-23 | post-`main`+unstaged | Consolidated session summary: setup hardening landed (CUDA preflight, post-venv CUDA path export, Step 4 torch-dependent install ordering, and improved build parallelism controls), then Phase 1 closure/docs governance cleanup completed (`CONTRIBUTING` refactor, checklist canonicalized there, `CONTRIBUTORS` now policy + guidance pointer, torchao coverage added to acceleration tests). Local validation passed: `make lint`, `make format-check`, `make test` (35 Python + 1 C++). |
