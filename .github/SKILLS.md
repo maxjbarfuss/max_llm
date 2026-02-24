@@ -68,5 +68,6 @@ Follow the [Agent Workflow in design/DESIGN.md](../design/DESIGN.md#agent-workfl
 ### Tooling Policy
 
 - Prefer local tools and repository-native workflows for core development tasks.
-- Prefer not to use any MCP servers unless explicitly required by task context.
-- For Git status/diff/add/commit/push, default to local Git commands/workflow.
+- **NEVER use MCP servers** (including GitKraken, GitLens, or any git-related MCP tools).
+- **ALWAYS use local Git commands** for all git operations: `git status`, `git add`, `git commit`, `git diff`, `git log`, etc.
+- **NEVER push to remote** — all commits are local only. Human maintainer handles remote push.

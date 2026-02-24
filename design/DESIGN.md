@@ -334,6 +334,8 @@ Stable baseline: **BF16 + AMP** throughout (well-supported, numerically safe). L
 - Preserve API stability unless the change is intentional and documented
 - Add/adjust tests with each behavior change
 - Commit local frequently after passing quick tests
+- **Use local git commands only** (`git add`, `git commit`, etc.) — never use MCP/Kraken tools
+- **Never push to remote** — all commits stay local; human maintainer handles sync
 
 **Session end:**
 - Update [PLAN.md](PLAN.md#current-session-scratch-pad) (`Scratch Pad` + `Running Session Log`) with completed work, next step, and any blockers

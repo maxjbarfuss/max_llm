@@ -20,9 +20,12 @@ If docs conflict, follow [design/PLAN.md](design/PLAN.md) for active execution a
 3. Implement in small, testable steps (TDD preferred).
 4. Run validation commands.
 5. Update impacted docs (including [design/PLAN.md](design/PLAN.md) session/log sections).
-6. Commit one logical change.
+6. Commit one logical change using local git commands.
 
-Tooling policy: prefer not to use any MCP servers; default to local repository-native tools and workflows.
+**Tooling policy for AI agents**:
+- **NEVER use MCP servers** (GitKraken, GitLens, or any git MCP tools).
+- **ALWAYS use local Git commands** for all version control operations.
+- **NEVER push to remote** — commits are local only; human maintainer handles remote sync.
 
 ## Validation Commands
 
@@ -65,4 +68,5 @@ Before opening a PR, confirm:
 - Use clear commit messages: `feat|fix|refactor|test|docs|chore(scope): summary`.
 - Keep changes minimal and reviewable.
 - Include a short handoff note when there is follow-up work.
-- Only [@maxjbarfuss](https://github.com/maxjbarfuss) may merge to `main`.
+- **For AI agents**: Use `git commit` directly (never MCP/Kraken tools); never push to remote.
+- Only [@maxjbarfuss](https://github.com/maxjbarfuss) may merge to `main` and push to remote.
