@@ -1,7 +1,7 @@
 {
   "name": "max-llm",
   "version-string": "0.1.0",
-  "description": "Hybrid LLM with MLA-Transformer-MoE-RNN",
+  "description": "Hybrid LLM for building, training, and evaluating modern architectures on local hardware.",
   "homepage": "https://github.com/maxjbarfuss/max_llm",
   "dependencies": [],
   "overrides": [],
