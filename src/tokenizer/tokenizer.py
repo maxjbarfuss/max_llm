@@ -1,80 +1,109 @@
-"""Abstract tokenizer interface and factory."""
+"""Abstract tokenizer interface and factory.
+
+The TokenizerFactory automatically registers the CharTokenizer and provides
+a simple interface for creating tokenizer instances.
+
+Examples:
+    >>> from src.tokenizer import TokenizerFactory
+    >>> tok = TokenizerFactory.create("char")
+    >>> tokens = tok.encode("hello")
+    >>> text = tok.decode(tokens)
+"""
 
 from abc import ABC, abstractmethod
 
 
 class Tokenizer(ABC):
-    """Abstract tokenizer interface."""
+    """Abstract base class for tokenizers."""
 
     @abstractmethod
     def encode(self, text: str) -> list[int]:
-        """Encode text to token IDs."""
-        pass
+        """Encode text to a list of token IDs.
+
+        Args:
+            text: Input text string.
+
+        Returns:
+            List of integer token IDs.
+        """
 
     @abstractmethod
     def decode(self, tokens: list[int]) -> str:
-        """Decode token IDs to text."""
-        pass
+        """Decode a list of token IDs back to text.
+
+        Args:
+            tokens: List of integer token IDs.
+
+        Returns:
+            Decoded text string.
+        """
 
     @abstractmethod
     def count_tokens(self, text: str) -> int:
-        """Count tokens in text."""
-        pass
+        """Count the number of tokens in text.
+
+        Args:
+            text: Input text string.
+
+        Returns:
+            Number of tokens.
+        """
 
 
 class TokenizerFactory:
-    """Factory for creating tokenizer instances."""
+    """Factory for creating and managing tokenizer instances.
+
+    Provides a registry mechanism for tokenizer implementations.
+    Built-in tokenizers are registered via __init__.py imports.
+    """
 
     _tokenizers: dict[str, type[Tokenizer]] = {}
 
     @classmethod
     def create(cls, name: str = "char") -> Tokenizer:
-        """
-        Create a tokenizer instance by name.
+        """Create a tokenizer instance by name.
 
         Args:
-            name: Tokenizer name (default: "char")
+            name: Tokenizer name (default: "char").
 
         Returns:
-            A Tokenizer instance
+            A Tokenizer instance.
 
         Raises:
-            ValueError: If tokenizer name is not registered
+            ValueError: If tokenizer name is not registered.
 
         Examples:
-            >>> tokenizer = TokenizerFactory.create("char")
-            >>> tokens = tokenizer.encode("hello")
+            >>> tok = TokenizerFactory.create("char")
+            >>> tok.encode("hello")
+            [104, 101, 108, 108, 111]
         """
         if name not in cls._tokenizers:
-            available = ", ".join(cls._tokenizers.keys())
-            raise ValueError(f"Unknown tokenizer: {name}. " f"Available: {available}")
+            available = ", ".join(sorted(cls._tokenizers.keys()))
+            raise ValueError(f"Unknown tokenizer '{name}'. Available: {available}")
 
-        tokenizer_class = cls._tokenizers[name]
-        return tokenizer_class()
+        return cls._tokenizers[name]()
 
     @classmethod
     def register(cls, name: str, tokenizer_class: type[Tokenizer]) -> None:
-        """
-        Register a new tokenizer class.
+        """Register a custom tokenizer class.
 
         Args:
-            name: Name to register the tokenizer under
-            tokenizer_class: Tokenizer class to register
+            name: Name to register the tokenizer under.
+            tokenizer_class: Tokenizer class to register.
 
         Raises:
-            TypeError: If tokenizer_class is not a subclass of Tokenizer
+            ValueError: If name is already registered.
         """
-        if not issubclass(tokenizer_class, Tokenizer):
-            raise TypeError(f"{tokenizer_class} must be a subclass of Tokenizer")
+        if name in cls._tokenizers:
+            raise ValueError(f"Tokenizer '{name}' is already registered")
 
         cls._tokenizers[name] = tokenizer_class
 
     @classmethod
     def list_available(cls) -> list[str]:
-        """
-        List available tokenizer names.
+        """List all available tokenizer names.
 
         Returns:
-            List of registered tokenizer names
+            Sorted list of registered tokenizer names.
         """
-        return list(cls._tokenizers.keys())
+        return sorted(cls._tokenizers.keys())

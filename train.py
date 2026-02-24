@@ -9,11 +9,11 @@ from __future__ import annotations
 import argparse
 
 import torch
+from src.data.loader import load_corpus_text, make_data_loaders
 
 from src.config.experiment import ExperimentConfig
-from src.data.loader import load_corpus_text, make_data_loaders
 from src.models.learning_model import SimpleLM
-from src.tokenizer.char_tokenizer import CharTokenizer
+from src.tokenizer import TokenizerFactory
 from src.training.loop import train
 
 
@@ -41,7 +41,7 @@ def main() -> None:
         f"batch_size={config.training.batch_size}"
     )
     corpus_text = load_corpus_text(config.data.dataset_path)
-    tokenizer = CharTokenizer()
+    tokenizer = TokenizerFactory.create(config.data.tokenizer_name)
     tokens = tokenizer.encode(corpus_text)
 
     if len(tokens) < config.data.max_length + 1:
