@@ -53,7 +53,13 @@ Phase 1 is complete. Phase 2 starts with a prototype-first path to get a runnabl
 	- Build simple train/val split + chunked batch loader
 	- Run first end-to-end train command successfully
 
-3. **Prove quick learning signal**
+3. 🔄 **Build production data pipeline**
+	- Implement pre-tokenization, metadata caching, and chunked staging system
+	- See [PLAN_DATA_TOOLING.md](PLAN_DATA_TOOLING.md) for comprehensive pipeline design
+	- Target: wikitext-103 with extensibility for tinystories and future datasets
+	- Deliverables: download, preprocessing, tokenization, fast/slow storage management with prefetching
+
+4. **Prove quick learning signal**
 	- Overfit a tiny subset (10K tokens)
 	- Target: train loss < 0.1 within 500 steps
 
@@ -75,14 +81,18 @@ Phase 1 is complete. Phase 2 starts with a prototype-first path to get a runnabl
 - ☐ Overfit test achieves target loss < 0.1 within 500 steps
 
 **Immediate execution order (start now):**
-1. Fill `config/experiment.toml` all sections (P2 values: `hidden_size=128`, `vocab_size=128`, 1 layer); `train.py` skeleton loads config, validates, exits 0
-2. `src/tokenizer/char_tokenizer.py` — 128-char printable ASCII; `encode`/`decode` with roundtrip tests
-3. `src/models/learning_model/` — `BaseLearningModel` ABC; `SimpleLM` (embedding → FFN → weight-tied LM head) with shape tests
-4. `src/data/loader.py` — in-memory text → token chunks; `src/training/loop.py` — forward → CE loss → backward → optimizer step
+1. ✅ Fill `config/experiment.toml` all sections (P2 values: `hidden_size=128`, `vocab_size=128`, 1 layer); `train.py` skeleton loads config, validates, exits 0
+2. ✅ `src/tokenizer/char_tokenizer.py` — 128-char printable ASCII; `encode`/`decode` with roundtrip tests
+3. ✅ `src/models/learning_model/` — `BaseLearningModel` ABC; `SimpleLM` (embedding → FFN → weight-tied LM head) with shape tests
+4. ✅ `src/data/loader.py` — in-memory text → token chunks; `src/training/loop.py` — forward → CE loss → backward → optimizer step
 5. ✅ Wire into `train.py`; first end-to-end run: loss is finite and decreases over 10 steps
-6. Overfit 10K-token subset (target: loss < 0.1 in 500 steps)
-7. Seed control + checkpoint save/restore; verify deterministic replay (same seed → same loss at step N+1)
-8. Phase 9-shaped placeholder stubs + contract tests; TinyStories/WikiText-103 data pipeline
+6. **🎯 Next: Build production data pipeline (see [PLAN_DATA_TOOLING.md](PLAN_DATA_TOOLING.md))**
+	- Start with step 1: Create data module structure (`src/data/` infrastructure)
+	- Goal: Replace in-memory loader with cached, chunked pipeline for wikitext-103
+	- This feeds quality data to our newly created Learning Model
+7. Overfit 10K-token subset with real dataset (target: loss < 0.1 in 500 steps)
+8. Seed control + checkpoint save/restore; verify deterministic replay (same seed → same loss at step N+1)
+9. Phase 9-shaped placeholder stubs + contract tests
 
 **Running tests:**
 - Quick mixed suite: `make test-quick` (fast Python + C++ quick gate)
@@ -160,7 +170,8 @@ Quality:
 
 Data:
 - ☑ `src/data/loader.py`: in-memory text → char token ids → chunked batches (MVP; no file I/O required)
-- ☐ Source TinyStories + WikiText-103 subset (~1–10M tokens); add tooling to stage slow-drive corpus and fast subsets
+- 🔄 Production data pipeline: pre-tokenization, metadata caching, chunked staging with prefetching (see [PLAN_DATA_TOOLING.md](PLAN_DATA_TOOLING.md))
+- ☐ Source TinyStories + WikiText-103 subset (~1–10M tokens); validate token counts match expectations
 
 Components:
 - ☑ Fill `config/experiment.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128`, 1 layer); wire into `train.py` entrypoint

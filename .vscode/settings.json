@@ -14,7 +14,6 @@
   "python.testing.pytestArgs": ["tests"],
   "python.analysis.typeCheckingMode": "strict",
   "mypy-type-checker.args": ["--config-file=pyproject.toml"],
-  "ruff.lint.args": ["--config=pyproject.toml"],
   "files.exclude": {
     "**/__pycache__": true,
     "**/*.pyc": true,

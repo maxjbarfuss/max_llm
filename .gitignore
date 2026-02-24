@@ -47,8 +47,8 @@ artifacts/
 .tox/
 .ruff_cache/
 
-# Local data caches
-data/
+# Local data caches (only top-level data/ directory, not src/data/)
+/data/
 
 # Credentials (never commit)
 .github/.github_token

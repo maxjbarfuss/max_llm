@@ -7,14 +7,67 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import torch
-from src.data.loader import load_corpus_text, make_data_loaders
+from torch.utils.data import DataLoader, TensorDataset
 
 from src.config.experiment import ExperimentConfig
 from src.models.learning_model import SimpleLM
 from src.tokenizer import TokenizerFactory
 from src.training.loop import train
+
+
+def create_simple_loaders(
+    tokens: torch.Tensor,
+    seq_len: int,
+    batch_size: int,
+    validation_split: float = 0.1,
+    seed: int = 42,
+) -> tuple[DataLoader, DataLoader]:
+    """Create train and validation data loaders from token sequence.
+
+    Args:
+        tokens: Flat sequence of token IDs
+        seq_len: Sequence length for each training sample
+        batch_size: Batch size for loaders
+        validation_split: Fraction of data to use for validation
+        seed: Random seed for reproducibility
+
+    Returns:
+        Tuple of (train_loader, val_loader)
+    """
+    torch.manual_seed(seed)
+
+    # Create non-overlapping sequences
+    num_samples = len(tokens) // (seq_len + 1)
+    if num_samples == 0:
+        raise ValueError(
+            f"Not enough tokens ({len(tokens)}) for at least one sample " f"(need {seq_len + 1})"
+        )
+
+    # Prepare input/target pairs
+    inputs: list[torch.Tensor] = []
+    targets: list[torch.Tensor] = []
+    for i in range(num_samples):
+        start = i * (seq_len + 1)
+        end = start + seq_len + 1
+        sample = tokens[start:end]
+        inputs.append(sample[:-1])
+        targets.append(sample[1:])
+
+    inputs_tensor = torch.stack(inputs)
+    targets_tensor = torch.stack(targets)
+
+    # Split into train/val
+    split_idx = int(len(inputs_tensor) * (1 - validation_split))
+    train_dataset = TensorDataset(inputs_tensor[:split_idx], targets_tensor[:split_idx])
+    val_dataset = TensorDataset(inputs_tensor[split_idx:], targets_tensor[split_idx:])
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,9 +93,18 @@ def main() -> None:
         f"lr={config.training.learning_rate}, "
         f"batch_size={config.training.batch_size}"
     )
-    corpus_text = load_corpus_text(config.data.dataset_path)
+
+    # Load corpus text
+    dataset_path = Path(config.data.dataset_path)
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"Dataset not found: {dataset_path}")
+
+    with open(dataset_path, encoding="utf-8") as f:
+        corpus_text = f.read()
+
+    # Tokenize
     tokenizer = TokenizerFactory.create(config.data.tokenizer_name)
-    tokens = tokenizer.encode(corpus_text)
+    tokens = torch.tensor(tokenizer.encode(corpus_text), dtype=torch.long)
 
     if len(tokens) < config.data.max_length + 1:
         raise ValueError(
@@ -50,7 +112,8 @@ def main() -> None:
             f"got {len(tokens)}, need at least {config.data.max_length + 1}"
         )
 
-    train_loader, val_loader = make_data_loaders(
+    # Create data loaders
+    train_loader, val_loader = create_simple_loaders(
         tokens=tokens,
         seq_len=config.data.max_length,
         batch_size=config.training.batch_size,
@@ -61,6 +124,7 @@ def main() -> None:
     if len(train_loader.dataset) == 0:  # type: ignore[arg-type]
         raise ValueError("Training split is empty after applying validation_split")
 
+    # Create model and optimizer
     model = SimpleLM.from_config(config.model)
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -70,6 +134,7 @@ def main() -> None:
         weight_decay=config.training.weight_decay,
     )
 
+    # Train
     losses = train(
         model=model,
         train_loader=train_loader,
