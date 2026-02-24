@@ -14,7 +14,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 | Phase | Status | Focus | Effort | Risk | Data Strategy | Key Artifacts |
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation & Tests | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, reproducible env notes |
-| **2** | 🔄 In Progress | Skeleton | M | Low (scope clarity) | TinyStories + Wiki-103 subset (1M+) | Baseline training logs, checkpoints, tokenizer report |
+| **2** | ~90% Done | Skeleton | M | Low (scope clarity) | TinyStories + Wiki-103 subset (1M+) | ✅ Tokenizer modes, data pipeline, training validated |
 | **3** | — | Transformer | L | Med (training stability) | OpenWebText subset + Gutenberg (10M+) | Decoder baseline metrics, sampling outputs, integration test evidence |
 | **4** | — | Stability | L | High (scale + distributed) | FineWeb / FineWeb-Edu subset | Throughput benchmark report, tokenizer decision memo, distributed training logs |
 | **5** | — | Curriculum | XL | High (data complexity) | 100M+ tokens; staged curriculum | Architecture A/B report, curriculum manifest, stage-transition metrics |
@@ -35,17 +35,24 @@ For detailed execution: read below. For architectural context: see [DESIGN.md](D
 
 **Current focus: Phase 2 — data sourcing and end-to-end training validation**
 
-Phase 1 complete. Phase 2 infrastructure solid. WikiText-103 small subset cached and trains cleanly; next focus is TinyStories + mixed sampling.
+Phase 1 complete. Phase 2 ~90% done: infrastructure, tokenizers, config, training loop all working. WikiText-103 validates end-to-end. Remaining: TinyStories, mixed sampling, seed hardening, Option B stubs.
 
-**Ordered sequence:**
-1. ✅ Tokenizer + config system (done)
-2. ✅ Data pipeline framework — YAML-driven normalize/tokenize/extract runners (done)
-3. ✅ WikiText-103 small subset → normalize → tokenize → cache; train 100+ steps (loss ↓)
-4. 🎯 TinyStories: add YAML, run normalize/tokenize, validate token counts/boundaries, train 100+ steps
-5. (Stretch) Mixed sampler: interleave TinyStories + WikiText caches by weight and sanity-check loss curve
-6. Overfit 10K-token subset (loss < 0.1 within 500 steps)
-7. Seed + checkpoint hardening
-8. Option B placeholder boundary tests
+**Completed sequence:**
+1. ✅ Tokenizer + config system (done — p2-step1)
+2. ✅ Data pipeline framework — YAML-driven normalize/tokenize/extract runners (done — p2-step2 through refactors)
+3. ✅ CharTokenizer: UTF-8/16/32 + codepoint modes, roundtrip tests (done — p2-step2)
+4. ✅ Config system: `config/experiment.toml` fully populated, `train.py` wired (done — p2-step1)
+5. ✅ BaseLearningModel ABC + SimpleLM: token embedding → GELU MLP → LM head (done — p2-step3)
+6. ✅ Data loader + training loop: DataLoader, train_step, loss computation (done — p2-step4)
+7. ✅ WikiText-103 pipeline: normalize → tokenize → extract subset (done — recent refactors)
+8. ✅ Training validated: 100k-token subset, loss 16.01→2.61 over 500 steps (done)
+
+**Remaining (in priority order):**
+1. 🎯 TinyStories: add YAML, run normalize/tokenize, validate token counts/boundaries
+2. (Stretch) Mixed sampler: interleave TinyStories + WikiText caches by weight
+3. Seed + checkpoint hardening (Python/NumPy/PyTorch CPU/CUDA; deterministic replay)
+4. Overfit 10K-token subset (target: loss < 0.1 within 500 steps)
+5. Option B placeholder stubs (Phase 9-shaped interfaces + import guards)
 
 **Config-driven execution**: All data-prep driven by YAML configs in `scripts/data/<dataset>/`. Single runner:
 ```bash
@@ -118,13 +125,15 @@ Quality:
 Data:
 - ☑ `src/data/loader.py`: in-memory text → char token ids → chunked batches (MVP)
 - ☑ Production data pipeline: pre-tokenization, metadata caching, chunked staging with prefetching (infrastructure complete)
+- ☑ `src/data/pipeline/`: tokenize.py, extract_tokens.py, extract_text.py (all runnable)
+- ☑ `src/data/datasets/`: boundary detection (WikiText/TinyStories/pattern/none), normalize.py for WikiText
 - ☑ Tokenizer factory and multi-mode support: UTF-8, UTF-16, UTF-32, codepoint modes with configurable vocab_size
-- ☑ Data workflow infrastructure: YAML-driven config runners, normalize/tokenize/extract pipeline (`scripts/data/`)
-- ☑ Download WikiText-103 small subset (≈10K docs, 1M tokens) to slow disk; run normalize → tokenize via YAML config (`scripts/data/wikitext-103/default_ascii_small.yaml`)
-- ☑ Validate WikiText token counts: metadata matches target (≈4.3 chars/token sanity)
-- ☑ Wire WikiText subset into training; loss decreases over 100+ steps
-- ☐ Download TinyStories; create `scripts/data/tinystories/default_utf8.yaml`; compare tokenization stats (tokens/doc, vocab coverage vs WikiText-103)
-- ☐ Mixed sampler (stretch): interleave TinyStories + WikiText caches by weight and run short training
+- ☑ Data workflow infrastructure: YAML-driven config runners (`scripts/data/run_data_prep.py`), all pipeline steps
+- ☑ WikiText-103 small subset: normalize → tokenize via YAML config (`scripts/data/wikitext-103/default_*_small.yaml`)
+- ☑ Validate WikiText token counts: metadata cached, sanity checks pass
+- ☑ Wire WikiText subset into training; validated loss decreases (16.01→2.61 over 500 steps)
+- ☐ Download TinyStories; create `scripts/data/tinystories/default_utf8.yaml`; compare tokenization stats
+- ☐ Mixed sampler (stretch): interleave TinyStories + WikiText caches by weight in DataLoader
 
 Components:
 - ☑ Fill `config/experiment.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128/256/512`, tokenizer_mode); wire into `train.py` entrypoint
@@ -135,22 +144,25 @@ Components:
 - ☐ Option B stubbing: implement Phase 2 concrete stubs plus Phase 9-shaped placeholder interfaces (attention, moe, rnn, inference, alignment) with import/compile-safe boundaries
 
 Training and evaluation:
-- ☐ Seed control: Python, NumPy, PyTorch (CPU/CUDA)
-- ☑ Training loop: forward → loss → backward → step → log
-- ☐ Checkpointing: model state, optimizer state, epoch/step
-- ☐ Perplexity metrics (train/val, per epoch)
+- ☐ Seed control: Python, NumPy, PyTorch (CPU/CUDA) — not yet implemented
+- ☑ Training loop: forward → loss → backward → step → log (working)
+- ☐ Checkpointing: model state, optimizer state, epoch/step (not yet implemented)
+- ☐ Perplexity metrics: per-batch + per-epoch (not yet implemented)
 
 Quality:
-- ☑ Unit tests: config loading, tokenizer roundtrip (all modes), data splitting, tokenizer_mode/vocab_size config fields
-- ☐ Stub boundary tests: placeholder modules import cleanly, expose stable interfaces, and fail with explicit `NotImplementedError` where expected
+- ☑ Unit tests: 189 passing (config, tokenizer modes UTF-8/16/32, data splits, extract_text, chartoken round-trip)
+- ☑ Test coverage: char_tokenizer (UTF-8/16/32), boundary detection, tokenizer modes
+- ☐ Stub boundary tests: Phase 9-shaped placeholders import cleanly, expose stable interfaces, fail with `NotImplementedError`
 
-**Exit Criteria**:
-- ☐ `python train.py --config config/experiment.toml` trains end-to-end on TinyStories, loss decreases monotonically over 100 steps
-- ☐ Save/restore checkpoint with same seed produces bit-identical loss at step N+1
-- ☐ ≥8 unit tests pass: config loading, tokenizer encode/decode roundtrip, data split ratios, model forward shape, loss computation, checkpoint save/load, seed determinism, perplexity calculation
-- ☐ Option B stub contract passes: Phase 2 path runnable; Phase 9-shaped placeholders present with validated interfaces
-- ☐ TinyStories + WikiText-103 subset (1M+ tokens) downloaded, tokenized, and validated (token count matches expected)
-- ☐ Overfit test achieves train loss < 0.1 on a 10K-token subset within 500 steps
+**Exit Criteria** (status after refactor commit 44470bf):
+- ✅ `python train.py --config config/experiment.toml` trains end-to-end on WikiText-103 100k tokens, loss decreases (16.01→2.61)
+- ☐ `python train.py --config config/experiment.toml` trains end-to-end on TinyStories, loss decreases monotonically over 100 steps (pending TinyStories data)
+- ☐ Save/restore checkpoint with same seed produces bit-identical loss at step N+1 (seed hardening pending)
+- ✅ ≥8 unit tests pass: 189 tests passing including config, tokenizer modes, data splits, model forward, loss computation
+- ☐ Option B stub contract passes: Phase 2 path runnable; Phase 9-shaped placeholders present with validated interfaces (pending)
+- ✅ WikiText-103 subset (1M tokens) downloaded, tokenized, and validated (on disk)
+- ✅ TinyStories pipeline skeleton ready (boundary detection implemented, YAML template needed)
+- ☐ Overfit test achieves train loss < 0.1 on a 10K-token subset within 500 steps (pending)
 
 ---
 

@@ -52,9 +52,12 @@ Work is complete only when all are true:
 
 - Explicit requirements are implemented.
 - Relevant tests and validation commands pass.
-- Affected docs are updated and consistent.
+- **Affected docs are updated and consistent**, including:
+  - [docs/SESSION.md](../docs/SESSION.md) Scratch Pad: cleared and summarized in Running Session Log
+  - [docs/PLAN.md](../docs/PLAN.md) Phase Progress table: status updated; completed/pending tasks marked with ☑/☐
+  - Any architecture or technical docs modified by the work (e.g., [docs/DESIGN.md](../docs/DESIGN.md))
 - Changes are clean, concise, and maintainable.
-- Remaining risks or follow-up work are documented.
+- Remaining risks or follow-up work are documented (in SESSION.md Running Session Log).
 
 ## Working Rule
 
@@ -63,7 +66,11 @@ Follow the [Agent Workflow in docs/DESIGN.md](../docs/DESIGN.md#agent-workflow).
 - **Session start**: Read [docs/SESSION.md](../docs/SESSION.md) (current focus, next steps), then [docs/PLAN.md](../docs/PLAN.md#phase-progress) current phase tasks.
 - **Before coding**: Check existing tests and interfaces.
 - **During coding**: TDD — write failing test first, implement, verify.
-- **Session end**: Update [docs/SESSION.md](../docs/SESSION.md) (Scratch Pad, Running Session Log).
+- **Session end (MANDATORY)**: 
+  - Clear [docs/SESSION.md](../docs/SESSION.md) Scratch Pad; add entry to Running Session Log
+  - Update [docs/PLAN.md](../docs/PLAN.md) Phase Progress table (status, completed/pending tasks)
+  - Commit changes with clear message referencing PLAN/SESSION updates
+  - Do NOT end a session with outdated or missing PLAN/SESSION metadata
 
 ### Tooling Policy
 
