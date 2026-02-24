@@ -55,39 +55,21 @@ Baseline knowledge and working discipline for contributors and coding agents.
 
 ## Definition of Done
 
-Work is complete only when all are true:
+Follow the [Change Checklist in CONTRIBUTING.md](../CONTRIBUTING.md#change-checklist). Additionally for agents:
 
-- Explicit requirements are implemented.
-- Relevant tests and validation commands pass.
-- **Affected docs are updated and consistent**, including:
-  - [docs/SESSION.md](../docs/SESSION.md) Scratch Pad: cleared and summarized in Running Session Log
-  - [docs/PLAN.md](../docs/PLAN.md) Phase Progress table: status updated; completed/pending tasks marked with ☑/☐
-  - [CONTRIBUTING.md](../CONTRIBUTING.md) if workflow, branch, or release practices change
-  - Any architecture or technical docs modified by the work (e.g., [docs/DESIGN.md](../docs/DESIGN.md))
-- Changes are clean, concise, and maintainable.
-- Remaining risks or follow-up work are documented (in SESSION.md Running Session Log).
+- Do NOT end a session with outdated or missing PLAN/SESSION metadata.
+- Remaining risks or follow-up work are documented in SESSION.md Running Session Log.
 
 ## Working Rule
 
-Follow the [Agent Workflow in docs/DESIGN.md](../docs/DESIGN.md#agent-workflow). In brief:
+Follow the [Standard Workflow in CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow-every-session). Agent-specific additions:
 
-- **Session start**:
-  1. Read [LESSONS.md](LESSONS.md) — avoid repeating recorded mistakes.
-  2. Read [docs/SESSION.md](../docs/SESSION.md) — current focus and next steps.
-  3. Read [docs/PLAN.md](../docs/PLAN.md#phase-progress) — current phase tasks.
+- **Session start**: Read [LESSONS.md](LESSONS.md) first — avoid repeating recorded mistakes.
 - **Before coding**: Check existing tests and interfaces.
 - **During coding**: TDD — write failing test first, implement, verify.
-- **Session end (MANDATORY)**:
-  - Clear [docs/SESSION.md](../docs/SESSION.md) Scratch Pad; add entry to Running Session Log
-  - Update [docs/PLAN.md](../docs/PLAN.md) Phase Progress table (status, completed/pending tasks)
-  - Follow [CONTRIBUTING.md](../CONTRIBUTING.md) branch/tag conventions
-  - Commit changes with clear message referencing PLAN/SESSION updates
-  - Do NOT end a session with outdated or missing PLAN/SESSION metadata
+- **Session end**: Clear SESSION.md Scratch Pad; add entry to Running Session Log. Update PLAN.md Phase Progress.
 
 ### Tooling Policy
 
-- Prefer local tools and repository-native workflows for core development tasks.
-- **NEVER use MCP servers** (including GitKraken, GitLens, or any git-related MCP tools).
-- **DO NOT use GitKraken**; use local `git` CLI only.
-- **ALWAYS use local Git commands** for all git operations: `git status`, `git add`, `git commit`, `git diff`, `git log`, `git push`, etc.
-- **Commits are always local first**; push to remote only with explicit human confirmation.
+- Use local `git` CLI only. Never use MCP servers (GitKraken, GitLens, or any git-related MCP tools).
+- See [CONTRIBUTING.md](../CONTRIBUTING.md#review-and-approval) for push and review policy.

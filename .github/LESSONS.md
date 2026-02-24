@@ -22,19 +22,19 @@
 
 ---
 
-## L003 — Do Not Push to Remote Without Explicit Human Confirmation
+## L003 — Push Only When Feature-Complete and Reviewed
 
-**Observed behavior**: Agent pushed commits to the remote repository without being explicitly asked to.
+**Observed behavior**: Agent pushed commits to the remote repository mid-task, before the work was complete or reviewed.
 
-**Correct approach**: All commits stay local until the human explicitly says to push or confirms the work is ready for remote. Default is local-only.
+**Correct approach**: Commit locally and often. Push only when the work is feature-complete, tests pass, docs are updated, and a review (human preferred, agentic acceptable) has been done. See [CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow-every-session) step 9.
 
 ---
 
-## L004 — Do Not Modify Protected Files Without an Explicit Request
+## L004 — Do Not Modify Governance Files Without an Explicit Request
 
-**Observed behavior**: Agent modified `.github/SKILLS.md`, `CONTRIBUTING.md`, `.github/LESSONS.md`, or other governance files as incidental cleanup or as part of an unrelated task.
+**Observed behavior**: Agent modified `.github/SKILLS.md`, `.github/LESSONS.md`, `CONTRIBUTING.md`, or `.github/CODEOWNERS` as incidental cleanup or as part of an unrelated task.
 
-**Correct approach**: Governance files require an explicit user instruction to change. Do not touch them speculatively or as a side effect of another task.
+**Correct approach**: Governance and agent instruction files require an explicit user request to change. Do not touch them speculatively or as a side effect of another task. Note: `docs/SESSION.md` and `docs/PLAN.md` are *not* governance files — updating them is expected as part of every session.
 
 ---
 
