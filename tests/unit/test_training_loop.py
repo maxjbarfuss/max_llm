@@ -1,10 +1,12 @@
 """Unit tests for the Phase 2 training loop."""
 
+import pytest
 import torch
 
 from src.config.model import ModelConfig
 from src.models.learning_model import SimpleLM
 from src.training.loop import train, train_step
+from src.training.train import create_simple_loaders
 
 
 def _make_model() -> SimpleLM:
@@ -151,3 +153,66 @@ class TestTrain:
         assert len(losses) == 1
         assert isinstance(losses[0], float)
         assert losses[0] > 0.0
+
+
+class TestCreateSimpleLoaders:
+    """create_simple_loaders correctness."""
+
+    def _tokens(self, n: int) -> torch.Tensor:
+        return torch.arange(n, dtype=torch.long)
+
+    def test_split_sizes_sum_to_total_samples(self):
+        """Train + val sample counts sum to total non-overlapping sequences."""
+        seq_len = 8
+        tokens = self._tokens(100)
+        total_samples = len(tokens) // (seq_len + 1)  # 11
+        train_loader, val_loader = create_simple_loaders(tokens, seq_len, batch_size=4)
+        assert len(train_loader.dataset) + len(val_loader.dataset) == total_samples  # type: ignore[arg-type]
+
+    def test_validation_split_respected(self):
+        """val_loader receives roughly validation_split fraction of samples."""
+        seq_len = 4
+        tokens = self._tokens(100)
+        total_samples = len(tokens) // (seq_len + 1)  # 20
+        _, val_loader = create_simple_loaders(tokens, seq_len, batch_size=2, validation_split=0.2)
+        expected_val = int(total_samples * 0.2)
+        assert len(val_loader.dataset) == expected_val  # type: ignore[arg-type]
+
+    def test_input_target_offset_by_one(self):
+        """Each input token sequence is shifted by one to produce the target."""
+        seq_len = 4
+        tokens = torch.arange(20, dtype=torch.long)
+        train_loader, _ = create_simple_loaders(tokens, seq_len, batch_size=20, validation_split=0.0)
+        for x, y in train_loader:
+            # x[i, t+1] should equal y[i, t] for all valid t
+            assert torch.equal(x[:, 1:], y[:, :-1])
+            break
+
+    def test_sequences_are_non_overlapping(self):
+        """Consecutive samples use non-overlapping windows of tokens."""
+        seq_len = 3
+        # 12 tokens → 3 samples of length 4 (seq_len+1), non-overlapping
+        tokens = torch.arange(12, dtype=torch.long)
+        train_loader, _ = create_simple_loaders(tokens, seq_len, batch_size=10, validation_split=0.0)
+        x_batch, _ = next(iter(train_loader))
+        # Sort by first token to get deterministic order despite shuffle=True
+        x_batch = x_batch[x_batch[:, 0].argsort()]
+        # Windows start at token 0, 4, 8 — confirming non-overlapping stride of seq_len+1
+        assert x_batch[0, 0].item() == 0
+        assert x_batch[1, 0].item() == 4
+        assert x_batch[2, 0].item() == 8
+
+    def test_raises_if_not_enough_tokens(self):
+        """Raises ValueError when token count < seq_len + 1."""
+        tokens = torch.arange(5, dtype=torch.long)
+        with pytest.raises(ValueError, match="Not enough tokens"):
+            create_simple_loaders(tokens, seq_len=10, batch_size=1)
+
+    def test_batch_shape_is_correct(self):
+        """Each batch has shape (batch_size, seq_len)."""
+        seq_len = 8
+        tokens = self._tokens(200)
+        train_loader, _ = create_simple_loaders(tokens, seq_len, batch_size=4)
+        x, y = next(iter(train_loader))
+        assert x.shape == (4, seq_len)
+        assert y.shape == (4, seq_len)

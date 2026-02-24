@@ -108,7 +108,7 @@ def tokenize_dataset(
     console.print(f"  Characters: {len(text):,}")
     console.print(f"  Tokens: {len(tokens):,}")
     console.print(f"  Chars per token: {len(text) / len(tokens):.2f}")
-    console.print(f"  Vocab size: {tokenizer.vocab_size}")
+    console.print(f"  Vocab size: {getattr(tokenizer, 'vocab_size', 'N/A')}")
     console.print(f"  Array dtype: {tokens_array.dtype}")
     console.print(f"  Array shape: {tokens_array.shape}")
     console.print(f"  Bytes per token: {tokens_array.itemsize}")

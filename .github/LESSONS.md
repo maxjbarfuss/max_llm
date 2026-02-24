@@ -38,6 +38,14 @@
 
 ---
 
+## L005 — Never Put Phase Progress Status in README.md
+
+**Observed behavior**: Agent added a "Current Phase" section to `README.md` containing task checklists, test counts, coverage percentages, or other mutable status information.
+
+**Correct approach**: `README.md` is a stable navigation document — it describes the project and links to resources. Mutable status belongs exclusively in `docs/SESSION.md` (current focus, next steps) and `docs/PLAN.md` (task checklists, exit criteria). Never add current-phase progress tables, checklist items, or quality metrics to `README.md`.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:

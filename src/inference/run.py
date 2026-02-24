@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 import torch
 
@@ -95,7 +96,7 @@ def main() -> None:
     top_p = args.top_p if args.top_p is not None else inference.top_p
     top_k = args.top_k if args.top_k is not None else inference.top_k
 
-    tokenizer_kwargs = {"mode": config.data.tokenizer_mode}
+    tokenizer_kwargs: dict[str, Any] = {"mode": config.data.tokenizer_mode}
     if config.data.tokenizer_mode == "codepoint":
         tokenizer_kwargs["vocab_size"] = config.data.tokenizer_vocab_size
     tokenizer = TokenizerFactory.create(config.data.tokenizer_name, **tokenizer_kwargs)

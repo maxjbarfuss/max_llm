@@ -30,7 +30,7 @@ from typing import Literal
 from .tokenizer import Tokenizer
 
 # Default settings
-_DEFAULT_MODE = "codepoint"
+_DEFAULT_MODE: Literal["codepoint", "utf8", "utf16", "utf32"] = "codepoint"
 _DEFAULT_VOCAB_SIZE = 128
 
 # Vocab sizes for each mode

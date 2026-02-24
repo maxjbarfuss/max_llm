@@ -14,7 +14,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 | Phase | Status | Focus | Effort | Risk | Data Strategy | Key Artifacts |
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation & Tests | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, reproducible env notes |
-| **2** | ~90% Done | Skeleton | M | Low (scope clarity) | TinyStories + Wiki-103 subset (1M+) | ✅ Tokenizer modes, data pipeline, training validated |
+| **2** | ~93% Done | Skeleton | M | Low (scope clarity) | TinyStories + Wiki-103 subset (1M+) | ✅ Tokenizer modes, data pipeline, training loop, checkpointing, inference (text-in→text-out verified) |
 | **3** | — | Transformer | L | Med (training stability) | OpenWebText subset + Gutenberg (10M+) | Decoder baseline metrics, sampling outputs, integration test evidence |
 | **4** | — | Stability | L | High (scale + distributed) | FineWeb / FineWeb-Edu subset | Throughput benchmark report, tokenizer decision memo, distributed training logs |
 | **5** | — | Curriculum | XL | High (data complexity) | 100M+ tokens; staged curriculum | Architecture A/B report, curriculum manifest, stage-transition metrics |
@@ -109,28 +109,26 @@ Components:
 - ☑ TokenizerFactory (`src/tokenizer/tokenizer.py`): **kwargs-based parameterization for mode and vocab_size
 - ☑ `BaseLearningModel` ABC (`src/models/learning_model/base.py`): `forward` and factory interface; evolves across phases
 - ☑ `SimpleLM` (`src/models/learning_model/simple_lm.py`): token embedding → GELU MLP → weight-tied LM head
-- ☐ Option B stubbing: implement Phase 2 concrete stubs plus Phase 9-shaped placeholder interfaces (attention, moe, rnn, inference, alignment) with import/compile-safe boundaries
 
 Training and evaluation:
 - ☐ Seed control: Python, NumPy, PyTorch (CPU/CUDA) — not yet implemented
 - ☑ Training loop: forward → loss → backward → step → log (working)
-- ☐ Checkpointing: model state, optimizer state, epoch/step (not yet implemented)
+- ☑ Checkpointing: model state, optimizer state, step (`save_checkpoint` in `src/training/train.py`)
+- ☑ Inference: `src/inference/run.py` — temperature, top-k, top-p sampling; loads checkpoint; text-in → text-out
 - ☐ Perplexity metrics: per-batch + per-epoch (not yet implemented)
 
 Quality:
-- ☑ Unit tests: 189 passing (config, tokenizer modes UTF-8/16/32, data splits, extract_text, chartoken round-trip)
-- ☑ Test coverage: char_tokenizer (UTF-8/16/32), boundary detection, tokenizer modes
-- ☐ Stub boundary tests: Phase 9-shaped placeholders import cleanly, expose stable interfaces, fail with `NotImplementedError`
+- ☑ Unit tests: 219 passing — end-to-end Phase 2 loop covered (tokenizer → data pipeline → training → checkpoint → inference, 58% total coverage)
 
 **Exit Criteria** (status after refactor commit 44470bf):
 - ✅ `python -m src.training.train --config config/experiment.toml` trains end-to-end on WikiText-103 100k tokens, loss decreases (16.01→2.61)
 - ☐ `python -m src.training.train --config config/experiment.toml` trains end-to-end on TinyStories, loss decreases monotonically over 100 steps (pending TinyStories data)
 - ☐ Save/restore checkpoint with same seed produces bit-identical loss at step N+1 (seed hardening pending)
-- ✅ ≥8 unit tests pass: 189 tests passing including config, tokenizer modes, data splits, model forward, loss computation
-- ☐ Option B stub contract passes: Phase 2 path runnable; Phase 9-shaped placeholders present with validated interfaces (pending)
+- ✅ 219 unit tests passing — end-to-end Phase 2 loop (tokenizer → data pipeline → training → checkpoint → inference)
 - ✅ WikiText-103 subset (1M tokens) downloaded, tokenized, and validated (on disk)
 - ✅ TinyStories pipeline skeleton ready (boundary detection implemented, YAML template needed)
 - ☐ Overfit test achieves train loss < 0.1 on a 10K-token subset within 500 steps (pending)
+- ✅ Inference: `python -m src.inference.run --config config/experiment.toml --checkpoint <path> --prompt "Hello"` generates text from a trained checkpoint
 
 ---
 

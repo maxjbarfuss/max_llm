@@ -17,12 +17,14 @@
 title: Phase 2 – Skeleton
 ---
 graph LR
-    A[Text]:::io --> B[Char Tokenizer]:::p2 --> C[Token Emb + Learned Pos]:::p2 --> D[GELU MLP]:::p2 --> E[LM Head]:::p2 --> F[Logits]:::io --> G[Greedy Sampling]:::p2 --> H[Text]:::io
+    A[Text]:::io --> B[Char Tokenizer]:::p2 --> C[Token Emb + Learned Pos]:::p2 --> D[GELU MLP]:::p2 --> E[LM Head]:::p2 --> F[Logits]:::io
+    F -->|training| G[Cross-Entropy Loss]:::io
+    F -->|inference| H[Sampling]:::p2 --> I[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
     classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
 ```
 
-- **Phase 2**: Text → Char Tokenizer → Token Emb + Learned Pos → GELU MLP → LM Head → Logits → Sampling → Text
+- **Phase 2**: Text → Char Tokenizer → Token Emb + Learned Pos → GELU MLP → LM Head → Logits → Cross-Entropy Loss (training) / Sampling (inference) → Text
 
 ```mermaid
 ---
@@ -334,11 +336,6 @@ flowchart LR
 - Parametrize over CPU/GPU backends; skip GPU tests if CUDA unavailable
 
 **C++ test standards** (GTest): Tests in `src/*/kernels/tests/` directories. Run via `make test-cpp`.
-
-**Stub policy (Option B)**:
-- Build Phase 2 functionality concretely now, while creating Phase 9-shaped placeholder interfaces/modules early.
-- Placeholders must compile/import cleanly, expose stable contracts, and fail explicitly via `NotImplementedError`/stub guards.
-- Every placeholder boundary gets at least one contract test (interface, shapes, config wiring) before real implementation.
 
 ---
 

@@ -33,10 +33,11 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
+from typing import IO
 
 from rich.console import Console
 
-from src.data.datasets.boundary import NoBoundary, get_boundary_detector
+from src.data.datasets.boundary import BoundaryDetector, NoBoundary, get_boundary_detector
 
 console = Console()
 
@@ -82,11 +83,82 @@ def parse_size(size_str: str) -> int:
     return int(size_str)
 
 
+def _run_boundary_extract(
+    f_in: IO[str],
+    f_out: IO[str],
+    detector: BoundaryDetector,
+    size_bytes: int,
+    verbose: bool,
+) -> tuple[int, int, int]:
+    """Inner loop for document-boundary-aware extraction. Returns (bytes, lines, docs)."""
+    bytes_written = 0
+    lines_written = 0
+    docs_written = 0
+    current_doc_lines: list[str] = []
+    current_doc_bytes = 0
+    target_reached = False
+
+    for line in f_in:
+        line_bytes = len(line.encode("utf-8"))
+        if detector.is_boundary(line):
+            if current_doc_lines:
+                if target_reached:
+                    break
+                for doc_line in current_doc_lines:
+                    f_out.write(doc_line)
+                bytes_written += current_doc_bytes
+                lines_written += len(current_doc_lines)
+                docs_written += 1
+                if verbose and docs_written % 10 == 0:
+                    console.print(
+                        f"  Written {docs_written} docs, "
+                        f"{lines_written:,} lines, {bytes_written:,} bytes..."
+                    )
+                if bytes_written >= size_bytes:
+                    target_reached = True
+                current_doc_lines = []
+                current_doc_bytes = 0
+            current_doc_lines.append(line)
+            current_doc_bytes += line_bytes
+        else:
+            current_doc_lines.append(line)
+            current_doc_bytes += line_bytes
+
+    if current_doc_lines and not target_reached:
+        for doc_line in current_doc_lines:
+            f_out.write(doc_line)
+        bytes_written += current_doc_bytes
+        lines_written += len(current_doc_lines)
+        docs_written += 1
+
+    return bytes_written, lines_written, docs_written
+
+
+def _run_simple_extract(
+    f_in: IO[str],
+    f_out: IO[str],
+    size_bytes: int,
+    verbose: bool,
+) -> tuple[int, int]:
+    """Inner loop for simple byte-limit extraction. Returns (bytes, lines)."""
+    bytes_written = 0
+    lines_written = 0
+    for line in f_in:
+        if bytes_written >= size_bytes:
+            break
+        f_out.write(line)
+        bytes_written += len(line.encode("utf-8"))
+        lines_written += 1
+        if verbose and lines_written % 1000 == 0:
+            console.print(f"  Read {lines_written:,} lines, {bytes_written:,} bytes...")
+    return bytes_written, lines_written
+
+
 def extract_subset(
     input_path: Path,
     output_path: Path,
     size_bytes: int,
-    detector: NoBoundary | object | None = None,
+    detector: BoundaryDetector | None = None,
     verbose: bool = False,
 ) -> None:
     """Extract a subset of text data, optionally respecting document boundaries.
@@ -116,84 +188,23 @@ def extract_subset(
         console.print(f"[bold red]Error:[/bold red] Input file not found: {input_path}")
         return
 
-    # Create output directory if needed
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    bytes_written = 0
-    lines_written = 0
-    docs_written = 0
-    current_doc_lines: list[str] = []
-    current_doc_bytes = 0
-    target_reached = False
 
     with open(input_path, encoding="utf-8") as f_in:
         with open(output_path, "w", encoding="utf-8") as f_out:
-            for line in f_in:
-                line_bytes = len(line.encode("utf-8"))
-
-                if boundary_mode:
-                    # Check if this is a document boundary
-                    if detector.is_boundary(line):
-                        # Write previous document if it exists
-                        if current_doc_lines:
-                            # If we've reached target, don't start new doc
-                            if target_reached:
-                                break
-
-                            for doc_line in current_doc_lines:
-                                f_out.write(doc_line)
-
-                            bytes_written += current_doc_bytes
-                            lines_written += len(current_doc_lines)
-                            docs_written += 1
-
-                            if verbose and docs_written % 10 == 0:
-                                console.print(
-                                    f"  Written {docs_written} docs, "
-                                    f"{lines_written:,} lines, {bytes_written:,} bytes..."
-                                )
-
-                            # Check if we've reached target after writing this doc
-                            if bytes_written >= size_bytes:
-                                target_reached = True
-
-                            # Reset for new document
-                            current_doc_lines = []
-                            current_doc_bytes = 0
-
-                        # Start new document
-                        current_doc_lines.append(line)
-                        current_doc_bytes += line_bytes
-                    else:
-                        # Continue current document
-                        current_doc_lines.append(line)
-                        current_doc_bytes += line_bytes
-                else:
-                    # Simple mode: just stop at byte limit
-                    if bytes_written >= size_bytes:
-                        break
-
-                    f_out.write(line)
-                    bytes_written += line_bytes
-                    lines_written += 1
-
-                    if verbose and lines_written % 1000 == 0:
-                        console.print(f"  Read {lines_written:,} lines, {bytes_written:,} bytes...")
-
-            # Write final document if in boundary mode
-            if boundary_mode and current_doc_lines and not target_reached:
-                for doc_line in current_doc_lines:
-                    f_out.write(doc_line)
-                bytes_written += current_doc_bytes
-                lines_written += len(current_doc_lines)
-                docs_written += 1
+            if boundary_mode:
+                bytes_written, lines_written, docs_written = _run_boundary_extract(
+                    f_in, f_out, detector, size_bytes, verbose
+                )
+            else:
+                bytes_written, lines_written = _run_simple_extract(f_in, f_out, size_bytes, verbose)
+                docs_written = 0
 
     console.print(f"[green]✓[/green] Extracted {lines_written:,} lines ({bytes_written:,} bytes)")
     if boundary_mode:
         console.print(f"[green]✓[/green] Complete documents: {docs_written}")
     console.print(f"[green]✓[/green] Saved to: {output_path}")
 
-    # Show stats
     console.print("\n[bold]Subset Statistics:[/bold]")
     if boundary_mode:
         console.print(f"  Documents: {docs_written:,}")

@@ -28,6 +28,13 @@ class DataConfig:
     validation_split: float | int
     seed: int
 
+    def _validate_split(self) -> None:
+        if isinstance(self.validation_split, float):
+            if not (0 < self.validation_split < 1):
+                raise ValueError("validation_split fraction must be in (0, 1)")
+        elif self.validation_split <= 0:
+            raise ValueError("validation_split must be positive")
+
     def __post_init__(self) -> None:
         """Validate data configuration."""
         if self.max_length <= 0:
@@ -40,16 +47,10 @@ class DataConfig:
             raise ValueError("tokenizer_name cannot be empty")
         if self.tokenizer_mode not in {"codepoint", "utf8", "utf16", "utf32"}:
             raise ValueError("tokenizer_mode must be one of: codepoint, utf8, utf16, utf32")
-
         if self.tokenizer_backend == "unigram" and self.unigram_model_path is not None:
             if not self.unigram_model_path.strip():
                 raise ValueError("unigram_model_path cannot be empty")
-
-        if isinstance(self.validation_split, float):
-            if not (0 < self.validation_split < 1):
-                raise ValueError("validation_split fraction must be in (0, 1)")
-        elif self.validation_split <= 0:
-            raise ValueError("validation_split must be positive")
+        self._validate_split()
 
     @classmethod
     def from_toml(cls, file_path: str | Path) -> "DataConfig":

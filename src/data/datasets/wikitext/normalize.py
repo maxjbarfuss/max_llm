@@ -59,7 +59,6 @@ def clean_wikitext(text: str) -> str:
         if i <= j:
             # Extract parts
             left_count = i
-            right_count = len(stripped) - j - 1
             content = stripped[i : j + 1].strip()
 
             # Use left side count for both sides (standard format)
@@ -134,7 +133,7 @@ def verify_text(text: str, context_lines: int = 50) -> dict:
     Returns dict with counts and sample lines for each issue type.
     """
     lines = text.split("\n")
-    issues = {
+    issues: dict[str, list[tuple[int, str]]] = {
         "quote_spacing": [],
         "apostrophe_spacing": [],
         "word_quote_missing_space": [],

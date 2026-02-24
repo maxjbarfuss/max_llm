@@ -333,7 +333,6 @@ In 2000 Boulter had a guest @-@ starring role  .
 
 He had a role as " Craig " in  the episode ."""
         result = clean_wikitext(text)
-        issues = verify_text(result)
 
         # Check basic fixes
         assert "= = Career = =" not in result  # Should be normalized

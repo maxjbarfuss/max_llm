@@ -8,15 +8,47 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.config.experiment import ExperimentConfig
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import BaseLearningModel, SimpleLM
 from src.tokenizer import TokenizerFactory
 from src.training.loop import train
+
+
+def save_checkpoint(
+    model: BaseLearningModel,
+    optimizer: torch.optim.Optimizer,
+    step: int,
+    output_dir: str | Path,
+) -> Path:
+    """Save model and optimizer state to output_dir/checkpoint.pt.
+
+    Args:
+        model: The model to checkpoint.
+        optimizer: The optimizer to checkpoint.
+        step: Current training step (stored for resumability).
+        output_dir: Directory to write checkpoint into (created if absent).
+
+    Returns:
+        Path to the written checkpoint file.
+    """
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "checkpoint.pt"
+    torch.save(
+        {
+            "model_state": model.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "step": step,
+        },
+        path,
+    )
+    return path
 
 
 def create_simple_loaders(
@@ -111,7 +143,7 @@ def main() -> None:
         with open(dataset_path, encoding="utf-8") as f:
             corpus_text = f.read()
 
-        tokenizer_kwargs = {"mode": config.data.tokenizer_mode}
+        tokenizer_kwargs: dict[str, Any] = {"mode": config.data.tokenizer_mode}
         if config.data.tokenizer_mode == "codepoint":
             tokenizer_kwargs["vocab_size"] = config.data.tokenizer_vocab_size
 
@@ -164,6 +196,9 @@ def main() -> None:
         f"val_samples={len(val_loader.dataset)}"  # type: ignore[arg-type]
     )
     print(f"Training done. initial_loss={losses[0]:.4f} final_loss={losses[-1]:.4f}")
+
+    ckpt_path = save_checkpoint(model, optimizer, step=config.training.max_steps, output_dir=config.output_dir)
+    print(f"Checkpoint : {ckpt_path}")
 
 
 if __name__ == "__main__":
