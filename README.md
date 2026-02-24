@@ -1,36 +1,49 @@
 # Max LLM
 
-Hybrid LLM research project (100–500M params): GQA/MLA + MoE + GRU output, optimized for local training on consumer hardware.
+Hands-on LLM research lab for building, training, and evaluating modern architectures on local hardware.
 
-**Status:** Phase 1 ✅ complete → Phase 2 (skeleton) kickoff next
-**Repository:** [github.com/maxjbarfuss/max_llm](https://github.com/maxjbarfuss/max_llm)
+**Status:** Current phase and progress live in [docs/SESSION.md](docs/SESSION.md) and [docs/PLAN.md](docs/PLAN.md).
+
+**Repository:**
+[github.com/maxjbarfuss/max_llm](https://github.com/maxjbarfuss/max_llm)
 
 ## Why This Project?
 
-**Learn by building.** Max LLM is a hands-on laboratory for understanding modern LLM architectures: how attention works, why mixture-of-experts scales differently, how to trade off memory for speed, and what makes one tokenizer better than another. Each phase builds incrementally—no black boxes, no mystery.
+**Learn by building.** Max LLM is a hands-on lab for modern sequence modeling. Each phase adds one core capability so architecture and training decisions can be tested, measured, and explained.
 
-**Experiment locally.** Train and iterate on consumer hardware (dual 24GB GPUs). No cloud costs, no waiting for expensive cluster time. Benchmark new ideas cheaply, measure trade-offs precisely, and keep reproducible records.
+**Experiment locally.** The project is optimized for consumer GPUs and fast iteration. The goal is to validate tradeoffs in throughput, memory, and quality without relying on cloud-scale infrastructure.
 
-**9-phase roadmap (phases 1–9) from scratch to hybrid models.** Start with character-level tokenization and linear layers (Phase 2), progress through standard transformers (Phase 3–4 with modern upgrades), then explore exotic architectures: mixture-of-experts (Phase 8) and GRU-transformer hybrids (Phase 9). **See what actually works**, not what papers claim.
+**Progressive roadmap.** The 9 phases move from minimal tokenization and linear models to full transformers and hybrid architectures. The emphasis is on clear, verifiable improvements rather than paper-chasing.
 
-**Comprehensive data strategy.** Build an unrestricted, diverse world model across Phases 2–5 (100–500M tokens including adult, controversial, and specialized content) for robust generalization. Layer safety guardrails through SFT and DPO in Phases 6–9. See [docs/DESIGN.md — Data Strategy](docs/DESIGN.md#data-strategy) for sourcing guidelines and phase-by-phase data tasks.
+**Data strategy with intent.** Data selection, preprocessing, and evaluation are treated as first-class engineering work.
 
-**Reproducibility as a first principle.** Deterministic seeds, explicit configs, atomic commits linked to results. Every experiment is repeatable; every result is explainable.
+**Reproducibility by design.** Configs, seeds, and checkpoints are tracked so experiments can be re-run and compared reliably.
 
 ---
 
 ## Quick Start
 
-```bash
-source setup.sh
-```
+Start with setup, then pick the entrypoint you need:
 
-See [scripts/setup/README.md](scripts/setup/README.md) for full instructions.
+- [scripts/setup/README.md](scripts/setup/README.md): full environment setup steps and platform requirements
+- [scripts/build/README.md](scripts/build/README.md): C++ build wrapper and common build modes
+- [scripts/data/README.md](scripts/data/README.md): end-to-end data prep workflow with various configurations and datasets
+- [src/training/README.md](src/training/README.md): how to run training with various configurations
+- [src/inference/README.md](src/inference/README.md): how to run inference on multiple configurations
+- [tests/README.md](tests/README.md): how to run tests from the repo root or the tests/ folder
 
-## Architecture Evolution
+Docs and policies:
 
-Final architecture (Phase 9) showing the complete pipeline from text to output.
-Solid color = current component, rounded pill = replaced predecessor (colored by introducing phase).
+- [docs/SESSION.md](docs/SESSION.md): current focus, next steps, and session log (start here for status)
+- [docs/PLAN.md](docs/PLAN.md): phased execution roadmap and exit criteria (reference for current phase)
+- [docs/DESIGN.md](docs/DESIGN.md): architecture, engineering constraints, and data strategy
+- [CONTRIBUTING.md](CONTRIBUTING.md): repository workflow and contributor authorization
+- [.github/SKILLS.md](.github/SKILLS.md): AI agent instructions and working discipline
+- [.github/CODEOWNERS](.github/CODEOWNERS): code ownership and review responsibility
+
+## Architecture
+
+Phase 9 combines GQA/MLA attention, MoE feedforward blocks, and a GRU output stage into a single local-first stack. The diagram below is a Phase 9 snapshot of the full text → output pipeline. Solid rectangles are current components in Phase 9. Rounded pills show predecessors replaced in earlier phases, colored by the phase they were introduced. For deeper design context, see [docs/DESIGN.md](docs/DESIGN.md).
 
 ```mermaid
 graph TD
@@ -87,26 +100,6 @@ graph TD
 | 🔴 Red | 8 | MLA (replaces GQA), MoE (replaces dense SwiGLU) |
 | 🟡 Yellow | 9 | GRU hybrid blocks |
 | Rounded pill | — | Replaced predecessors (colored by introducing phase) |
-
-## CI/CD
-
-Continuous integration runs on every push via GitHub Actions. See [scripts/ci/README.md](scripts/ci/README.md) for CI monitoring tools and working commands.
-
-## Docs Summary
-
-- [CONTRIBUTING.md](CONTRIBUTING.md): workflow, PR rules, and contributor authorization
-- [docs/SESSION.md](docs/SESSION.md): current focus, immediate next steps, session log
-- [docs/PLAN.md](docs/PLAN.md): phased execution roadmap and exit criteria
-- [docs/DESIGN.md](docs/DESIGN.md): architecture, engineering principles, testing strategy
-- [scripts/setup/README.md](scripts/setup/README.md): environment setup (WSL2 on Windows; Linux/macOS/WSL1 not supported)
-- [scripts/data/README.md](scripts/data/README.md): data preparation workflow, config reference, size guide
-- [.github/SKILLS.md](.github/SKILLS.md): required technical skills and working discipline for agents
-- [.github/CODEOWNERS](.github/CODEOWNERS): code review ownership
-
-## Contributor Entry Points
-
-- Human contributors: [CONTRIBUTING.md](CONTRIBUTING.md)
-- AI agents: [docs/SESSION.md](docs/SESSION.md) → [docs/PLAN.md](docs/PLAN.md) → [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 

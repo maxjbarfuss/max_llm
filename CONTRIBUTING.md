@@ -9,74 +9,87 @@ This guide is for both human contributors and AI agents.
 | Max Barfuss | [@maxjbarfuss](https://github.com/maxjbarfuss) | Owner, final approver, sole maintainer of `main` |
 
 AI agents may contribute only under direct instruction or explicit written approval from @maxjbarfuss. Agent requirements:
-- Follow the [Agent Workflow in docs/DESIGN.md](docs/DESIGN.md#agent-workflow) (session start/end, TDD, doc updates)
-- Self-identify in commits and PR notes (`AI agent: <name>` or similar)
+- Follow the workflow in this document (session setup, TDD, doc updates, session close)
+- Self-identify in commits and handoff notes (`AI agent: <name>` or similar)
 
-Any contributor not listed above requires written approval from @maxjbarfuss before opening a PR. Unauthorized PRs may be closed without review.
+Any contributor not listed above requires written approval from @maxjbarfuss before contributing. Unauthorized changes may be closed without review.
 
 ## Source of Truth
 
+- Code and tests are the source of truth. Docs must match the current behavior.
 - [docs/SESSION.md](docs/SESSION.md): current focus and immediate next tasks
 - [docs/PLAN.md](docs/PLAN.md): phased execution roadmap
 - [docs/DESIGN.md](docs/DESIGN.md): architecture and engineering constraints
 - [.github/CODEOWNERS](.github/CODEOWNERS): review ownership
 
-If docs conflict, follow [docs/SESSION.md](docs/SESSION.md) and [docs/PLAN.md](docs/PLAN.md) for active execution and reconcile in the same PR.
+If docs conflict, follow [docs/SESSION.md](docs/SESSION.md) and [docs/PLAN.md](docs/PLAN.md) for active execution and reconcile in the same change set.
 
-## Standard Workflow
+## Workflow
 
-1. Read [docs/SESSION.md](docs/SESSION.md#immediate-next-steps) and choose a scoped task.
-2. Check relevant constraints in [docs/DESIGN.md](docs/DESIGN.md#coding-standards).
-3. Implement in small, testable steps (TDD preferred).
-4. Run validation commands.
-5. Update impacted docs (including [docs/SESSION.md](docs/SESSION.md) scratch pad and log).
-6. Commit one logical change using local git commands.
+This repo uses a lightweight feature-branch workflow with phase-based branches and release tags.
 
-**Tooling policy for AI agents**:
-- **NEVER use MCP servers** (GitKraken, GitLens, or any git MCP tools).
-- **ALWAYS use local Git commands** for all version control operations.
-- **Commits are always local first**; push to remote only with explicit human confirmation.
+### Standard Workflow (Every Session)
 
-## Validation Commands
+1. Read [docs/SESSION.md](docs/SESSION.md#next-steps-priority-order) and choose a scoped task.
+2. Skim [docs/PLAN.md](docs/PLAN.md) for the current phase and any relevant sections for your task.
+3. Check constraints in [docs/DESIGN.md](docs/DESIGN.md#coding-standards).
+4. Ensure you are on the correct branch (phase branch or feature sub-branch).
+5. Implement in small, testable steps (TDD preferred).
+6. Run minimal tests for the touched area; do not proceed with failing tests.
+7. Update [docs/SESSION.md](docs/SESSION.md) and [docs/PLAN.md](docs/PLAN.md) to reflect progress.
+8. Commit locally with a clear, reviewable message; commit often and keep each commit small.
+9. Review the change (human preferred; agentic acceptable for well-scoped work), then push when feature-complete, tested, and documented.
 
-Run before opening a PR:
+### Branch Strategy
 
+- **main**: Protected. Only the owner merges to `main`.
+- **phase branches**: Each phase gets a dedicated feature branch.
+  - Format: `phase<phase-number>` (example: `phase2`)
+  - Minimum requirement: all Phase work happens on its phase branch.
+- **feature branches**: Optional sub-branches for scoped work.
+  - Format: `phase<phase-number>/<topic>` (example: `phase2/data-pipeline`)
+
+### Release Tags
+
+- Tag releases at phase milestones or major checkpoints.
+- Format: `phase<phase-number>-v<major>.<minor>.<patch>` (example: `phase2-v0.1.0`).
+- Tag only from the phase branch after tests and docs are current.
+
+### Validation and Quality
+
+Run the minimal checks relevant to your change. Testing commands and expectations live in [tests/README.md](tests/README.md).
+
+Check (read-only):
 ```bash
 source .venv/bin/activate
 make lint
 make format-check
-make test
+make type-check
 ```
 
-Optional but recommended:
-
+Fix (modifies files):
 ```bash
-make test-quick
-make test-cov
+make format
+make cpp-lint
+make cpp-format-check
 ```
 
-Optional acceleration dependency probes (may fail if not installed):
+### Change Checklist
 
-```bash
-python3 -c "import flash_attn; print(flash_attn.__version__)"
-python3 -c "import torchao; print(torchao.__version__)"
-python3 -c "import xformers; print(xformers.__version__)"
-```
-
-## PR Validation Checklist
-
-Before opening a PR, confirm:
+Before pushing or tagging a milestone, confirm:
 
 1. **Summary**: what changed and why.
-2. **Validation**: `make lint`, `make format-check`, `make test` all pass locally.
+2. **Validation**: the relevant tests passed locally.
 3. **Risks & Next**: known limitations and follow-up tasks are documented.
-4. **Docs**: behavior/architecture changes are reflected in [docs/SESSION.md](docs/SESSION.md) and affected docs.
+4. **Docs**: [docs/SESSION.md](docs/SESSION.md) and [docs/PLAN.md](docs/PLAN.md) reflect the change.
 
-## Commit and PR Rules
+### CI/CD
 
-- One logical change per PR.
-- Use clear commit messages: `feat|fix|refactor|test|docs|chore(scope): summary`.
-- Keep changes minimal and reviewable.
-- Include a short handoff note when there is follow-up work.
-- **For AI agents**: Use `git commit` directly (never MCP/Kraken tools); push to remote only with human confirmation.
-- Only [@maxjbarfuss](https://github.com/maxjbarfuss) may merge to `main`.
+Continuous integration runs on every push via GitHub Actions. See [scripts/ci/README.md](scripts/ci/README.md) for CI monitoring tools and working commands.
+
+### Review and Approval
+
+PRs are not used for routine work. If a PR is opened, it requires owner approval and evidence that docs and tests are current.
+
+**AI agent tooling**:
+- Use local Git commands only; never use MCP servers (GitKraken, GitLens, or any Git MCP tools)

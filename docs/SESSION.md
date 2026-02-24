@@ -11,27 +11,35 @@
 
 Infrastructure is complete (tokenizer modes, config system, data pipeline framework). Next step is downloading real datasets and proving the learning signal end-to-end.
 
-## Immediate Next Steps
+## Phase 2 Status
+
+Phase 1 complete. Phase 2 ~90% done: infrastructure, tokenizers, config, training loop all working. WikiText-103 validates end-to-end. Remaining: TinyStories, mixed sampling, seed hardening, Option B stubs.
+
+**Completed sequence:**
+1. ✅ Tokenizer + config system (done — p2-step1)
+2. ✅ Data pipeline framework — YAML-driven normalize/tokenize/extract runners (done — p2-step2 through refactors)
+3. ✅ CharTokenizer: UTF-8/16/32 + codepoint modes, roundtrip tests (done — p2-step2)
+4. ✅ Config system: `config/experiment.toml` fully populated, `src.training.train` wired (done — p2-step1)
+5. ✅ BaseLearningModel ABC + SimpleLM: token embedding → GELU MLP → LM head (done — p2-step3)
+6. ✅ Data loader + training loop: DataLoader, train_step, loss computation (done — p2-step4)
+7. ✅ WikiText-103 pipeline: normalize → tokenize → extract subset (done — recent refactors)
+8. ✅ Training validated: 100k-token subset, loss 16.01→2.61 over 500 steps (done)
+
+## Next Steps (Priority Order)
 
 1. 🎯 TinyStories data path + YAML: add `scripts/data/tinystories/default_utf8.yaml`; run normalize/tokenize using `run_data_prep.py`
 2. Validate TinyStories token counts (chars/token sanity) and boundary handling (`<|endoftext|>`)
-3. Run `train.py` on TinyStories subset; capture loss curve and compare vs WikiText small
+3. Run `python -m src.training.train` on TinyStories subset; capture loss curve and compare vs WikiText small
 4. (Stretch) Add simple mixed-source sampler: interleave TinyStories + WikiText caches by weight; run short training for combined sample quality
 5. Seed + checkpoint hardening (Python/NumPy/PyTorch CPU/CUDA; save/restore; deterministic replay)
-6. Option B placeholder boundary tests (Phase 9-shaped stubs: import clean, raise `NotImplementedError`)
+6. Overfit 10K-token subset (target: loss < 0.1 within 500 steps)
+7. Option B placeholder stubs (Phase 9-shaped interfaces + import guards)
 
-## Quick Commands
-
+**Config-driven execution**: All data-prep driven by YAML configs in `scripts/data/<dataset>/`. Single runner:
 ```bash
-make test-quick   # fast Python + C++ gate (<3 min)
-make test-py      # Python only
-make test-cpp     # C++ only
-make test         # full suite
-make test-cov     # with coverage
-make lint         # ruff + mypy
-make format-check # black + isort + clang-format
-make format       # auto-fix formatting
+python scripts/data/run_data_prep.py --config scripts/data/<dataset>/<config>.yaml
 ```
+See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) for config anatomy and size guide.
 
 ---
 
@@ -41,9 +49,9 @@ make format       # auto-fix formatting
 
 **Session: 2026-02-24 | Documentation Reorganization + Data Pipeline Refactor**
 
-- Deleted docs/data/DATA_WORKFLOW.md and docs/data/DATA_PLAN.md; distributed content: workflow diagram + design decisions → DESIGN.md; operational quickstart → scripts/data/README.md; phase-appropriate implementation tasks → each phase's Data section in PLAN.md
+- Deleted docs/data/DATA_WORKFLOW.md and docs/data/DATA_PLAN.md; distributed content: workflow diagram + design decisions → DESIGN.md; operational Quick Start → scripts/data/README.md; phase-appropriate implementation tasks → each phase's Data section in PLAN.md
 - Created docs/SESSION.md for live session state (current focus, next steps, scratch pad, log)
-- Created scripts/data/README.md with all operational data prep docs (quickstart, config anatomy, size guide, tips)
+- Created scripts/data/README.md with all operational data prep docs (Quick Start, config anatomy, size guide, tips)
 - Merged .github/CONTRIBUTORS.md into CONTRIBUTING.md (Authorization section); deleted CONTRIBUTORS.md
 - Moved SETUP.md → scripts/setup/README.md; updated all references
 - Updated Agent Workflow in DESIGN.md and SKILLS.md to read SESSION.md first
@@ -53,7 +61,7 @@ make format       # auto-fix formatting
 - Refactored `extract_text.py`: removed hardcoded WikiText default + `--no-boundaries`; now uses `--dataset NAME` or `--boundary-pattern REGEX`; YAML configs gain `cutoff.dataset: wikitext`
 - Fixed stale test import in `test_normalize_wikitext.py` (`normalize_wikitext` → `src.data.datasets.wikitext.normalize`)
 - Ran full test suite (189 tests passing) after refactor
-- Ran `train.py --config config/experiment.toml` on `data/fast/wikitext_100k_tokens__utf8.npy`: loss 16.01 → 2.61 over 500 steps (train_samples=697, val_samples=78)
+- Ran `python -m src.training.train --config config/experiment.toml` on `data/fast/wikitext_100k_tokens__utf8.npy`: loss 16.01 → 2.61 over 500 steps (train_samples=697, val_samples=78)
 - WikiText-103 small subset: normalized/tokenized/token-subset done; training signal verified
 - **Next priority**: TinyStories prep + comparison; explore mixed-source sampling
 

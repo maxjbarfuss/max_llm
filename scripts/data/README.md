@@ -14,7 +14,7 @@ flowchart LR
     D --> E["Fast Train<br/>fast disk"]
 ```
 
-## Quickstart
+## Quick Start
 
 ```bash
 # Pick a config and run
@@ -27,7 +27,7 @@ python scripts/data/run_data_prep.py \
 #   [data]
 #   dataset_path = "data/fast/wikitext_1m_tokens__utf8.npy"
 
-python train.py --config config/experiment.toml
+python -m src.training.train --config config/experiment.toml
 ```
 
 ## Typical Workflow
@@ -114,7 +114,7 @@ python scripts/data/run_data_prep.py --config scripts/data/wikitext-103/wikitext
 
 - **Normalize and tokenize once**: expensive — skip with `workflow.normalize: false` / `workflow.tokenize: false` when cache exists
 - **Iterate on subset size**: cheap — just change `subset.size` and re-run
-- **Use `.npy` tokens directly**: `train.py` detects `.npy` input and skips re-tokenization
+- **Use `.npy` tokens directly**: `src.training.train` detects `.npy` input and skips re-tokenization
 - **force: true**: re-runs the step even if output already exists (useful after changing normalization rules)
 
 ## Adding a New Dataset

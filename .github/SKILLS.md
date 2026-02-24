@@ -55,6 +55,7 @@ Work is complete only when all are true:
 - **Affected docs are updated and consistent**, including:
   - [docs/SESSION.md](../docs/SESSION.md) Scratch Pad: cleared and summarized in Running Session Log
   - [docs/PLAN.md](../docs/PLAN.md) Phase Progress table: status updated; completed/pending tasks marked with ☑/☐
+  - [CONTRIBUTING.md](../CONTRIBUTING.md) if workflow, branch, or release practices change
   - Any architecture or technical docs modified by the work (e.g., [docs/DESIGN.md](../docs/DESIGN.md))
 - Changes are clean, concise, and maintainable.
 - Remaining risks or follow-up work are documented (in SESSION.md Running Session Log).
@@ -66,9 +67,10 @@ Follow the [Agent Workflow in docs/DESIGN.md](../docs/DESIGN.md#agent-workflow).
 - **Session start**: Read [docs/SESSION.md](../docs/SESSION.md) (current focus, next steps), then [docs/PLAN.md](../docs/PLAN.md#phase-progress) current phase tasks.
 - **Before coding**: Check existing tests and interfaces.
 - **During coding**: TDD — write failing test first, implement, verify.
-- **Session end (MANDATORY)**: 
+- **Session end (MANDATORY)**:
   - Clear [docs/SESSION.md](../docs/SESSION.md) Scratch Pad; add entry to Running Session Log
   - Update [docs/PLAN.md](../docs/PLAN.md) Phase Progress table (status, completed/pending tasks)
+  - Follow [CONTRIBUTING.md](../CONTRIBUTING.md) branch/tag conventions
   - Commit changes with clear message referencing PLAN/SESSION updates
   - Do NOT end a session with outdated or missing PLAN/SESSION metadata
 
@@ -76,5 +78,6 @@ Follow the [Agent Workflow in docs/DESIGN.md](../docs/DESIGN.md#agent-workflow).
 
 - Prefer local tools and repository-native workflows for core development tasks.
 - **NEVER use MCP servers** (including GitKraken, GitLens, or any git-related MCP tools).
+- **DO NOT use GitKraken**; use local `git` CLI only.
 - **ALWAYS use local Git commands** for all git operations: `git status`, `git add`, `git commit`, `git diff`, `git log`, `git push`, etc.
 - **Commits are always local first**; push to remote only with explicit human confirmation.
