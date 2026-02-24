@@ -1,21 +1,14 @@
 """Data pipeline for downloading, preprocessing, tokenizing, and serving datasets.
 
-This module provides a production-ready data infrastructure for:
-- Downloading datasets from HuggingFace and other sources
-- Preprocessing and normalizing text (wikitext, tinystories, etc.)
-- Pre-tokenizing and caching tokens on slow storage
-- Chunked staging to fast storage with background prefetching
-- PyTorch Dataset integration for efficient training
+Structure:
+- pipeline/: Dataset-agnostic pipeline steps (tokenize, extract_tokens, extract_text)
+- datasets/: Dataset-specific processing (wikitext/, tinystories/, ...)
 
-Key Components:
-- downloader: Dataset downloading and discovery
-- processors: Dataset-specific preprocessing (wikitext, tinystories)
+Planned components (Phase 3+):
+- downloader: HuggingFace dataset downloading and schema discovery
 - metadata: Parquet-based metadata schemas
-- cache: Chunked token cache with LRU eviction and prefetching
-- dataset: PyTorch Dataset wrapper for cached tokens
-- cli: Command-line tools for pipeline operations
+- cache: Chunked token cache with LRU eviction and prefetching (Phase 4)
+- dataset: PyTorch Dataset wrapper for cached tokens (Phase 4)
 """
 
-__all__ = [
-    # Populated as modules are implemented
-]
+__all__: list[str] = []

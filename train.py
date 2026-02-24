@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -94,17 +95,31 @@ def main() -> None:
         f"batch_size={config.training.batch_size}"
     )
 
-    # Load corpus text
+    # Load dataset (supports both .npy tokens and .txt files)
     dataset_path = Path(config.data.dataset_path)
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset not found: {dataset_path}")
 
-    with open(dataset_path, encoding="utf-8") as f:
-        corpus_text = f.read()
+    if dataset_path.suffix == ".npy":
+        # Load pre-tokenized data (fast path)
+        print(f"Loading pre-tokenized data from {dataset_path}")
+        token_array = np.load(dataset_path)
+        tokens = torch.tensor(token_array, dtype=torch.long)
+    else:
+        # Load and tokenize text file (legacy path)
+        print(f"Loading and tokenizing text from {dataset_path}")
+        with open(dataset_path, encoding="utf-8") as f:
+            corpus_text = f.read()
 
-    # Tokenize
-    tokenizer = TokenizerFactory.create(config.data.tokenizer_name)
-    tokens = torch.tensor(tokenizer.encode(corpus_text), dtype=torch.long)
+        tokenizer_kwargs = {"mode": config.data.tokenizer_mode}
+        if config.data.tokenizer_mode == "codepoint":
+            tokenizer_kwargs["vocab_size"] = config.data.tokenizer_vocab_size
+
+        tokenizer = TokenizerFactory.create(
+            config.data.tokenizer_name,
+            **tokenizer_kwargs,
+        )
+        tokens = torch.tensor(tokenizer.encode(corpus_text), dtype=torch.long)
 
     if len(tokens) < config.data.max_length + 1:
         raise ValueError(

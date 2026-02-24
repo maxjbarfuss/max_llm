@@ -228,6 +228,26 @@ Stable baseline: **BF16 + AMP** throughout (well-supported, numerically safe). L
 - Required alerts: NaN/Inf, loss spikes, OOM, disk pressure, thermal
 - Checkpoints: rolling recent + best, atomic writes, include RNG + precision phase
 
+### Data Pipeline Reference
+
+**Workflow** — normalize once on slow disk, train on fast disk:
+
+```mermaid
+flowchart LR
+    A["Raw Text<br/>slow disk"] --> B["Normalize<br/>cached .txt"]
+    B --> C["Tokenize<br/>.npy cache"]
+    C --> D["Extract Subset"]
+    D --> E["Fast Train<br/>fast disk"]
+```
+
+**Execution**: YAML-driven; see [scripts/data/README.md](../scripts/data/README.md) for quickstart, config reference, and size guide.
+
+**Pipeline design decisions** (implemented progressively across phases):
+- **Pre-tokenize once, cache forever**: Tokenize on slow disk during preprocessing; eliminates runtime overhead and enables reproducible chunking
+- **Parquet metadata** (Phase 4+): Columnar format enables efficient chunk range queries, split tracking, and schema evolution over JSON/dict
+- **Chunked staging with LRU** (Phase 4+): Copy token chunks (e.g., 50M tokens) to fast disk on demand; reduces fast disk requirements vs full copy; LRU eviction when space limited
+- **Background prefetch** (Phase 4+): `threading.Thread` copies next chunk while training runs on current chunk; simple I/O-bound solution with no multiprocessing overhead
+
 ---
 
 ## Phased Roadmap
@@ -325,8 +345,8 @@ Stable baseline: **BF16 + AMP** throughout (well-supported, numerically safe). L
 ## Agent Workflow
 
 **Session start:**
-1. Read [PLAN.md](PLAN.md#phase-progress) (Phase Progress, `Next Steps`, `Running Session Log`)
-2. Read the relevant [Coding Standards](#coding-standards) and [Testing Strategy](#testing-strategy) sections
+1. Read [SESSION.md](SESSION.md) (current focus, immediate next steps, scratch pad, log)
+2. Read [PLAN.md](PLAN.md#phase-progress) (Phase Progress, current phase task list and exit criteria)
 3. Check existing tests and interfaces before modifying code
 
 **During work:**
@@ -335,10 +355,10 @@ Stable baseline: **BF16 + AMP** throughout (well-supported, numerically safe). L
 - Add/adjust tests with each behavior change
 - Commit local frequently after passing quick tests
 - **Use local git commands only** (`git add`, `git commit`, etc.) — never use MCP/Kraken tools
-- **Never push to remote** — all commits stay local; human maintainer handles sync
+- Push to remote only with explicit human confirmation
 
 **Session end:**
-- Update [PLAN.md](PLAN.md#current-session-scratch-pad) (`Scratch Pad` + `Running Session Log`) with completed work, next step, and any blockers
+- Update [SESSION.md](SESSION.md) (Scratch Pad + Running Session Log) with completed work, next step, and any blockers
 - Update docs impacted by the change in the same PR
 
 ---

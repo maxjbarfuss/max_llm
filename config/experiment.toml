@@ -9,7 +9,7 @@ output_dir = "./outputs/p2-baseline"
 hidden_size = 128
 num_layers = 1
 num_heads = 4
-vocab_size = 128          # 128-char printable ASCII tokenizer
+vocab_size = 256          # Must match UTF-8 byte vocab size
 max_seq_length = 256
 mla_latent_dim = 64       # placeholder — used from Phase 8
 rope_base = 10000         # placeholder — used from Phase 5
@@ -51,8 +51,10 @@ use_kv_cache = false      # no KV cache in Phase 2
 kv_cache_dtype = "bf16"   # required field; unused until Phase 6
 
 [data]
-dataset_path = "./data/tinystories"
+dataset_path = "data/fast/wikitext_100k_tokens__utf8.npy"
 tokenizer_name = "char"   # Phase 2 uses char tokenizer; not loaded through DataConfig
+tokenizer_mode = "utf8"
+tokenizer_vocab_size = 256  # Ignored for utf8 mode (fixed to 256)
 tokenizer_backend = "gpt2_bpe"  # placeholder; actual backend wired in src/tokenizer/
 unigram_model_path = ""
 max_length = 128          # chunk size fed to the model (≤ model.max_seq_length)

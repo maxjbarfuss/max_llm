@@ -1,14 +1,11 @@
 # Max LLM Execution Plan
 
-Purpose: phased execution roadmap and session tracker for both human contributors and AI agents.
-
-**Session rule**: one session = all work since last commit.
+Purpose: phased execution roadmap for human contributors and AI agents.
 
 **How to use:**
-1. Read this file at session start: check Phase Progress and Next Steps sections
-2. Pick work from **Next Steps** section
-3. Keep temporary work notes in **Current Session Scratch Pad**
-4. Log completed work in **Running Session Log** before committing
+1. Read [SESSION.md](SESSION.md) first — current focus, immediate next steps, scratch pad, log
+2. Check Phase Progress table and the current phase's task list for execution detail
+3. For architecture and design decisions: [DESIGN.md](DESIGN.md)
 
 ---
 
@@ -36,78 +33,28 @@ For detailed execution: read below. For architectural context: see [DESIGN.md](D
 
 ## Next Steps
 
-**Current focus: Phase 2 — prototype baseline**
+**Current focus: Phase 2 — data sourcing and end-to-end training validation**
 
-Phase 1 is complete. Phase 2 starts with a prototype-first path to get a runnable baseline quickly, then harden for reproducibility.
+Phase 1 complete. Phase 2 infrastructure solid. WikiText-103 small subset cached and trains cleanly; next focus is TinyStories + mixed sampling.
 
-**Phase 2 kickoff flow (prototype-first):**
+**Ordered sequence:**
+1. ✅ Tokenizer + config system (done)
+2. ✅ Data pipeline framework — YAML-driven normalize/tokenize/extract runners (done)
+3. ✅ WikiText-103 small subset → normalize → tokenize → cache; train 100+ steps (loss ↓)
+4. 🎯 TinyStories: add YAML, run normalize/tokenize, validate token counts/boundaries, train 100+ steps
+5. (Stretch) Mixed sampler: interleave TinyStories + WikiText caches by weight and sanity-check loss curve
+6. Overfit 10K-token subset (loss < 0.1 within 500 steps)
+7. Seed + checkpoint hardening
+8. Option B placeholder boundary tests
 
-1. ✅ **Bootstrap runnable baseline (MVP)**
-	- Implement `ExperimentConfig` wiring and minimal `train.py` entrypoint
-	- Add character-level tokenizer (encode/decode, 128-char ASCII)
-	- Add `BaseLearningModel` interface (`src/models/learning_model/`) and `SimpleLM` implementation
-	- Add minimal training loop (`forward → loss → backward → step`)
+**Config-driven execution**: All data-prep driven by YAML configs in `scripts/data/<dataset>/`. Single runner:
+```bash
+python scripts/data/run_data_prep.py --config scripts/data/<dataset>/<config>.yaml
+```
+See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) for config anatomy and size guide.
 
-2. ✅ **Wire minimal data path**
-	- Source TinyStories + WikiText-103 subset (~1–10M tokens)
-	- Build simple train/val split + chunked batch loader
-	- Run first end-to-end train command successfully
+See Phase 2 section below for full task list and exit criteria.
 
-3. 🔄 **Build production data pipeline**
-	- Implement pre-tokenization, metadata caching, and chunked staging system
-	- See [PLAN_DATA_TOOLING.md](PLAN_DATA_TOOLING.md) for comprehensive pipeline design
-	- Target: wikitext-103 with extensibility for tinystories and future datasets
-	- Deliverables: download, preprocessing, tokenization, fast/slow storage management with prefetching
-
-4. **Prove quick learning signal**
-	- Overfit a tiny subset (10K tokens)
-	- Target: train loss < 0.1 within 500 steps
-
-4. **Lock reproducibility and reliability**
-	- Add seed control (Python, NumPy, PyTorch CPU/CUDA)
-	- Add checkpoint save/restore (model + optimizer + step)
-	- Verify deterministic replay (same seed → same loss trajectory)
-
-5. **Add tests and interface guards**
-	- Unit tests: config, tokenizer, data split, model forward shape, loss, checkpoint, seed
-	- Add Phase 9-shaped placeholder interfaces (attention/moe/rnn/inference/alignment) with explicit stub guards
-	- Add placeholder boundary tests (import-safe + `NotImplementedError` contract)
-
-**Phase 2 exit criteria:**
-- ☐ `python train.py --config config/experiment.toml` trains end-to-end, loss decreases monotonically over 100 steps
-- ☐ Save/restore checkpoint with same seed produces bit-identical loss at step N+1
-- ☐ ≥8 unit tests passing (config, tokenizer, data chunking, model forward shape, loss, checkpoint, seed, placeholder boundaries)
-- ☐ TinyStories + WikiText-103 subset validated (token count matches expected)
-- ☐ Overfit test achieves target loss < 0.1 within 500 steps
-
-**Immediate execution order (start now):**
-1. ✅ Fill `config/experiment.toml` all sections (P2 values: `hidden_size=128`, `vocab_size=128`, 1 layer); `train.py` skeleton loads config, validates, exits 0
-2. ✅ `src/tokenizer/char_tokenizer.py` — 128-char printable ASCII; `encode`/`decode` with roundtrip tests
-3. ✅ `src/models/learning_model/` — `BaseLearningModel` ABC; `SimpleLM` (embedding → FFN → weight-tied LM head) with shape tests
-4. ✅ `src/data/loader.py` — in-memory text → token chunks; `src/training/loop.py` — forward → CE loss → backward → optimizer step
-5. ✅ Wire into `train.py`; first end-to-end run: loss is finite and decreases over 10 steps
-6. **🎯 Next: Build production data pipeline (see [PLAN_DATA_TOOLING.md](PLAN_DATA_TOOLING.md))**
-	- Start with step 1: Create data module structure (`src/data/` infrastructure)
-	- Goal: Replace in-memory loader with cached, chunked pipeline for wikitext-103
-	- This feeds quality data to our newly created Learning Model
-7. Overfit 10K-token subset with real dataset (target: loss < 0.1 in 500 steps)
-8. Seed control + checkpoint save/restore; verify deterministic replay (same seed → same loss at step N+1)
-9. Phase 9-shaped placeholder stubs + contract tests
-
-**Running tests:**
-- Quick mixed suite: `make test-quick` (fast Python + C++ quick gate)
-- All tests: `make test` (Python + C++)
-- Python only: `make test-py` (pytest)
-- C++ only: `make test-cpp` (ctest)
-- With coverage: `make test-cov`
-- Linting/format: `make lint`, `make format-check`, `make format`
-
-6. **Add logging framework**
-	- Replace bare `print()` in training loop with structured logging (`logging` module or `loguru`)
-	- Add `log_interval` integration test (`capsys` / log capture) to verify logging output
-	- Establish log format conventions for reproducibility (step, loss, lr, wallclock)
-
-**Execution rule:** Write failing tests first (TDD), then implement minimal code to satisfy contracts.
 
 ---
 
@@ -169,16 +116,23 @@ Quality:
 **Tasks**:
 
 Data:
-- ☑ `src/data/loader.py`: in-memory text → char token ids → chunked batches (MVP; no file I/O required)
-- 🔄 Production data pipeline: pre-tokenization, metadata caching, chunked staging with prefetching (see [PLAN_DATA_TOOLING.md](PLAN_DATA_TOOLING.md))
-- ☐ Source TinyStories + WikiText-103 subset (~1–10M tokens); validate token counts match expectations
+- ☑ `src/data/loader.py`: in-memory text → char token ids → chunked batches (MVP)
+- ☑ Production data pipeline: pre-tokenization, metadata caching, chunked staging with prefetching (infrastructure complete)
+- ☑ Tokenizer factory and multi-mode support: UTF-8, UTF-16, UTF-32, codepoint modes with configurable vocab_size
+- ☑ Data workflow infrastructure: YAML-driven config runners, normalize/tokenize/extract pipeline (`scripts/data/`)
+- ☑ Download WikiText-103 small subset (≈10K docs, 1M tokens) to slow disk; run normalize → tokenize via YAML config (`scripts/data/wikitext-103/default_ascii_small.yaml`)
+- ☑ Validate WikiText token counts: metadata matches target (≈4.3 chars/token sanity)
+- ☑ Wire WikiText subset into training; loss decreases over 100+ steps
+- ☐ Download TinyStories; create `scripts/data/tinystories/default_utf8.yaml`; compare tokenization stats (tokens/doc, vocab coverage vs WikiText-103)
+- ☐ Mixed sampler (stretch): interleave TinyStories + WikiText caches by weight and run short training
 
 Components:
-- ☑ Fill `config/experiment.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128`, 1 layer); wire into `train.py` entrypoint
-- ☑ Character-level tokenizer (`src/tokenizer/char_tokenizer.py`): 128-char printable ASCII, encode/decode with roundtrip tests
+- ☑ Fill `config/experiment.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128/256/512`, tokenizer_mode); wire into `train.py` entrypoint
+- ☑ Character-level tokenizer (`src/tokenizer/char_tokenizer.py`): multi-mode (codepoint/utf8/utf16/utf32), encode/decode with roundtrip tests
+- ☑ TokenizerFactory (`src/tokenizer/tokenizer.py`): **kwargs-based parameterization for mode and vocab_size
 - ☑ `BaseLearningModel` ABC (`src/models/learning_model/base.py`): `forward` and factory interface; evolves across phases
 - ☑ `SimpleLM` (`src/models/learning_model/simple_lm.py`): token embedding → GELU MLP → weight-tied LM head
-- ☐ Option B stubbing (now): implement Phase 2 concrete stubs plus Phase 9-shaped placeholder interfaces (attention, moe, rnn, inference, alignment) with import/compile-safe boundaries
+- ☐ Option B stubbing: implement Phase 2 concrete stubs plus Phase 9-shaped placeholder interfaces (attention, moe, rnn, inference, alignment) with import/compile-safe boundaries
 
 Training and evaluation:
 - ☐ Seed control: Python, NumPy, PyTorch (CPU/CUDA)
@@ -187,7 +141,7 @@ Training and evaluation:
 - ☐ Perplexity metrics (train/val, per epoch)
 
 Quality:
-- ☐ Unit tests: config loading, tokenizer roundtrip, data splitting
+- ☑ Unit tests: config loading, tokenizer roundtrip (all modes), data splitting, tokenizer_mode/vocab_size config fields
 - ☐ Stub boundary tests: placeholder modules import cleanly, expose stable interfaces, and fail with explicit `NotImplementedError` where expected
 
 **Exit Criteria**:
@@ -213,7 +167,10 @@ Quality:
 **Tasks**:
 
 Data:
-- ☐ Prepare OpenWebText subset (10–50M tokens) and document duplication rate
+- ☐ Prepare OpenWebText subset (10–50M tokens); document deduplication rate
+- ☐ `HuggingFaceDownloader`: `download(dataset_name, cache_dir)` + `discover_schema()` → discovery report; add `--discover` mode to data CLI
+- ☐ Formalize `DatasetProcessor` ABC and `WikiTextProcessor` wrapping `normalize_wikitext.py`
+- ☐ Intermediate Parquet schema for normalized docs: doc_id, text, split, char_count (replaces .txt cache; enables efficient doc-level queries)
 
 Components:
 - ☐ Token embedding (vocab_size × d_model)
@@ -259,7 +216,10 @@ Data:
 - ☐ Download and prepare FineWeb / FineWeb-Edu subset (~50–100M tokens)
 - ☐ Implement heuristic data filters for length, language, and perplexity
 - ☐ Benchmark BPE vs Unigram on identical corpus slices; select tokenizer for Phase 5+
-- ☐ Implement memory-mapped data reads and DataLoader shuffling at scale
+- ☐ `ChunkedTokenCache(slow_dir, fast_dir, chunk_size_mb)`: slow→fast staging with LRU eviction and async background prefetch (`threading.Thread`); status tracked in `staging_status.parquet`
+- ☐ `CachedTokenDataset`: lazy-load via `ChunkedTokenCache`; prefetch next chunk at 80% consumption; wire into `train.py` via `DataConfig`
+- ☐ Upgrade token metadata to Parquet: chunk_id, token_count, byte_offset, split, sha256 hash (enables efficient split/range queries at scale)
+- ☐ Memory-mapped data reads and DataLoader shuffling at scale; verify I/O does not bottleneck training
 
 Components and training:
 - ☐ Learning rate scheduler (linear warmup → cosine decay)
@@ -487,32 +447,12 @@ Evaluation:
 
 ---
 
-## Current Session Scratch Pad
-
-> *Ephemeral — clear this section at commit time. Use for in-progress notes only.*
-
-(empty)
-
----
-
-## Running Session Log (Brief)
-
-**Retention policy**: Keep last 5 sessions here. Archive older entries to `design/SESSION_ARCHIVE.md` or trim after merge. Use one row per unique commit marker (for example `post-`main`+unstaged`); if the same marker appears again, update the existing row instead of adding a duplicate.
-
-| Date | Commit | Summary |
-|---|---|---|
-| 2026-02-23 | `ad510b1` (Phase 2 steps 1–4) | Steps 1–3 as before. Step 4: `TextChunkDataset` + `make_data_loaders` (12 tests); `train_step` + `train` loop (8 tests). 82 Python tests passing, lint clean. |
-| 2026-02-23 | post-`main`+unstaged | Consolidated session summary: setup hardening landed (CUDA preflight, post-venv CUDA path export, Step 4 torch-dependent install ordering, and improved build parallelism controls), then Phase 1 closure/docs governance cleanup completed (`CONTRIBUTING` refactor, checklist canonicalized there, `CONTRIBUTORS` now policy + guidance pointer, torchao coverage added to acceleration tests). Local validation passed: `make lint`, `make format-check`, `make test` (35 Python + 1 C++). |
-| 2026-02-20 | `main` | ✅ **Phase 1 near-complete**: Fixed Makefile pytest invocation (`python -m pytest` instead of bare `pytest`) resolving test-py-quick ImportError. Verified: tests (30 Python + 1 C++ PASSED, 1.990s total), quick sanity (0.440s <3 min), CI passing (Run #13), documentation consistent. Acceleration libs still pending functional tests at that time. |
-| 2026-02-20 | post-`f31f5cc`+unstaged | CI consolidation final pass: Merged test-ci→main; deleted test-ci branch; trimmed Python matrix to 3.12 only; consolidated lint+test into single `ci` job to eliminate redundant pip installs. Run #13 passed with unified job structure. Updated PLAN.md Phase 1 status (CI pipeline ☑, lint rules ☑, tests ✓30/30). |
-| 2026-02-20 | `f31f5cc` | CI consolidation: Replaced 2 separate jobs (lint-and-type-check + test with job dependency) with single `ci` job containing all steps (install→lint→test). Reduced file from 71→39 lines. Run #13 confirms single-job structure working. Eliminated redundant pip installs (~50% CI time savings). |
-
----
-
 ## Canonical References
 
+- [SESSION.md](SESSION.md) (current focus, immediate next steps, scratch pad, running log)
 - [DESIGN.md](DESIGN.md) (architecture, engineering standards, testing strategy, agent workflow)
-- [PLAN.md](PLAN.md) (this file — execution plan for phases, sessions, and daily work)
-- [CONTRIBUTING.md](../CONTRIBUTING.md#workflow) (workflow and validation gates)
+- [PLAN.md](PLAN.md) (this file — phased execution roadmap)
+- [CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow) (workflow and validation gates)
 - [config/*.toml](../config) (authoritative runtime values)
 - [Makefile](../Makefile) (build, test, lint targets)
+- [scripts/data/README.md](../scripts/data/README.md) (data prep workflow, config reference, size guide)

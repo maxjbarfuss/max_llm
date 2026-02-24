@@ -60,11 +60,12 @@ class TokenizerFactory:
     _tokenizers: dict[str, type[Tokenizer]] = {}
 
     @classmethod
-    def create(cls, name: str = "char") -> Tokenizer:
+    def create(cls, name: str = "char", **kwargs) -> Tokenizer:
         """Create a tokenizer instance by name.
 
         Args:
             name: Tokenizer name (default: "char").
+            **kwargs: Additional arguments passed to tokenizer constructor.
 
         Returns:
             A Tokenizer instance.
@@ -73,7 +74,7 @@ class TokenizerFactory:
             ValueError: If tokenizer name is not registered.
 
         Examples:
-            >>> tok = TokenizerFactory.create("char")
+            >>> tok = TokenizerFactory.create("char", vocab_size=128)
             >>> tok.encode("hello")
             [104, 101, 108, 108, 111]
         """
@@ -81,7 +82,7 @@ class TokenizerFactory:
             available = ", ".join(sorted(cls._tokenizers.keys()))
             raise ValueError(f"Unknown tokenizer '{name}'. Available: {available}")
 
-        return cls._tokenizers[name]()
+        return cls._tokenizers[name](**kwargs)
 
     @classmethod
     def register(cls, name: str, tokenizer_class: type[Tokenizer]) -> None:

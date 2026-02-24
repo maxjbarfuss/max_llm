@@ -13,6 +13,8 @@ class DataConfig:
 
     dataset_path: str
     tokenizer_name: str
+    tokenizer_mode: Literal["codepoint", "utf8", "utf16", "utf32"]
+    tokenizer_vocab_size: int
     tokenizer_backend: Literal["gpt2_bpe", "unigram"]
     unigram_model_path: str | None
     max_length: int
@@ -36,6 +38,8 @@ class DataConfig:
             raise ValueError("tokenizer_backend must be 'gpt2_bpe' or 'unigram'")
         if not self.tokenizer_name:
             raise ValueError("tokenizer_name cannot be empty")
+        if self.tokenizer_mode not in {"codepoint", "utf8", "utf16", "utf32"}:
+            raise ValueError("tokenizer_mode must be one of: codepoint, utf8, utf16, utf32")
 
         if self.tokenizer_backend == "unigram" and self.unigram_model_path is not None:
             if not self.unigram_model_path.strip():

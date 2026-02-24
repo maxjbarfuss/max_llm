@@ -6,7 +6,7 @@ Baseline knowledge and working discipline for contributors and coding agents.
 
 - PyTorch 2.x (`nn.Module`, autograd, mixed precision, AMP, `torch.compile`)
 - Transformer internals: attention, residuals, normalization, position encodings
-- GQA, MLA, MoE, and GRU fundamentals as used here (see [design/DESIGN.md](../design/DESIGN.md#architecture-overview))
+- GQA, MLA, MoE, and GRU fundamentals as used here (see [docs/DESIGN.md](../docs/DESIGN.md#architecture-overview))
 - Python 3.10+ with type hints, `pytest`, and `mypy`
 - Git: atomic commits, clear PRs, docs and tests updated with behavior changes
 
@@ -44,7 +44,7 @@ Baseline knowledge and working discipline for contributors and coding agents.
 ## Protected Files Policy
 
 - Do not modify governance or instruction files unless explicitly requested.
-- Respect repository policies and source-of-truth docs ([design/PLAN.md](../design/PLAN.md), [CONTRIBUTING.md](../CONTRIBUTING.md), [design/DESIGN.md](../design/DESIGN.md)).
+- Respect repository policies and source-of-truth docs ([docs/PLAN.md](../docs/PLAN.md), [CONTRIBUTING.md](../CONTRIBUTING.md), [docs/DESIGN.md](../docs/DESIGN.md)).
 
 ## Definition of Done
 
@@ -58,16 +58,16 @@ Work is complete only when all are true:
 
 ## Working Rule
 
-Follow the [Agent Workflow in design/DESIGN.md](../design/DESIGN.md#agent-workflow). In brief:
+Follow the [Agent Workflow in docs/DESIGN.md](../docs/DESIGN.md#agent-workflow). In brief:
 
-- **Session start**: Read [design/PLAN.md](../design/PLAN.md#phase-progress) (Phase Progress, Next Steps), then relevant [design/DESIGN.md](../design/DESIGN.md) section.
+- **Session start**: Read [docs/SESSION.md](../docs/SESSION.md) (current focus, next steps), then [docs/PLAN.md](../docs/PLAN.md#phase-progress) current phase tasks.
 - **Before coding**: Check existing tests and interfaces.
 - **During coding**: TDD — write failing test first, implement, verify.
-- **Session end**: Update [design/PLAN.md](../design/PLAN.md#current-session-scratch-pad) (Scratch Pad, Running Session Log).
+- **Session end**: Update [docs/SESSION.md](../docs/SESSION.md) (Scratch Pad, Running Session Log).
 
 ### Tooling Policy
 
 - Prefer local tools and repository-native workflows for core development tasks.
 - **NEVER use MCP servers** (including GitKraken, GitLens, or any git-related MCP tools).
-- **ALWAYS use local Git commands** for all git operations: `git status`, `git add`, `git commit`, `git diff`, `git log`, etc.
-- **NEVER push to remote** — all commits are local only. Human maintainer handles remote push.
+- **ALWAYS use local Git commands** for all git operations: `git status`, `git add`, `git commit`, `git diff`, `git log`, `git push`, etc.
+- **Commits are always local first**; push to remote only with explicit human confirmation.

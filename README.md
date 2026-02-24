@@ -13,7 +13,7 @@ Hybrid LLM research project (100–500M params): GQA/MLA + MoE + GRU output, opt
 
 **9-phase roadmap (phases 1–9) from scratch to hybrid models.** Start with character-level tokenization and linear layers (Phase 2), progress through standard transformers (Phase 3–4 with modern upgrades), then explore exotic architectures: mixture-of-experts (Phase 8) and GRU-transformer hybrids (Phase 9). **See what actually works**, not what papers claim.
 
-**Comprehensive data strategy.** Build an unrestricted, diverse world model across Phases 2–5 (100–500M tokens including adult, controversial, and specialized content) for robust generalization. Layer safety guardrails through SFT and DPO in Phases 6–9. See [design/DESIGN.md#data-strategy-summary](design/DESIGN.md#data-strategy-summary) for sourcing guidelines and phase-by-phase data tasks.
+**Comprehensive data strategy.** Build an unrestricted, diverse world model across Phases 2–5 (100–500M tokens including adult, controversial, and specialized content) for robust generalization. Layer safety guardrails through SFT and DPO in Phases 6–9. See [docs/DESIGN.md — Data Strategy](docs/DESIGN.md#data-strategy) for sourcing guidelines and phase-by-phase data tasks.
 
 **Reproducibility as a first principle.** Deterministic seeds, explicit configs, atomic commits linked to results. Every experiment is repeatable; every result is explainable.
 
@@ -25,7 +25,7 @@ Hybrid LLM research project (100–500M params): GQA/MLA + MoE + GRU output, opt
 source setup.sh
 ```
 
-See [SETUP.md](SETUP.md) for full instructions.
+See [scripts/setup/README.md](scripts/setup/README.md) for full instructions.
 
 ## Architecture Evolution
 
@@ -94,18 +94,19 @@ Continuous integration runs on every push via GitHub Actions. See [scripts/ci/RE
 
 ## Docs Summary
 
-- [SETUP.md](SETUP.md): environment setup (WSL2 on Windows; Linux/macOS/WSL1 not supported)
-- [CONTRIBUTING.md](CONTRIBUTING.md): workflow and PR rules
-- [design/DESIGN.md](design/DESIGN.md): architecture, engineering principles, phased roadmap, testing strategy
-- [design/PLAN.md](design/PLAN.md): phase progress, next steps, execution tracking
-- [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md): contributor authorization policy
-- [.github/SKILLS.md](.github/SKILLS.md): required technical skills and working discipline
+- [CONTRIBUTING.md](CONTRIBUTING.md): workflow, PR rules, and contributor authorization
+- [docs/SESSION.md](docs/SESSION.md): current focus, immediate next steps, session log
+- [docs/PLAN.md](docs/PLAN.md): phased execution roadmap and exit criteria
+- [docs/DESIGN.md](docs/DESIGN.md): architecture, engineering principles, testing strategy
+- [scripts/setup/README.md](scripts/setup/README.md): environment setup (WSL2 on Windows; Linux/macOS/WSL1 not supported)
+- [scripts/data/README.md](scripts/data/README.md): data preparation workflow, config reference, size guide
+- [.github/SKILLS.md](.github/SKILLS.md): required technical skills and working discipline for agents
 - [.github/CODEOWNERS](.github/CODEOWNERS): code review ownership
 
 ## Contributor Entry Points
 
 - Human contributors: [CONTRIBUTING.md](CONTRIBUTING.md)
-- AI agents: [design/PLAN.md](design/PLAN.md) -> [CONTRIBUTING.md](CONTRIBUTING.md)
+- AI agents: [docs/SESSION.md](docs/SESSION.md) → [docs/PLAN.md](docs/PLAN.md) → [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 

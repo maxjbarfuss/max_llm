@@ -1,14 +1,8 @@
 """Unit tests for WikiText normalization tool."""
 
-import sys
-from pathlib import Path
-
 import pytest
 
-# Add scripts to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts" / "data" / "tools"))
-
-from normalize_wikitext import clean_wikitext, verify_text
+from src.data.datasets.wikitext.normalize import clean_wikitext, verify_text
 
 
 class TestAtArtifacts:
