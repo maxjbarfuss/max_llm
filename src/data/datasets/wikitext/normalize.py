@@ -277,8 +277,9 @@ Examples:
     console.print(f"\n[green]✓ Normalized to:[/green] {output_path}")
     console.print(f"  Original: {orig_size:,} bytes | {orig_nl:,} newlines")
     console.print(f"  Normalized: {norm_size:,} bytes | {norm_nl:,} newlines")
+    pct = 100 * (orig_size - norm_size) / orig_size
     console.print(
-        f"  Reduction: {orig_size - norm_size:,} bytes ([yellow]{100*(orig_size-norm_size)/orig_size:.1f}%[/yellow])"
+        f"  Reduction: {orig_size - norm_size:,} bytes ([yellow]{pct:.1f}%[/yellow])"
     )
     console.print(f"  Newlines removed: {orig_nl - norm_nl:,}")
 

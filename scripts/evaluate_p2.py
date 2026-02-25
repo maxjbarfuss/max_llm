@@ -21,9 +21,9 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.config.experiment import ExperimentConfig
-from src.inference.run import load_checkpoint, sample_token
+from src.inference.sampler import sample_token
+from src.inference.utils import create_tokenizer_from_data_config, load_checkpoint_into_model
 from src.models.learning_model import SimpleLM
-from src.tokenizer import TokenizerFactory
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,17 +63,10 @@ def main() -> None:
 
     model = SimpleLM.from_config(config.model).to(device)
     model.eval()
-    load_checkpoint(model, str(args.checkpoint), device)
+    load_checkpoint_into_model(model, str(args.checkpoint), device)
 
     # Load tokenizer
-    tokenizer_kwargs = {"mode": config.data.tokenizer_mode}
-    if config.data.tokenizer_mode == "codepoint":
-        tokenizer_kwargs["vocab_size"] = config.data.tokenizer_vocab_size
-
-    tokenizer = TokenizerFactory.create(
-        config.data.tokenizer_name,
-        **tokenizer_kwargs,
-    )
+    tokenizer = create_tokenizer_from_data_config(config.data)
 
     # Encode prompt
     prompt_tokens = tokenizer.encode(args.prompt)
