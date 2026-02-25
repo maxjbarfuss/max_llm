@@ -1,123 +1,109 @@
-# TinyStories Pipeline
+# TinyStories Data Preparation
 
-Setup for the TinyStories dataset, following the same pattern as WikiText-103.
+Automated pipeline for the **karpathy/tinystories-gpt4-clean** dataset. Stories are separated by blank lines and processed with boundary-aware extraction.
 
 ## Quick Start
 
-After downloading TinyStories, prepare a small subset for testing:
+Prepare a tokenized subset:
 
 ```bash
-# Using YAML config (recommended)
-python scripts/data/run_data_prep.py --config scripts/data/tinystories/tinystories_utf8_small.yaml
-
-# Or via shell script (convenience wrapper)
-scripts/data/tinystories/prepare_tinystories_tokens.sh \
-  --source /path/to/tinystories/train.txt \
-  --output-dir data/fast \
-  --size 100K \
-  --mode utf8
+python scripts/data/run_data_prep.py \
+  --config scripts/data/tinystories/tinystories_utf8_small.yaml
 ```
 
-## Configs
+This creates `data/fast/tinystories_100k_tokens__utf8.npy` ready for training.
 
-Two standard YAML configurations are provided:
+## Available Configs
 
-- **`tinystories_utf8_small.yaml`**: Extract 100K tokens for quick iteration
-  - Cutoff mode: `article` (respects `<|endoftext|>` boundaries)
-  - Suitable for testing pipeline without waiting for large tokenization
+| Config | Token Count | Use Case |
+|--------|-------------|----------|
+| `tinystories_utf8_small.yaml` | 100K | Fast iteration and testing |
+| `tinystories_utf8_full.yaml` | 5M | Full training runs |
 
-- **`tinystories_utf8_full.yaml`**: Extract 5M tokens for realistic training
-  - Cutoff mode: `none` (extract at byte limit)
-  - Use for Phase 2 validation training runs
+Both configs use `article` cutoff mode to respect story boundaries (complete stories only).
 
-## Dataset Details
+## Dataset Format
 
-**TinyStories** uses a simple story-per-line format with `<|endoftext|>` document separators:
+Stories are separated by blank lines:
 
 ```
-Once upon a time...
-<|endoftext|>
-Another story starts here...
-<|endoftext|>
+Once upon a time, there was a little girl...
+She loved to play in the sun.
+
+One day, a boy found a big red ball...
+He kicked it high into the sky.
+
 ...
 ```
 
-The pipeline automatically detects story boundaries via the **TinyStoriesBoundary** detector (registered in `src/data/datasets/boundary.py`).
+The `BlankLineBoundary` detector (registered in `src/data/datasets/boundary.py`) ensures extracts contain complete stories only.
 
-### Normalization
+## Training Integration
 
-No normalization needed for TinyStories (unlike WikiText). The data is already clean.
+Once prepared, update your experiment config to use the TinyStories cache:
 
-### Tokenization
+```toml
+[data]
+dataset_path = "data/fast/tinystories_100k_tokens__utf8.npy"
+```
 
-Standard character-level tokenization (UTF-8 mode, vocab_size=256) matches Phase 2 requirements.
-
-## Workflow
-
-1. **Extract text subset** (respects story boundaries)
-   ```bash
-   python -m src.data.pipeline.extract_text \
-     --input /path/to/tinystories/train.txt \
-     --output data/fast/tinystories_subset.txt \
-     --size 2M \
-     --dataset tinystories
-   ```
-
-2. **Tokenize** (caches as .npy)
-   ```bash
-   python -m src.data.pipeline.tokenize \
-     --input data/fast/tinystories_subset.txt \
-     --output data/fast/tinystories_100k_tokens__utf8.npy \
-     --vocab-size 256 \
-     --mode utf8
-   ```
-
-3. **Extract token subset** (if needed)
-   ```bash
-   python -m src.data.pipeline.extract_tokens \
-     --input data/fast/tinystories_100k_tokens__utf8.npy \
-     --output data/fast/tinystories_100k_tokens__utf8.npy \
-     --size 100K
-   ```
-
-All steps are coordinated by `run_data_prep.py` when using a YAML config.
-
-## Phase 2 Integration
-
-To use TinyStories in training:
-
-1. Prepare via YAML:
-   ```bash
-   python scripts/data/run_data_prep.py --config scripts/data/tinystories/tinystories_utf8_small.yaml
-   ```
-
-2. Update `config/experiment.toml` to reference the TinyStories cache:
-   ```toml
-   [data]
-   train_tokens_path = "data/fast/tinystories_100k_tokens__utf8.npy"
-   ```
-
-3. Train:
-   ```bash
-   python -m src.training.train --config config/experiment.toml
-   ```
-
-## Download Instructions
-
-TinyStories is publicly available from Hugging Face:
+Then train:
 
 ```bash
-# Via git-lfs (requires setup)
-git clone https://huggingface.co/datasets/roneneldan/TinyStories
+python -m src.training.train --config config/experiment_tinystories.toml
+```
 
-# Or programmatically
+## Dataset Source
+
+Download from Hugging Face:
+
+```bash
+# Via datasets library (recommended)
 python -c "
 from datasets import load_dataset
-ds = load_dataset('roneneldan/TinyStories')
-with open('/path/to/tinystories/train.txt', 'w') as f:
-    for example in ds['train']:
-        f.write(example['text'] + '\n')
+ds = load_dataset('karpathy/tinystories-gpt4-clean', split='train')
+with open('data/raw/tinystories_train.txt', 'w') as f:
+    for story in ds:
+        f.write(story['story'] + '\n\n')
 "
 ```
 
-See `src/data/README.md` for more detail on the full pipeline.
+Or via git-lfs:
+
+```bash
+git clone https://huggingface.co/datasets/karpathy/tinystories-gpt4-clean
+```
+
+**Dataset stats:**
+- ~2M short stories (3-5 sentences each)
+- Cleaned and filtered by GPT-4
+- Simple vocabulary suitable for small models
+- No normalization required (already clean)
+
+## Manual Pipeline Steps
+
+The YAML config automates these steps. For manual control:
+
+```bash
+# 1. Extract text subset (respects story boundaries)
+python -m src.data.pipeline.extract_text \
+  --input data/raw/tinystories_train.txt \
+  --output data/fast/tinystories_subset.txt \
+  --size 2M \
+  --dataset tinystories
+
+# 2. Tokenize (UTF-8 character-level)
+python -m src.data.pipeline.tokenize \
+  --input data/fast/tinystories_subset.txt \
+  --output data/fast/tinystories_tokens.npy \
+  --mode utf8 \
+  --vocab-size 256
+
+# 3. Extract token subset
+python -m src.data.pipeline.extract_tokens \
+  --input data/fast/tinystories_tokens.npy \
+  --output data/fast/tinystories_100k_tokens__utf8.npy \
+  --size 100K
+```
+
+See `src/data/README.md` for pipeline architecture details.

@@ -7,15 +7,22 @@
 
 ## Current Focus
 
-**Phase 2 — TinyStories pipeline with proper boundary detection**
+**Phase 2 — Seed hardening complete**
 
-TinyStories dataset now prepared with proper story boundaries (5 complete stories per 100K token subset). Boundary detection enhanced to support blank-line separators. Dataset comparison complete (WikiText vs TinyStories).
+Comprehensive seed management implemented with `seed_everything` utility. All random sources (Python, NumPy, PyTorch CPU/CUDA) are now properly seeded. Deterministic training verified with 8 unit tests confirming bit-identical replay across multiple steps.
 
 ## Phase 2 Status
 
-Phase 1 complete. Phase 2 ~97% done: infrastructure, tokenizers, config, training loop, checkpointing, inference, perplexity metrics all working. WikiText & TinyStories datasets validated end-to-end with proper boundary detection. Remaining: seed hardening, overfit test.
+Phase 1 complete. Phase 2 ~99% done: infrastructure, tokenizers, config, training loop, checkpointing, inference, perplexity metrics, and seed hardening all working. WikiText & TinyStories datasets validated end-to-end with proper boundary detection. Remaining: overfit test.
 
-**Completed sequence (this session additions**):
+**Completed sequence (this session additions)**:
+- ✅ Seed hardening: `src/utils/seed.py` with `seed_everything` utility
+- ✅ Deterministic training: Python/NumPy/PyTorch CPU/CUDA seeds properly managed
+- ✅ DataLoader reproducibility: Generator-based seeding + worker_init_fn
+- ✅ Deterministic replay verification: 8 unit tests (`tests/unit/test_seed.py`) confirming bit-identical training trajectories
+- ✅ Training entrypoint integration: `main()` calls `seed_everything` at startup
+
+**Completed sequence (previous sessions)**:
 - ✅ TinyStories pipeline: YAML configs + prepare script (scripts/data/tinystories/)
 - ✅ Boundary detector enhancement: `BlankLineBoundary` + updated `TinyStoriesBoundary` to handle both formats
 - ✅ Dataset comparison: WikiText (loss 2.61) vs TinyStories (loss 2.74) — similar convergence, both valid
@@ -38,10 +45,9 @@ Phase 1 complete. Phase 2 ~97% done: infrastructure, tokenizers, config, trainin
 
 ## Next Steps (Priority Order)
 
-1. ☐ Seed hardening (Python/NumPy/PyTorch CPU/CUDA; deterministic replay)
-2. ☐ Overfit 10K-token subset (target: loss < 0.1 within 500 steps)
-3. ☐ (Stretch) Add simple mixed-source sampler: interleave TinyStories + WikiText caches by weight
-4. ⏭️ **Phase 3 begins**: Minimal Transformer (multi-head causal attention, FFN blocks)
+1. ☐ Overfit 10K-token subset (target: loss < 0.1 within 500 steps)
+2. ☐ (Stretch) Add simple mixed-source sampler: interleave TinyStories + WikiText caches by weight
+3. ⏭️ **Phase 3 begins**: Minimal Transformer (multi-head causal attention, FFN blocks)
 
 **Config-driven execution**: All data-prep driven by YAML configs in `scripts/data/<dataset>/`. Single runner:
 ```bash
@@ -65,11 +71,8 @@ See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) f
 
 | Date | Commit | Summary |
 |---|---|---|
+| 2026-02-25 | post-`main`+unstaged | **Seed hardening complete**: Implemented comprehensive seed management via `src/utils/seed.py` with `seed_everything` utility (Python/NumPy/PyTorch CPU/CUDA). Added deterministic training with generator-based DataLoader seeding + worker_init_fn. Created `tests/unit/test_seed.py` with 8 unit tests verifying bit-identical replay across single/multi-step training. Updated `src/training/train.py` to call `seed_everything` at startup. All 237 tests passing. Phase 2 exit criteria updated: seed hardening ✅ (deterministic replay verified). PLAN.md + SESSION.md status updated to ~99% complete. |
 | 2026-02-24 | `b69cd4b` | **Perplexity metrics + integration tests + evaluation script**: Added `compute_perplexity()` helper; `train()` now returns dict with losses + perplexities (all call sites updated). Created `tests/unit/test_integration_p2.py` (5 integration tests for full pipeline). Added `scripts/evaluate_p2.py` for checkpoint assessment with generation samples. Updated training loop to log perplexity. All 224 tests passing. Phase 2 exit criteria updated: perplexity metrics ✅, evaluation script ✅. |
 | 2026-02-24 | `548da84` | **Checkpoint, inference, quality gate, coverage, doc sync**: Added `save_checkpoint` to `train.py`; inference end-to-end (temp/top-k/top-p). Fixed 9 lint/mypy violations. Refactored `extract_subset` helpers. 31 new unit tests (checkpoint, inference, boundary detectors, `create_simple_loaders`). Moved `install_vscode_extensions.sh` → `scripts/setup/`. Added `.claude/CLAUDE.md` bootstrap. Doc sync: Phase 2 diagram fixed (training/inference split), Option B stubs removed from PLAN.md + DESIGN.md, README stripped of mutable status (L005 added to LESSONS.md), SESSION.md next steps updated. Lint clean, mypy clean, 219 tests, 58% coverage. |
 | 2026-02-24 | `48c09c6` | **SKILLS.md consolidation + governance**: Refactored `.github/SKILLS.md` (71→62 lines, 7→4 sections). Added explicit Persona section (5 roles); consolidated Working Discipline, Session Workflow (Start/During/End/Done), Project Patterns (absorbed Protected Files), and Technical Skills (Core + When-relevant, added design principles: SOLID/DRY/KISS/YAGNI/composition). Updated frontmatter (v1.2→v1.3, agentskills.io compatible). Updated CONTRIBUTING.md to route agents to SKILLS.md + LESSONS.md. |
 | 2026-02-24 | post-`main`+unstaged | **Docs reorganization + Phase 2 status update**: Renamed design/ → docs/; moved data-specific docs to docs/data/ (DATA_PLAN.md, DATA_WORKFLOW.md); updated 9+ cross-references in main docs; modernized WORKFLOW_DATA_PREP diagram (ASCII → Mermaid flowchart); removed legacy manual CLI sections; refactored docs to config-first approach. Phase 2 status updated to reflect completed tokenizer modes (UTF-8/16/32/codepoint via TokenizerFactory), config-driven data tools, and pipeline infrastructure (normalize/tokenize/extract runners). Consolidated DATA_WORKFLOW + DATA_PLAN into DESIGN.md and PLAN.md; created SESSION.md. Ready for commit. |
-| 2026-02-23 | `ad510b1` (Phase 2 steps 1–4) | Steps 1–3 as before. Step 4: `TextChunkDataset` + `make_data_loaders` (12 tests); `train_step` + `train` loop (8 tests). 82 Python tests passing, lint clean. |
-| 2026-02-23 | post-`main`+unstaged | Consolidated session summary: setup hardening landed (CUDA preflight, post-venv CUDA path export, Step 4 torch-dependent install ordering, and improved build parallelism controls), then Phase 1 closure/docs governance cleanup completed (`CONTRIBUTING` refactor, checklist canonicalized there, `CONTRIBUTORS` now policy + guidance pointer, torchao coverage added to acceleration tests). Local validation passed: `make lint`, `make format-check`, `make test` (35 Python + 1 C++). |
-| 2026-02-20 | `main` | ✅ **Phase 1 near-complete**: Fixed Makefile pytest invocation (`python -m pytest` instead of bare `pytest`) resolving test-py-quick ImportError. Verified: tests (30 Python + 1 C++ PASSED, 1.990s total), quick sanity (0.440s <3 min), CI passing (Run #13), documentation consistent. Acceleration libs still pending functional tests at that time. |
-| 2026-02-20 | post-`f31f5cc`+unstaged | CI consolidation final pass: Merged test-ci→main; deleted test-ci branch; trimmed Python matrix to 3.12 only; consolidated lint+test into single `ci` job to eliminate redundant pip installs. Run #13 passed with unified job structure. Updated PLAN.md Phase 1 status (CI pipeline ☑, lint rules ☑, tests ✓30/30). |

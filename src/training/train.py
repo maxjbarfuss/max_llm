@@ -18,6 +18,7 @@ from src.config.experiment import ExperimentConfig
 from src.models.learning_model import BaseLearningModel, SimpleLM
 from src.tokenizer import TokenizerFactory
 from src.training.loop import train
+from src.utils import seed_everything, seed_worker
 
 
 def save_checkpoint(
@@ -70,7 +71,9 @@ def create_simple_loaders(
     Returns:
         Tuple of (train_loader, val_loader)
     """
-    torch.manual_seed(seed)
+    # Create generator for reproducible shuffling
+    generator = torch.Generator()
+    generator.manual_seed(seed)
 
     # Create non-overlapping sequences
     num_samples = len(tokens) // (seq_len + 1)
@@ -97,7 +100,13 @@ def create_simple_loaders(
     train_dataset = TensorDataset(inputs_tensor[:split_idx], targets_tensor[:split_idx])
     val_dataset = TensorDataset(inputs_tensor[split_idx:], targets_tensor[split_idx:])
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        generator=generator,
+        worker_init_fn=seed_worker,
+    )
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader
@@ -112,6 +121,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     config = ExperimentConfig.from_toml(args.config)
+
+    # Set all random seeds for reproducibility
+    seed_everything(config.data.seed, deterministic=True)
 
     print(f"Experiment : {config.name}")
     print(f"Output dir : {config.output_dir}")
