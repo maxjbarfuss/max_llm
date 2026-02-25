@@ -46,6 +46,14 @@
 
 ---
 
+## L006 — Run Complete Lint + Format Checks Before Commit
+
+**Observed behavior**: Agent ran `ruff check` and `mypy` before committing, but skipped `black` formatting check. CI then failed on formatting violations that were local-checkable.
+
+**Correct approach**: Before committing, always run the complete quality gate: `ruff check src tests`, `mypy src`, and `black --check src tests`. Fix any issues with `black --fix` and `ruff --fix` before staging. All three must pass clean before git commit. See [tests/README.md](../tests/README.md) for the full checklist.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:

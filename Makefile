@@ -1,4 +1,4 @@
-.PHONY: help lint format format-check type-check \
+.PHONY: help lint format format-check type-check check \
 		 build build-release build-debug cmake-configure cmake-configure-debug cmake-build cmake-test \
 		 test tests test-quick test-py test-py-quick test-cpp test-cov test-report cpp-lint cpp-format cpp-format-check \
          clean clean-py clean-cmake pre-commit-run
@@ -44,7 +44,8 @@ help:
 	@echo "    make test-report          - Display aggregated test results summary"
 	@echo ""
 	@echo "  📝 Code Quality:"
-	@echo "    make lint                 - Run ruff and mypy (Python)"
+	@echo "    make check                - Pre-commit gate (format, lint, type, fast tests)"
+	@echo "    make lint                 - Run black, ruff, and mypy (Python)"
 	@echo "    make format               - Format code (black, isort, clang-format)"
 	@echo "    make format-check         - Check formatting without changes"
 	@echo "    make type-check           - Run mypy type checker"
@@ -156,11 +157,17 @@ test-report:
 	@echo "Use make test-cov to generate coverage HTML report"
 
 # Code Quality
+check: lint test-py-quick
+	@echo "✓ Pre-commit checks passed (format, lint, type, fast tests)"
+
 lint:
-	ruff check src tests && mypy src
+	.venv/bin/black --check src tests
+	.venv/bin/ruff check src tests
+	.venv/bin/mypy src
 
 format:
-	black src tests && isort src tests
+	.venv/bin/black src tests
+	.venv/bin/isort src tests
 	@which clang-format > /dev/null && find src/core src/models \( -name "*.h" -o -name "*.cpp" \) | xargs clang-format -i || echo "Note: clang-format not installed"
 
 format-check:

@@ -60,22 +60,31 @@ This repo uses a lightweight feature-branch workflow with phase-based branches a
 
 ### Validation and Quality
 
-Run the minimal checks relevant to your change. Testing commands and expectations live in [tests/README.md](tests/README.md).
+**Before every commit**, run the complete pre-commit gate:
 
-Check (read-only):
 ```bash
 source .venv/bin/activate
-make lint
-make format-check
-make type-check
+make check    # Runs: black, ruff, mypy, test-py-quick
 ```
 
-Fix (modifies files):
+If any check fails, auto-fix and re-run:
+
 ```bash
-make format
-make cpp-lint
-make cpp-format-check
+make format   # Auto-fixes: black, isort, clang-format
+make check    # Re-validate
 ```
+
+Then commit. Only push when all checks pass.
+
+**Individual checks** (if needed):
+
+```bash
+make lint          # black --check, ruff, mypy
+make format-check  # Check formatting without changes
+make type-check    # Run mypy type checker
+```
+
+See [tests/README.md](tests/README.md) for additional test commands and expectations.
 
 ### Change Checklist
 
