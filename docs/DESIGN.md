@@ -47,103 +47,84 @@ graph LR
 
 ```mermaid
 ---
-title: Phase 4 – Training Stability & Scaling
+title: Phase 4 – Llama-Style Upgrades
 ---
 graph LR
-    A[Text]:::io --> B[BPE Tokenizer]:::p4 --> C[Token Emb + Learned Pos]:::p4 --> Block
+    A[Text]:::io --> B[BPE Tokenizer]:::p4 --> C[Token Emb]:::p4 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
-        D[LayerNorm]:::p4 --> E[Multi-Head Attn]:::p4 --> F[+ Residual]:::p4 --> G[LayerNorm]:::p4 --> H[GELU FFN]:::p4 --> I[+ Residual]:::p4
+        D[RMSNorm]:::p4 --> E[GQA]:::p4 --> F[+ Residual]:::p4 --> G[RMSNorm]:::p4 --> H[SwiGLU FFN]:::p4 --> I[+ Residual]:::p4
+        RoPE:::p4 -.-> E
     end
     Block --> J[LM Head]:::p4 --> K[Logits]:::io
     K -->|training| L[Cross-Entropy Loss]:::io
-    K -->|inference| M[Top-k Sampling]:::io --> N[Text]:::io
+    K -->|inference| M[Sampling]:::io --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
     classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
 ```
 
-- **Phase 4**: (same transformer as Phase 3) *(training infrastructure, stability, and multi-GPU scaling)*
+- **Phase 4**: Text → BPE → Token Emb → [**RMSNorm** → **GQA + RoPE** → **SwiGLU**] × N → LM Head → Logits → Sampling → Text
 
 ```mermaid
 ---
-title: Phase 5 – Llama-Style Upgrades
+title: Phases 5–6 – Inference + Fine-tuning
 ---
 graph LR
-    A[Text]:::io --> B[BPE Tokenizer]:::p5 --> C[Token Emb]:::p5 --> Block
+    A[Text]:::io --> B[BPE Tokenizer]:::p56 --> C[Token Emb]:::p56 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
-        D[RMSNorm]:::p5 --> E[GQA]:::p5 --> F[+ Residual]:::p5 --> G[RMSNorm]:::p5 --> H[SwiGLU FFN]:::p5 --> I[+ Residual]:::p5
-        RoPE:::p5 -.-> E
+        D[RMSNorm]:::p56 --> E[GQA + KV-Cache]:::p56 --> F[+ Residual]:::p56 --> G[RMSNorm]:::p56 --> H[SwiGLU FFN]:::p56 --> I[+ Residual]:::p56
+        RoPE:::p56 -.-> E
     end
-    Block --> J[LM Head]:::p5 --> K[Logits]:::io
-    K -->|training| L[Cross-Entropy Loss]:::io
-    K -->|inference| M[Sampling]:::io --> N[Text]:::io
-    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p5 fill:#E1BEE7,stroke:#7B1FA2,color:#4A148C
-```
-
-- **Phase 5**: Text → BPE → Token Emb → [**RMSNorm** → **GQA + RoPE** → **SwiGLU**] × N → LM Head → Logits → Sampling → Text
-
-```mermaid
----
-title: Phases 6–7 – Inference + Fine-tuning
----
-graph LR
-    A[Text]:::io --> B[BPE Tokenizer]:::p67 --> C[Token Emb]:::p67 --> Block
-    subgraph Block[Transformer Block x N]
-        direction LR
-        D[RMSNorm]:::p67 --> E[GQA + KV-Cache]:::p67 --> F[+ Residual]:::p67 --> G[RMSNorm]:::p67 --> H[SwiGLU FFN]:::p67 --> I[+ Residual]:::p67
-        RoPE:::p67 -.-> E
-    end
-    Block --> J[LM Head]:::p67 --> K[Logits]:::io
+    Block --> J[LM Head]:::p56 --> K[Logits]:::io
     K -->|training| L[CE Loss + DPO]:::io
     K -->|inference| M[Top-p Sampling]:::io --> N[Text]:::io
-    LoRA:::p67 -.-> Block
+    LoRA:::p56 -.-> Block
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p67 fill:#B3E5FC,stroke:#0277BD,color:#01579B
+    classDef p56 fill:#B3E5FC,stroke:#0277BD,color:#01579B
 ```
 
-- **Phases 6–7**: Same forward architecture as Phase 5 + **KV-cache**, **top-p sampling**, **SFT**, **LoRA**, **DPO**
+- **Phases 5–6**: Same forward architecture as Phase 4 + **KV-cache**, **top-p sampling**, **SFT**, **LoRA**, **DPO**
 
 ```mermaid
 ---
-title: Phase 8 – MoE + MLA
+title: Phase 7 – MoE + MLA
+---
+graph LR
+    A[Text]:::io --> B[BPE/Unigram Tokenizer]:::p7 --> C[Token Emb]:::p7 --> Block
+    subgraph Block[Transformer Block x N]
+        direction LR
+        D[RMSNorm]:::p7 --> E[MLA]:::p7 --> F[+ Residual]:::p7 --> G[RMSNorm]:::p7 --> H[MoE Sparse SwiGLU]:::p7 --> I[+ Residual]:::p7
+        RoPE:::p7 -.-> E
+    end
+    Block --> J[LM Head]:::p7 --> K[Logits]:::io
+    K -->|training| L[CE Loss + DPO]:::io
+    K -->|inference| M[Top-p Sampling]:::io --> N[Text]:::io
+    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p7 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
+```
+
+- **Phase 7**: Text → BPE/Unigram → Token Emb → [RMSNorm → **MLA + RoPE** → **MoE SwiGLU**] × N → LM Head → Logits → Sampling → Text
+
+```mermaid
+---
+title: Phase 8 – GRU Hybrid
 ---
 graph LR
     A[Text]:::io --> B[BPE/Unigram Tokenizer]:::p8 --> C[Token Emb]:::p8 --> Block
-    subgraph Block[Transformer Block x N]
+    subgraph Block[Mixed Block x N]
         direction LR
         D[RMSNorm]:::p8 --> E[MLA]:::p8 --> F[+ Residual]:::p8 --> G[RMSNorm]:::p8 --> H[MoE Sparse SwiGLU]:::p8 --> I[+ Residual]:::p8
         RoPE:::p8 -.-> E
     end
-    Block --> J[LM Head]:::p8 --> K[Logits]:::io
+    Block --> GRU[GRU Block]:::p8 --> J[LM Head]:::p8 --> K[Logits]:::io
     K -->|training| L[CE Loss + DPO]:::io
     K -->|inference| M[Top-p Sampling]:::io --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p8 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
+    classDef p8 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
 ```
 
-- **Phase 8**: Text → BPE/Unigram → Token Emb → [RMSNorm → **MLA + RoPE** → **MoE SwiGLU**] × N → LM Head → Logits → Sampling → Text
-
-```mermaid
----
-title: Phase 9 – GRU Hybrid
----
-graph LR
-    A[Text]:::io --> B[BPE/Unigram Tokenizer]:::p9 --> C[Token Emb]:::p9 --> Block
-    subgraph Block[Mixed Block x N]
-        direction LR
-        D[RMSNorm]:::p9 --> E[MLA]:::p9 --> F[+ Residual]:::p9 --> G[RMSNorm]:::p9 --> H[MoE Sparse SwiGLU]:::p9 --> I[+ Residual]:::p9
-        RoPE:::p9 -.-> E
-    end
-    Block --> GRU[GRU Block]:::p9 --> J[LM Head]:::p9 --> K[Logits]:::io
-    K -->|training| L[CE Loss + DPO]:::io
-    K -->|inference| M[Top-p Sampling]:::io --> N[Text]:::io
-    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p9 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
-```
-
-- **Phase 9**: Text → BPE/Unigram → Token Emb → [Transformer ↔ **GRU** interleaved] × N → LM Head → Logits → Sampling → Text
+- **Phase 8**: Text → BPE/Unigram → Token Emb → [Transformer ↔ **GRU** interleaved] × N → LM Head → Logits → Sampling → Text
 
 **Bold** = new/changed component at that phase. Phases 6, 7 change inference (KV-cache, top-p) and training (SFT, LoRA, DPO) without altering the forward architecture.
 

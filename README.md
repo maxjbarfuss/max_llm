@@ -44,19 +44,19 @@ Docs and policies:
 
 ## Architecture
 
-Phase 9 combines GQA/MLA attention, MoE feedforward blocks, and a GRU output stage into a single local-first stack. The diagram below is a Phase 9 snapshot of the full text → output pipeline. Solid rectangles are current components in Phase 9. Rounded pills show predecessors replaced in earlier phases, colored by the phase they were introduced. For deeper design context, see [docs/DESIGN.md](docs/DESIGN.md).
+Phase 8 combines GQA/MLA attention, MoE feedforward blocks, and a GRU output stage into a single local-first stack. The diagram below is a Phase 8 snapshot of the full text → output pipeline. Solid rectangles are current components in Phase 8. Rounded pills show predecessors replaced in earlier phases, colored by the phase they were introduced. For deeper design context, see [docs/DESIGN.md](docs/DESIGN.md).
 
 ```mermaid
 graph TD
-    In[Text Input]:::io --> Tok[BPE/Unigram Tokenizer]:::p4 --> Emb[Token Embedding]:::p2 --> N1
+    In[Text Input]:::io --> Tok[BPE/Unigram Tokenizer]:::p3 --> Emb[Token Embedding]:::p2 --> N1
 
     subgraph Block[Transformer Block x N]
-        N1[RMSNorm]:::p5 --> ATT[MLA]:::p8 --> R1[+ Residual]:::p3
-        RoPE[RoPE]:::p5 -.-> ATT
-        R1 --> N2[RMSNorm]:::p5 --> MOE[MoE Sparse SwiGLU]:::p8 --> R2[+ Residual]:::p3
+        N1[RMSNorm]:::p4 --> ATT[MLA]:::p7 --> R1[+ Residual]:::p3
+        RoPE[RoPE]:::p4 -.-> ATT
+        R1 --> N2[RMSNorm]:::p4 --> MOE[MoE Sparse SwiGLU]:::p7 --> R2[+ Residual]:::p3
     end
 
-    R2 --> GRU[GRU Block]:::p9 --> Head[LM Head]:::p3 --> Logits[Logits]:::io
+    R2 --> GRU[GRU Block]:::p8 --> Head[LM Head]:::p3 --> Logits[Logits]:::io
     Logits -->|training| Loss[Cross-Entropy Loss]:::io
     Logits -->|inference| Samp[Sampling]:::io --> GenOut[Generated Text]:::io
 
@@ -68,8 +68,8 @@ graph TD
         LN([LayerNorm]):::p3
         MHA([Multi-Head Attn]):::p3
         GF([GELU FFN]):::p3
-        GQA2([GQA]):::p5
-        SW([Dense SwiGLU]):::p5
+        GQA2([GQA]):::p4
+        SW([Dense SwiGLU]):::p4
     end
 
     CT -.-> Tok
@@ -86,20 +86,18 @@ graph TD
     classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
     classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
-    classDef p5 fill:#E1BEE7,stroke:#7B1FA2,color:#4A148C
-    classDef p8 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
-    classDef p9 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
+    classDef p7 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
+    classDef p8 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
 ```
 
 | Color | Phase | Component |
 |-------|-------|-----------|
 | ⬛ Black | — | I/O: Text Input, Logits, Loss, Sampling, Generated Text |
 | 🟢 Green | 2 | Token Embedding |
-| 🔵 Blue | 3 | Residual connections, LM Head |
-| 🟠 Orange | 4 | BPE / Unigram Tokenizer |
-| 🟣 Purple | 5 | RMSNorm, RoPE |
-| 🔴 Red | 8 | MLA (replaces GQA), MoE (replaces dense SwiGLU) |
-| 🟡 Yellow | 9 | GRU hybrid blocks |
+| 🔵 Blue | 3 | Residual connections, LM Head, BPE / Unigram Tokenizer |
+| 🟠 Orange | 4 | RMSNorm, RoPE, GQA (Llama-Style Upgrades) |
+| 🔴 Red | 7 | MLA (replaces GQA), MoE (replaces dense SwiGLU) |
+| 🟡 Yellow | 8 | GRU hybrid blocks |
 | Rounded pill | — | Replaced predecessors (colored by introducing phase) |
 
 ## License
