@@ -4,7 +4,8 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.config.model import ModelConfig
-from src.inference.run import load_checkpoint, sample_token
+from src.inference.sampler import sample_token
+from src.inference.utils import load_checkpoint_into_model
 from src.models.learning_model import SimpleLM
 from src.training.loop import train
 from src.training.train import create_simple_loaders, save_checkpoint
@@ -109,7 +110,7 @@ class TestPhase2Integration:
 
         # Load fresh model
         model2 = SimpleLM.from_config(config)
-        load_checkpoint(model2, str(ckpt_path), torch.device("cpu"))
+        load_checkpoint_into_model(model2, str(ckpt_path), torch.device("cpu"))
         model2.eval()
 
         # Generate from checkpoint
@@ -162,7 +163,7 @@ class TestPhase2Integration:
 
         # Inference
         model2 = SimpleLM.from_config(config)
-        load_checkpoint(model2, str(ckpt_path), torch.device("cpu"))
+        load_checkpoint_into_model(model2, str(ckpt_path), torch.device("cpu"))
         model2.eval()
 
         prompt = [10, 20]

@@ -19,12 +19,12 @@ title: Phase 2 – Skeleton
 graph LR
     A[Text]:::io --> B[Char Tokenizer]:::p2 --> C[Token Emb + Learned Pos]:::p2 --> D[GELU MLP]:::p2 --> E[LM Head]:::p2 --> F[Logits]:::io
     F -->|training| G[Cross-Entropy Loss]:::io
-    F -->|inference| H[Sampling]:::p2 --> I[Text]:::io
+    F -->|inference| H[Greedy Sampling]:::p2 --> I[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
     classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
 ```
 
-- **Phase 2**: Text → Char Tokenizer → Token Emb + Learned Pos → GELU MLP → LM Head → Logits → Cross-Entropy Loss (training) / Sampling (inference) → Text
+- **Phase 2**: Text → Char Tokenizer → Token Emb + Learned Pos → GELU MLP → LM Head → Logits → Cross-Entropy Loss (training) / Greedy Sampling (inference) → Text
 
 ```mermaid
 ---
@@ -38,12 +38,12 @@ graph LR
     end
     Block --> J[LM Head]:::p3 --> K[Logits]:::io
     K -->|training| L[Cross-Entropy Loss]:::io
-    K -->|inference| M[Top-k Sampling]:::io --> N[Text]:::io
+    K -->|inference| M[Sampler<br/>temp/top-k/top-p]:::p3 --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
 ```
 
-- **Phase 3**: Text → **BPE Tokenizer** → Token Emb + Learned Pos → [**LayerNorm** → **Multi-Head Attn** → **GELU FFN**] × N → **LM Head** → Logits → Sampling → Text
+- **Phase 3**: Text → **BPE Tokenizer** → Token Emb + Learned Pos → [**LayerNorm** → **Multi-Head Attn** → **GELU FFN**] × N → **LM Head** → Logits → **Sampler (temp/top-k/top-p)** → Text
 
 ```mermaid
 ---
@@ -58,12 +58,13 @@ graph LR
     end
     Block --> J[LM Head]:::p4 --> K[Logits]:::io
     K -->|training| L[Cross-Entropy Loss]:::io
-    K -->|inference| M[Sampling]:::io --> N[Text]:::io
+    K -->|inference| M[Sampler<br/>temp/top-k/top-p]:::p3 --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
     classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
 ```
 
-- **Phase 4**: Text → BPE → Token Emb → [**RMSNorm** → **GQA + RoPE** → **SwiGLU**] × N → LM Head → Logits → Sampling → Text
+- **Phase 4**: Text → BPE → Token Emb → [**RMSNorm** → **GQA + RoPE** → **SwiGLU**] × N → LM Head → Logits → Sampler → Text
 
 ```mermaid
 ---
@@ -78,9 +79,10 @@ graph LR
     end
     Block --> J[LM Head]:::p56 --> K[Logits]:::io
     K -->|training| L[CE Loss + DPO]:::io
-    K -->|inference| M[Top-p Sampling]:::io --> N[Text]:::io
+    K -->|inference| M[Sampler + KV-cache]:::p56 --> N[Text]:::io
     LoRA:::p56 -.-> Block
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
     classDef p56 fill:#B3E5FC,stroke:#0277BD,color:#01579B
 ```
 
@@ -99,12 +101,13 @@ graph LR
     end
     Block --> J[LM Head]:::p7 --> K[Logits]:::io
     K -->|training| L[CE Loss + DPO]:::io
-    K -->|inference| M[Top-p Sampling]:::io --> N[Text]:::io
+    K -->|inference| M[Sampler + KV-cache]:::p56 --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p56 fill:#B3E5FC,stroke:#0277BD,color:#01579B
     classDef p7 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
 ```
 
-- **Phase 7**: Text → BPE/Unigram → Token Emb → [RMSNorm → **MLA + RoPE** → **MoE SwiGLU**] × N → LM Head → Logits → Sampling → Text
+- **Phase 7**: Text → BPE/Unigram → Token Emb → [RMSNorm → **MLA + RoPE** → **MoE SwiGLU**] × N → LM Head → Logits → Sampler → Text
 
 ```mermaid
 ---
@@ -119,16 +122,17 @@ graph LR
     end
     Block --> GRU[GRU Block]:::p8 --> J[LM Head]:::p8 --> K[Logits]:::io
     K -->|training| L[CE Loss + DPO]:::io
-    K -->|inference| M[Top-p Sampling]:::io --> N[Text]:::io
+    K -->|inference| M[Sampler + KV-cache]:::p56 --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p56 fill:#B3E5FC,stroke:#0277BD,color:#01579B
     classDef p8 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
 ```
 
-- **Phase 8**: Text → BPE/Unigram → Token Emb → [Transformer ↔ **GRU** interleaved] × N → LM Head → Logits → Sampling → Text
+- **Phase 8**: Text → BPE/Unigram → Token Emb → [Transformer ↔ **GRU** interleaved] × N → LM Head → Logits → Sampler → Text
 
-**Bold** = new/changed component at that phase. Phases 6, 7 change inference (KV-cache, top-p) and training (SFT, LoRA, DPO) without altering the forward architecture.
+**Bold** = new/changed component at that phase. Phases 5, 6 change inference (KV-cache, top-p) and training (SFT, LoRA, DPO) without altering the forward architecture.
 
-Training: Logits → Cross-Entropy Loss (all phases). Inference: Logits → Softmax → Sampling → next token (greedy P2, +top-k/temperature P3, +top-p/KV-cache P6).
+Training: Logits → Cross-Entropy Loss (all phases). Inference: Logits → Softmax → Sampler → next token (greedy P2, +top-k/temperature P3, +top-p/KV-cache P5).
 
 **Tokenizer strategy**: Start with character-level for Phase 2 (simplest, reproducible). Phase 3: switch to BPE via `tiktoken` or `sentencepiece`, then benchmark BPE vs Unigram using identical corpus slices. Promote Unigram only if strictly better on at least one dimension without degrading others. Vocabulary mismatch constraints must be explicit when swapping.
 

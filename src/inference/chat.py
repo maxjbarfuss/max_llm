@@ -14,20 +14,25 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
 
 import torch
 
 from src.config.experiment import ExperimentConfig
+from src.inference.sampler import sample_token
+from src.inference.utils import (
+    create_tokenizer_from_data_config,
+    load_checkpoint_into_model,
+    resolve_device,
+)
 from src.models.learning_model import SimpleLM
-from src.tokenizer import TokenizerFactory
+from src.tokenizer import Tokenizer
 
 
 def load_checkpoint_model(
     config_path: str,
     checkpoint_path: str | None = None,
     device: str = "auto",
-) -> tuple:
+) -> tuple[SimpleLM, Tokenizer, ExperimentConfig, torch.device]:
     """Load model from checkpoint.
 
     Args:
@@ -42,11 +47,7 @@ def load_checkpoint_model(
     config = ExperimentConfig.from_toml(config_path)
 
     # Determine device
-    if device == "auto":
-        device_obj = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        device_obj = torch.device(device)
-
+    device_obj = resolve_device(device)
     print(f"📍 Device: {device_obj}")
 
     # Create model
@@ -57,18 +58,8 @@ def load_checkpoint_model(
         checkpoint_file = Path(checkpoint_path)
         if checkpoint_file.exists():
             print(f"📂 Loading checkpoint: {checkpoint_file}")
-            checkpoint = torch.load(checkpoint_file, map_location=device_obj)
-
-            # Handle different checkpoint formats
-            if isinstance(checkpoint, dict):
-                for key in ("model_state", "state_dict", "model"):
-                    if key in checkpoint and isinstance(checkpoint[key], dict):
-                        model.load_state_dict(checkpoint[key], strict=False)
-                        print("✓ Checkpoint loaded")
-                        break
-                else:
-                    model.load_state_dict(checkpoint, strict=False)
-                    print("✓ Checkpoint loaded")
+            load_checkpoint_into_model(model, str(checkpoint_file), device_obj)
+            print("✓ Checkpoint loaded")
             print("✓ Model ready")
         else:
             print(f"⚠ Checkpoint not found: {checkpoint_file}")
@@ -77,56 +68,16 @@ def load_checkpoint_model(
         print("⚠ No checkpoint provided; using random weights")
 
     # Create tokenizer
-    tokenizer_kwargs: dict[str, Any] = {"mode": config.data.tokenizer_mode}
-    if config.data.tokenizer_mode == "codepoint":
-        tokenizer_kwargs["vocab_size"] = config.data.tokenizer_vocab_size
-    tokenizer = TokenizerFactory.create(config.data.tokenizer_name, **tokenizer_kwargs)
+    tokenizer = create_tokenizer_from_data_config(config.data)
 
     model.eval()
 
     return model, tokenizer, config, device_obj
 
 
-def sample_token(
-    logits: torch.Tensor,
-    temperature: float,
-    top_p: float,
-    top_k: int,
-) -> int:
-    """Sample next token from logits."""
-    if temperature <= 0:
-        return int(torch.argmax(logits).item())
-
-    logits = logits / temperature
-
-    if top_k > 0:
-        top_k = min(top_k, logits.size(-1))
-        values, _ = torch.topk(logits, top_k)
-        min_value = values[-1]
-        logits = torch.where(
-            logits < min_value, torch.tensor(float("-inf"), device=logits.device), logits
-        )
-
-    if 0 < top_p < 1.0:
-        sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-        probs = torch.softmax(sorted_logits, dim=-1)
-        cumulative = torch.cumsum(probs, dim=-1)
-        cutoff = cumulative > top_p
-        cutoff[..., 1:] = cutoff[..., :-1].clone()
-        cutoff[..., 0] = False
-        sorted_logits = torch.where(
-            cutoff, torch.tensor(float("-inf"), device=logits.device), sorted_logits
-        )
-        logits = torch.empty_like(logits).scatter(0, sorted_indices, sorted_logits)
-
-    probs = torch.softmax(logits, dim=-1)
-    next_token = torch.multinomial(probs, num_samples=1)
-    return int(next_token.item())
-
-
 def chat_mode(
     model: SimpleLM,
-    tokenizer: TokenizerFactory,
+    tokenizer: Tokenizer,
     config: ExperimentConfig,
     device: torch.device,
     max_tokens: int | None = None,

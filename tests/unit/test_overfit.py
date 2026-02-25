@@ -1,6 +1,5 @@
 """Overfit test for Phase 2 — verify model can memorize small dataset."""
 
-import pytest
 import torch
 
 from src.config.model import ModelConfig

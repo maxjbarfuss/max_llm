@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from src.config.model import ModelConfig
-from src.inference.run import load_checkpoint
+from src.inference.utils import load_checkpoint_into_model
 from src.models.learning_model import SimpleLM
 from src.training.train import save_checkpoint
 
@@ -79,7 +79,7 @@ class TestLoadCheckpoint:
         torch.save({"model_state": model.state_dict()}, path)
 
         fresh = _make_model()
-        load_checkpoint(fresh, str(path), torch.device("cpu"))
+        load_checkpoint_into_model(fresh, str(path), torch.device("cpu"))
         for key in weights:
             assert torch.equal(weights[key], fresh.state_dict()[key]), key
 
@@ -90,7 +90,7 @@ class TestLoadCheckpoint:
         torch.save({"state_dict": model.state_dict()}, path)
 
         fresh = _make_model()
-        load_checkpoint(fresh, str(path), torch.device("cpu"))
+        load_checkpoint_into_model(fresh, str(path), torch.device("cpu"))
         for key in model.state_dict():
             assert torch.equal(model.state_dict()[key], fresh.state_dict()[key])
 
@@ -101,7 +101,7 @@ class TestLoadCheckpoint:
         torch.save({"model": model.state_dict()}, path)
 
         fresh = _make_model()
-        load_checkpoint(fresh, str(path), torch.device("cpu"))
+        load_checkpoint_into_model(fresh, str(path), torch.device("cpu"))
         for key in model.state_dict():
             assert torch.equal(model.state_dict()[key], fresh.state_dict()[key])
 
@@ -112,7 +112,7 @@ class TestLoadCheckpoint:
         torch.save(model.state_dict(), path)
 
         fresh = _make_model()
-        load_checkpoint(fresh, str(path), torch.device("cpu"))
+        load_checkpoint_into_model(fresh, str(path), torch.device("cpu"))
         for key in model.state_dict():
             assert torch.equal(model.state_dict()[key], fresh.state_dict()[key])
 
@@ -123,4 +123,4 @@ class TestLoadCheckpoint:
 
         model = _make_model()
         with pytest.raises(ValueError, match="Unsupported checkpoint format"):
-            load_checkpoint(model, str(path), torch.device("cpu"))
+            load_checkpoint_into_model(model, str(path), torch.device("cpu"))

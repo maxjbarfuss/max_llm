@@ -58,7 +58,7 @@ graph TD
 
     R2 --> GRU[GRU Block]:::p8 --> Head[LM Head]:::p3 --> Logits[Logits]:::io
     Logits -->|training| Loss[Cross-Entropy Loss]:::io
-    Logits -->|inference| Samp[Sampling]:::io --> GenOut[Generated Text]:::io
+    Logits -->|inference| Samp[Sampler<br/>temp/top-k/top-p]:::p3 --> GenOut[Generated Text]:::io
 
     subgraph Replaced[Replaced Predecessors]
         direction LR
@@ -92,9 +92,9 @@ graph TD
 
 | Color | Phase | Component |
 |-------|-------|-----------|
-| ⬛ Black | — | I/O: Text Input, Logits, Loss, Sampling, Generated Text |
+| ⬛ Black | — | I/O: Text Input, Logits, Loss, Generated Text |
 | 🟢 Green | 2 | Token Embedding |
-| 🔵 Blue | 3 | Residual connections, LM Head, BPE / Unigram Tokenizer |
+| 🔵 Blue | 3 | Residual connections, LM Head, BPE / Unigram Tokenizer, Sampler (temp/top-k/top-p) |
 | 🟠 Orange | 4 | RMSNorm, RoPE, GQA (Llama-Style Upgrades) |
 | 🔴 Red | 7 | MLA (replaces GQA), MoE (replaces dense SwiGLU) |
 | 🟡 Yellow | 8 | GRU hybrid blocks |
