@@ -28,10 +28,10 @@ graph LR
 
 ```mermaid
 ---
-title: Phase 3 – Minimal Transformer
+title: Phase 3 – Minimal Transformer + Tokenizer Upgrade
 ---
 graph LR
-    A[Text]:::io --> B[Char Tokenizer]:::p3 --> C[Token Emb + Learned Pos]:::p3 --> Block
+    A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb + Learned Pos]:::p3 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
         D[LayerNorm]:::p3 --> E[Multi-Head Attn]:::p3 --> F[+ Residual]:::p3 --> G[LayerNorm]:::p3 --> H[GELU FFN]:::p3 --> I[+ Residual]:::p3
@@ -43,11 +43,11 @@ graph LR
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
 ```
 
-- **Phase 3**: Text → Char Tokenizer → Token Emb + Learned Pos → [**LayerNorm** → **Multi-Head Attn** → **GELU FFN**] × N → **LM Head** → Logits → Sampling → Text
+- **Phase 3**: Text → **BPE Tokenizer** → Token Emb + Learned Pos → [**LayerNorm** → **Multi-Head Attn** → **GELU FFN**] × N → **LM Head** → Logits → Sampling → Text
 
 ```mermaid
 ---
-title: Phase 4 – Tokenizer + Training Infra
+title: Phase 4 – Training Stability & Scaling
 ---
 graph LR
     A[Text]:::io --> B[BPE Tokenizer]:::p4 --> C[Token Emb + Learned Pos]:::p4 --> Block
@@ -62,7 +62,7 @@ graph LR
     classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
 ```
 
-- **Phase 4**: Text → **BPE Tokenizer** → (same transformer) → Sampling → Text *(tokenizer + training infra upgrade)*
+- **Phase 4**: (same transformer as Phase 3) *(training infrastructure, stability, and multi-GPU scaling)*
 
 ```mermaid
 ---
@@ -149,7 +149,7 @@ graph LR
 
 Training: Logits → Cross-Entropy Loss (all phases). Inference: Logits → Softmax → Sampling → next token (greedy P2, +top-k/temperature P3, +top-p/KV-cache P6).
 
-**Tokenizer strategy**: Start with character-level for Phase 2 (simplest, reproducible). Phase 4: switch to BPE via `tiktoken` or `sentencepiece`, then benchmark BPE vs Unigram using identical corpus slices. Promote Unigram only if strictly better on at least one dimension without degrading others. Vocabulary mismatch constraints must be explicit when swapping.
+**Tokenizer strategy**: Start with character-level for Phase 2 (simplest, reproducible). Phase 3: switch to BPE via `tiktoken` or `sentencepiece`, then benchmark BPE vs Unigram using identical corpus slices. Promote Unigram only if strictly better on at least one dimension without degrading others. Vocabulary mismatch constraints must be explicit when swapping.
 
 ---
 

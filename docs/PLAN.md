@@ -15,8 +15,8 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation & Tests | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, reproducible env notes |
 | **2** | ✅ Done | Skeleton | M | Low (scope clarity) | TinyStories + Wiki-103 subset (100K+) | Tokenizer modes, data pipeline, training loop, checkpointing, inference, seed hardening, overfit test (deterministic replay + overfitting verified)
-| **3** | — | Transformer | L | Med (training stability) | OpenWebText subset + Gutenberg (10M+) | Decoder baseline metrics, sampling outputs, integration test evidence |
-| **4** | — | Stability | L | High (scale + distributed) | FineWeb / FineWeb-Edu subset | Throughput benchmark report, tokenizer decision memo, distributed training logs |
+| **3** | — | Transformer + Tokenizer | L | Med (training stability) | OpenWebText subset + Gutenberg (10M+); BPE benchmarking | Decoder baseline metrics, sampling outputs, tokenizer benchmarking report, integration test evidence |
+| **4** | — | Training Stability | L | High (scale + distributed) | FineWeb / FineWeb-Edu subset (50M+) | Throughput benchmark report, distributed training logs, stability diagnostics |
 | **5** | — | Curriculum | XL | High (data complexity) | 100M+ tokens; staged curriculum | Architecture A/B report, curriculum manifest, stage-transition metrics |
 | **6** | — | Continual | L | Med (forgetting risk) | SFT instruction pairs; replay buffer | SFT runbook, LoRA adapters/merged weights, continual-learning eval report |
 | **7** | — | RL Alignment | XL | High (alignment instability) | Preference data + reward model | Alignment experiment report, reward-model card, safety evaluation summary |
@@ -133,20 +133,29 @@ Quality:
 
 ---
 
-### Phase 3: Minimal Decoder-Only Transformer
+### Phase 3: Minimal Decoder-Only Transformer + Tokenizer Upgrade
 
-**Goal**: Working GPT-style model, overfits small dataset, generates recognizable text.
+**Goal**: Working GPT-style model with BPE tokenizer, overfits small dataset, generates recognizable text.
 
 **Dependencies**: Phase 2 reproducibility and checkpointing completed.
-**Artifacts**: Decoder baseline metrics, generation samples, end-to-end integration test log.
+**Artifacts**: Decoder baseline metrics, generation samples, tokenizer benchmarking report, end-to-end integration test log.
 **Kill Criteria**: Stop if causal masking correctness fails after architecture and test fixes (block release until resolved).
-**Out of Scope**: Multi-GPU scaling, curriculum pretraining, RL alignment.
+**Out of Scope**: Multi-GPU scaling, curriculum pretraining, RL alignment, architecture upgrades (RMSNorm/RoPE/SwiGLU/GQA).
 **Decision Log**: Record decisions as `P3-DEC-<n>` in Running Session Log.
 
 **Tasks**:
 
+Tokenizer:
+- ☐ Implement BPE tokenizer via `tiktoken` or `sentencepiece`
+- ☐ Import and verify BPE vocab (32K tokens typical)
+- ☐ Benchmark BPE vs Unigram on identical corpus slices (compression ratio, vocab diversity, training speed)
+- ☐ Select best tokenizer for Phase 4+ based on at least one dimension of improvement
+- ☐ Document vocabulary mismatch constraints and token alignment strategy
+- ☐ Update `scripts/data/` configs to use selected tokenizer
+
 Data:
 - ☐ Prepare OpenWebText subset (10–50M tokens); document deduplication rate
+- ☐ Re-tokenize existing Phase 2 datasets (WikiText-103, TinyStories) with BPE
 - ☐ `HuggingFaceDownloader`: `download(dataset_name, cache_dir)` + `discover_schema()` → discovery report; add `--discover` mode to data CLI
 - ☐ Formalize `DatasetProcessor` ABC and `WikiTextProcessor` wrapping `normalize_wikitext.py`
 - ☐ Intermediate Parquet schema for normalized docs: doc_id, text, split, char_count (replaces .txt cache; enables efficient doc-level queries)
@@ -168,33 +177,34 @@ Training and inference:
 
 Quality:
 - ☐ Shape/dtype assertions for all layers
-- ☐ Integration test: full pipeline (raw text → tokenize → batch → forward → loss → generate) in a single test
+- ☐ Integration test: full pipeline (raw text → BPE tokenize → batch → forward → loss → generate) in a single test
 
 **Exit Criteria**:
 - ☐ Model overfits 1K-token subset (train loss < 0.5 after 1000 steps; train perplexity < 2.0)
 - ☐ Generated 100-token samples contain coherent English phrases (manual inspection logged)
 - ☐ All shape/dtype tests pass; causal mask verified (no future token leakage)
 - ☐ Integration test passes: end-to-end pipeline from raw text to generated output
+- ☐ Tokenizer benchmark complete: BPE vs Unigram decision documented with compression ratio, vocab size, and throughput
+- ☐ BPE tokenizer integrated and verified on Phase 2 datasets (WikiText-103, TinyStories)
 - ☐ OpenWebText subset (10–50M tokens) prepared, deduplicated, and deduplication rate documented
 
 ---
 
-### Phase 4: Training Stability & Usability
+### Phase 4: Training Stability & Scaling
 
-**Goal**: Stable training on 50–100M token datasets, smooth convergence, measured throughput baseline.
+**Goal**: Stable training on 50–100M token datasets with BPE tokenizer, smooth convergence, measured throughput baseline.
 
-**Dependencies**: Phase 3 decoder baseline and generation pipeline validated.
-**Artifacts**: Throughput benchmark report, tokenizer selection memo, distributed-consistency test results.
+**Dependencies**: Phase 3 decoder baseline, BPE tokenizer selection, and generation pipeline validated.
+**Artifacts**: Throughput benchmark report (char vs BPE comparison), distributed-consistency test results, stability diagnostics.
 **Kill Criteria**: Stop scaling if NaN/Inf recurs >2 times after stability mitigations (LR, clip, precision, batch schedule).
-**Out of Scope**: Architecture upgrades (RMSNorm/RoPE/SwiGLU/GQA), SFT and alignment.
+**Out of Scope**: Architecture upgrades (RMSNorm/RoPE/SwiGLU/GQA), SFT and alignment, curriculum learning.
 **Decision Log**: Record decisions as `P4-DEC-<n>` in Running Session Log.
 
 **Tasks**:
 
 Data:
-- ☐ Download and prepare FineWeb / FineWeb-Edu subset (~50–100M tokens)
+- ☐ Download and prepare FineWeb / FineWeb-Edu subset (~50–100M tokens) with BPE tokenizer
 - ☐ Implement heuristic data filters for length, language, and perplexity
-- ☐ Benchmark BPE vs Unigram on identical corpus slices; select tokenizer for Phase 5+
 - ☐ `ChunkedTokenCache(slow_dir, fast_dir, chunk_size_mb)`: slow→fast staging with LRU eviction and async background prefetch (`threading.Thread`); status tracked in `staging_status.parquet`
 - ☐ `CachedTokenDataset`: lazy-load via `ChunkedTokenCache`; prefetch next chunk at 80% consumption; wire into `src.training.train` via `DataConfig`
 - ☐ Upgrade token metadata to Parquet: chunk_id, token_count, byte_offset, split, sha256 hash (enables efficient split/range queries at scale)
@@ -217,9 +227,8 @@ Evaluation and quality:
 **Exit Criteria**:
 - ☐ 50–100M token training for 10K+ steps, no NaN/Inf; gradient norm stays within 2× of moving average
 - ☐ Loss curve smooth: no single-step spike > 3× running average over any 100-step window
-- ☐ Throughput baseline documented: tokens/sec on target hardware (single-GPU and multi-GPU)
+- ☐ Throughput baseline documented: tokens/sec on target hardware (single-GPU and multi-GPU, char vs BPE comparison)
 - ☐ `torch.compile` throughput gain measured and documented (target: ≥15% over eager mode)
-- ☐ Tokenizer benchmark complete: BPE vs Unigram decision documented with compression ratio, vocab size, and throughput
 - ☐ FineWeb subset integrated, deduplicated, and memory-mapped; data loading does not bottleneck training
 - ☐ Multi-GPU: DDP training produces identical loss to single-GPU at same seed for first 100 steps
 
@@ -229,7 +238,7 @@ Evaluation and quality:
 
 **Goal**: Same param count, better perplexity, longer context handling; assemble full unrestricted world model with multi-phase curriculum.
 
-**Dependencies**: Phase 4 tokenizer decision and stable high-volume training established.
+**Dependencies**: Phase 4 training stability established with BPE tokenizer.
 **Artifacts**: Architecture A/B report, curriculum manifest, per-stage training curves, memory/perf summary.
 **Kill Criteria**: Stop curriculum progression if stage transition harms val perplexity by >15% without recovery in 1K steps.
 **Out of Scope**: Instruction tuning, preference optimization, post-training alignment.
