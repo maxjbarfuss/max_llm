@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from src.models.learning_model import BaseLearningModel
+
+
+def compute_perplexity(loss: float) -> float:
+    """Convert loss to perplexity.
+
+    Args:
+        loss: Cross-entropy loss value.
+
+    Returns:
+        Perplexity (e^loss).
+    """
+    return math.exp(loss)
 
 
 def train_step(
@@ -30,7 +44,7 @@ def train_step(
     device = next(model.parameters()).device
     x, y = x.to(device), y.to(device)
 
-    logits = model(x)           # (B, T, V)
+    logits = model(x)  # (B, T, V)
     B, T, V = logits.shape
     loss = F.cross_entropy(logits.view(B * T, V), y.view(B * T))
 
@@ -47,7 +61,7 @@ def train(
     optimizer: torch.optim.Optimizer,
     max_steps: int,
     log_interval: int = 10,
-) -> list[float]:
+) -> dict[str, list[float]]:
     """Train for exactly max_steps gradient steps, cycling through train_loader.
 
     Args:
@@ -58,10 +72,13 @@ def train(
         log_interval: Print loss every this many steps. 0 = silent.
 
     Returns:
-        List of per-step scalar losses with length == max_steps.
+        Dict with keys:
+            - "losses": List of per-step scalar losses (length == max_steps).
+            - "perplexities": List of per-step perplexities (length == max_steps).
     """
     model.train()
     losses: list[float] = []
+    perplexities: list[float] = []
     step = 0
 
     while step < max_steps:
@@ -70,9 +87,11 @@ def train(
                 break
             x, y = batch
             loss = train_step(model, x, y, optimizer)
+            perplexity = compute_perplexity(loss)
             losses.append(loss)
+            perplexities.append(perplexity)
             if log_interval > 0 and (step + 1) % log_interval == 0:
-                print(f"step {step + 1:>5}/{max_steps}  loss={loss:.4f}")
+                print(f"step {step + 1:>5}/{max_steps}  loss={loss:.4f}  ppl={perplexity:.2f}")
             step += 1
 
-    return losses
+    return {"losses": losses, "perplexities": perplexities}

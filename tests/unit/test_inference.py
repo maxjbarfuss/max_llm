@@ -63,7 +63,7 @@ class TestGenerateLoop:
         x = torch.randint(0, 128, (8, 16))
         y = torch.randint(0, 128, (8, 16))
         loader = DataLoader(TensorDataset(x, y), batch_size=4)
-        train(model, loader, optimizer, max_steps=5, log_interval=0)
+        _ = train(model, loader, optimizer, max_steps=5, log_interval=0)
         ckpt_path = save_checkpoint(model, optimizer, step=5, output_dir=tmp_path)
 
         # Load fresh model from checkpoint and generate
@@ -97,7 +97,7 @@ class TestGenerateLoop:
         x = torch.randint(0, 128, (8, 16))
         y = torch.randint(0, 128, (8, 16))
         loader = DataLoader(TensorDataset(x, y), batch_size=4)
-        train(model, loader, optimizer, max_steps=10, log_interval=0)
+        _ = train(model, loader, optimizer, max_steps=10, log_interval=0)
         ckpt_path = save_checkpoint(model, optimizer, step=10, output_dir=tmp_path)
 
         torch.manual_seed(99)  # different seed → different random init
@@ -108,8 +108,6 @@ class TestGenerateLoop:
 
         any_differ = any(
             not torch.equal(p1, p2)
-            for p1, p2 in zip(
-                model_random.parameters(), model_trained.parameters(), strict=True
-            )
+            for p1, p2 in zip(model_random.parameters(), model_trained.parameters(), strict=True)
         )
         assert any_differ, "Trained checkpoint should differ from a random init"

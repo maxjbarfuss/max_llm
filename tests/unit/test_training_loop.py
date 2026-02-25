@@ -73,15 +73,16 @@ class TestTrain:
     """train() loop behaviour."""
 
     def test_returns_loss_list_of_correct_length(self):
-        """train() returns a list with exactly max_steps entries."""
+        """train() returns a dict with losses and perplexities of length max_steps."""
         from torch.utils.data import DataLoader, TensorDataset
 
         model = _make_model()
         x = torch.randint(0, 128, (20, 8))
         y = torch.randint(0, 128, (20, 8))
         loader = DataLoader(TensorDataset(x, y), batch_size=4)
-        losses = train(model, loader, _make_optimizer(model), max_steps=5, log_interval=0)
-        assert len(losses) == 5
+        metrics = train(model, loader, _make_optimizer(model), max_steps=5, log_interval=0)
+        assert len(metrics["losses"]) == 5
+        assert len(metrics["perplexities"]) == 5
 
     def test_all_losses_finite(self):
         """All returned losses are finite."""
@@ -91,8 +92,9 @@ class TestTrain:
         x = torch.randint(0, 128, (20, 8))
         y = torch.randint(0, 128, (20, 8))
         loader = DataLoader(TensorDataset(x, y), batch_size=4)
-        losses = train(model, loader, _make_optimizer(model), max_steps=10, log_interval=0)
-        assert all(torch.isfinite(torch.tensor(loss)) for loss in losses)
+        metrics = train(model, loader, _make_optimizer(model), max_steps=10, log_interval=0)
+        assert all(torch.isfinite(torch.tensor(loss)) for loss in metrics["losses"])
+        assert all(torch.isfinite(torch.tensor(ppl)) for ppl in metrics["perplexities"])
 
     def test_loss_decreases_on_repeated_batch(self):
         """Loss falls when training repeatedly on the same tiny batch."""
@@ -104,13 +106,14 @@ class TestTrain:
         x = torch.randint(0, 128, (4, 8))
         y = torch.randint(0, 128, (4, 8))
         loader = DataLoader(TensorDataset(x, y), batch_size=4)
-        losses = train(
+        metrics = train(
             model,
             loader,
             torch.optim.Adam(model.parameters(), lr=1e-2),
             max_steps=100,
             log_interval=0,
         )
+        losses = metrics["losses"]
         assert (
             losses[-1] < losses[0]
         ), f"Expected loss to decrease: initial={losses[0]:.4f}, final={losses[-1]:.4f}"
@@ -124,8 +127,8 @@ class TestTrain:
         x = torch.randint(0, 128, (8, 8))
         y = torch.randint(0, 128, (8, 8))
         loader = DataLoader(TensorDataset(x, y), batch_size=4)
-        losses = train(model, loader, _make_optimizer(model), max_steps=7, log_interval=0)
-        assert len(losses) == 7
+        metrics = train(model, loader, _make_optimizer(model), max_steps=7, log_interval=0)
+        assert len(metrics["losses"]) == 7
 
     def test_train_sets_model_training_mode(self):
         """train() sets model.training = True even if model starts in eval mode."""
@@ -149,10 +152,10 @@ class TestTrain:
         x = torch.randint(0, 128, (8, 8))
         y = torch.randint(0, 128, (8, 8))
         loader = DataLoader(TensorDataset(x, y), batch_size=4)
-        losses = train(model, loader, _make_optimizer(model), max_steps=1, log_interval=0)
-        assert len(losses) == 1
-        assert isinstance(losses[0], float)
-        assert losses[0] > 0.0
+        metrics = train(model, loader, _make_optimizer(model), max_steps=1, log_interval=0)
+        assert len(metrics["losses"]) == 1
+        assert isinstance(metrics["losses"][0], float)
+        assert metrics["losses"][0] > 0.0
 
 
 class TestCreateSimpleLoaders:
@@ -182,7 +185,9 @@ class TestCreateSimpleLoaders:
         """Each input token sequence is shifted by one to produce the target."""
         seq_len = 4
         tokens = torch.arange(20, dtype=torch.long)
-        train_loader, _ = create_simple_loaders(tokens, seq_len, batch_size=20, validation_split=0.0)
+        train_loader, _ = create_simple_loaders(
+            tokens, seq_len, batch_size=20, validation_split=0.0
+        )
         for x, y in train_loader:
             # x[i, t+1] should equal y[i, t] for all valid t
             assert torch.equal(x[:, 1:], y[:, :-1])
@@ -193,7 +198,9 @@ class TestCreateSimpleLoaders:
         seq_len = 3
         # 12 tokens → 3 samples of length 4 (seq_len+1), non-overlapping
         tokens = torch.arange(12, dtype=torch.long)
-        train_loader, _ = create_simple_loaders(tokens, seq_len, batch_size=10, validation_split=0.0)
+        train_loader, _ = create_simple_loaders(
+            tokens, seq_len, batch_size=10, validation_split=0.0
+        )
         x_batch, _ = next(iter(train_loader))
         # Sort by first token to get deterministic order despite shuffle=True
         x_batch = x_batch[x_batch[:, 0].argsort()]

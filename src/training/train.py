@@ -182,7 +182,7 @@ def main() -> None:
     )
 
     # Train
-    losses = train(
+    metrics = train(
         model=model,
         train_loader=train_loader,
         optimizer=optimizer,
@@ -195,9 +195,16 @@ def main() -> None:
         f"train_samples={len(train_loader.dataset)}, "  # type: ignore[arg-type]
         f"val_samples={len(val_loader.dataset)}"  # type: ignore[arg-type]
     )
-    print(f"Training done. initial_loss={losses[0]:.4f} final_loss={losses[-1]:.4f}")
+    losses = metrics["losses"]
+    perplexities = metrics["perplexities"]
+    print(
+        f"Training done. initial_loss={losses[0]:.4f} final_loss={losses[-1]:.4f} "
+        f"initial_ppl={perplexities[0]:.2f} final_ppl={perplexities[-1]:.2f}"
+    )
 
-    ckpt_path = save_checkpoint(model, optimizer, step=config.training.max_steps, output_dir=config.output_dir)
+    ckpt_path = save_checkpoint(
+        model, optimizer, step=config.training.max_steps, output_dir=config.output_dir
+    )
     print(f"Checkpoint : {ckpt_path}")
 
 

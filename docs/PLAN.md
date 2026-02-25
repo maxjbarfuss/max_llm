@@ -115,20 +115,22 @@ Training and evaluation:
 - ☑ Training loop: forward → loss → backward → step → log (working)
 - ☑ Checkpointing: model state, optimizer state, step (`save_checkpoint` in `src/training/train.py`)
 - ☑ Inference: `src/inference/run.py` — temperature, top-k, top-p sampling; loads checkpoint; text-in → text-out
-- ☐ Perplexity metrics: per-batch + per-epoch (not yet implemented)
+- ☑ Perplexity metrics: per-batch computation (train loop returns dict with losses + perplexities)
+- ☑ Evaluation script: `scripts/evaluate_p2.py` — checkpoint → prompt → generation samples with config-driven sampling
 
 Quality:
-- ☑ Unit tests: 219 passing — end-to-end Phase 2 loop covered (tokenizer → data pipeline → training → checkpoint → inference, 58% total coverage)
+- ☑ Unit tests: 224 passing — end-to-end Phase 2 loop covered (tokenizer → data pipeline → training → checkpoint → inference, integration tests added)
 
-**Exit Criteria** (status after refactor commit 44470bf):
+**Exit Criteria** (status updated 2026-02-24):
 - ✅ `python -m src.training.train --config config/experiment.toml` trains end-to-end on WikiText-103 100k tokens, loss decreases (16.01→2.61)
 - ☐ `python -m src.training.train --config config/experiment.toml` trains end-to-end on TinyStories, loss decreases monotonically over 100 steps (pending TinyStories data)
 - ☐ Save/restore checkpoint with same seed produces bit-identical loss at step N+1 (seed hardening pending)
-- ✅ 219 unit tests passing — end-to-end Phase 2 loop (tokenizer → data pipeline → training → checkpoint → inference)
+- ✅ 224 unit tests passing — end-to-end Phase 2 loop (tokenizer → data pipeline → training → checkpoint → inference) + integration tests
 - ✅ WikiText-103 subset (1M tokens) downloaded, tokenized, and validated (on disk)
 - ✅ TinyStories pipeline skeleton ready (boundary detection implemented, YAML template needed)
 - ☐ Overfit test achieves train loss < 0.1 on a 10K-token subset within 500 steps (pending)
 - ✅ Inference: `python -m src.inference.run --config config/experiment.toml --checkpoint <path> --prompt "Hello"` generates text from a trained checkpoint
+- ✅ Evaluation: `python scripts/evaluate_p2.py --config config/experiment.toml --checkpoint <path> --prompt "Hello"` reports perplexity and generation samples
 
 ---
 
