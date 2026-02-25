@@ -88,12 +88,33 @@ See [tests/README.md](tests/README.md) for additional test commands and expectat
 
 ### Change Checklist
 
-Before pushing or tagging a milestone, confirm:
+Before committing and pushing, confirm:
 
-1. **Summary**: what changed and why.
-2. **Validation**: the relevant tests passed locally.
-3. **Risks & Next**: known limitations and follow-up tasks are documented.
-4. **Docs**: [docs/SESSION.md](docs/SESSION.md) and [docs/PLAN.md](docs/PLAN.md) reflect the change.
+1. **Quality Gate**: All checks pass locally:
+   ```bash
+   make check    # Must pass: black, ruff, mypy, test-py-quick
+   ```
+
+2. **Tests**: Relevant tests are comprehensive and passing:
+   - New code has unit tests (TDD: test-first approach preferred)
+   - All tests pass locally
+   - Coverage is maintained or improved
+
+3. **Summary**: Change has a clear, atomic commit message:
+   - What changed and why (not how)
+   - Focused scope—one logical change per commit
+   - Reviewable—easy to understand in isolation
+
+4. **Documentation**: Docs reflect the change:
+   - [docs/SESSION.md](docs/SESSION.md): Updated with log entry and current status
+   - [docs/PLAN.md](docs/PLAN.md): Phase progress updated if applicable
+   - Code comments for non-obvious logic
+   - Docstrings for new functions/classes
+
+5. **Risks & Follow-up**: Known limitations documented:
+   - Any tech debt or TODOs noted in code
+   - Follow-up tasks documented in SESSION.md or PLAN.md
+   - Breaking changes flagged clearly
 
 ### CI/CD
 
