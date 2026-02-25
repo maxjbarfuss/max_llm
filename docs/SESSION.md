@@ -7,15 +7,21 @@
 
 ## Current Focus
 
-**Phase 2 — Seed hardening complete**
+**Phase 2 — Complete ✅**
 
-Comprehensive seed management implemented with `seed_everything` utility. All random sources (Python, NumPy, PyTorch CPU/CUDA) are now properly seeded. Deterministic training verified with 8 unit tests confirming bit-identical replay across multiple steps.
+All Phase 2 exit criteria met: infrastructure, tokenizers, config, training loop, checkpointing, inference, perplexity metrics, seed hardening, and overfit testing. 240 unit tests passing. Ready to begin Phase 3 (Transformer decoder).
 
 ## Phase 2 Status
 
-Phase 1 complete. Phase 2 ~99% done: infrastructure, tokenizers, config, training loop, checkpointing, inference, perplexity metrics, and seed hardening all working. WikiText & TinyStories datasets validated end-to-end with proper boundary detection. Remaining: overfit test.
+**✅ Phase 2 Complete (100%)**
+
+Phase 1 complete. Phase 2 complete: infrastructure, tokenizers, config, training loop, checkpointing, inference, perplexity metrics, seed hardening, and overfit test all working. WikiText & TinyStories datasets validated end-to-end with proper boundary detection. All 240 unit tests passing.
 
 **Completed sequence (this session additions)**:
+- ✅ Overfit test: `tests/unit/test_overfit.py` with 3 comprehensive tests
+- ✅ Overfit verification: Model achieves train loss < 0.1 on 10K-token subset within 500 steps
+- ✅ Convergence validation: Loss trends downward with monotonic approximate decrease
+- ✅ Step threshold verified: Target loss achieved within 500-step limit
 - ✅ Seed hardening: `src/utils/seed.py` with `seed_everything` utility
 - ✅ Deterministic training: Python/NumPy/PyTorch CPU/CUDA seeds properly managed
 - ✅ DataLoader reproducibility: Generator-based seeding + worker_init_fn
@@ -45,9 +51,7 @@ Phase 1 complete. Phase 2 ~99% done: infrastructure, tokenizers, config, trainin
 
 ## Next Steps (Priority Order)
 
-1. ☐ Overfit 10K-token subset (target: loss < 0.1 within 500 steps)
-2. ☐ (Stretch) Add simple mixed-source sampler: interleave TinyStories + WikiText caches by weight
-3. ⏭️ **Phase 3 begins**: Minimal Transformer (multi-head causal attention, FFN blocks)
+⏭️ **Phase 3 begins**: Minimal Transformer (token/position embeddings, multi-head causal attention, FFN blocks, weight initialization)
 
 **Config-driven execution**: All data-prep driven by YAML configs in `scripts/data/<dataset>/`. Single runner:
 ```bash
@@ -71,6 +75,8 @@ See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) f
 
 | Date | Commit | Summary |
 |---|---|---|
+| 2026-02-25 | post-`main`+unstaged | **Parameter tuning for real learning + interactive chat**: Created `config/experiment_curriculum.toml` with tuned parameters (hidden_size=256, num_layers=6, batch_size=8, lr=0.0005, dropout=0.1) to enable real learning without overfitting. Prepared full UTF-8 datasets: TinyStories (2.15M tokens) + WikiText-103 (2.13M tokens). Trained on 5000 steps achieving: initial_loss=24.56 → final_loss=2.56 (perplexity 46B → 12.87). Created interactive chat interface `src/inference/chat.py` with temperature/top-p/top-k sampling. Chat mode tested and working. Model generates recognizable word patterns with expected byte-level garbling (Phase 2 baseline). Results summary in `outputs/curriculum-alternating/README.md`. Ready for Phase 3 transformer. |
+| 2026-02-25 | post-`main`+unstaged | **Phase 2 Complete — Overfit test (+3 tests, 237→240 passing)**: Created `tests/unit/test_overfit.py` with 3 comprehensive unit tests verifying overfitting behavior on 10K-token subset. Tests confirm: (1) train loss < 0.1 achievable within 500 steps, (2) loss convergence curve monotonically decreases, (3) target threshold reached within 500-step limit. Model config: hidden_size=128, num_layers=1, batch_size=4, lr=0.01 (overfitting LR). All 240 unit tests passing. PLAN.md Phase 2 status updated: ✅ 100% complete (exit criteria met). SESSION.md marked Phase 2 complete. Deterministic overfitting validated. Ready for Phase 3. |
 | 2026-02-25 | post-`main`+unstaged | **Seed hardening complete**: Implemented comprehensive seed management via `src/utils/seed.py` with `seed_everything` utility (Python/NumPy/PyTorch CPU/CUDA). Added deterministic training with generator-based DataLoader seeding + worker_init_fn. Created `tests/unit/test_seed.py` with 8 unit tests verifying bit-identical replay across single/multi-step training. Updated `src/training/train.py` to call `seed_everything` at startup. All 237 tests passing. Phase 2 exit criteria updated: seed hardening ✅ (deterministic replay verified). PLAN.md + SESSION.md status updated to ~99% complete. |
 | 2026-02-24 | `b69cd4b` | **Perplexity metrics + integration tests + evaluation script**: Added `compute_perplexity()` helper; `train()` now returns dict with losses + perplexities (all call sites updated). Created `tests/unit/test_integration_p2.py` (5 integration tests for full pipeline). Added `scripts/evaluate_p2.py` for checkpoint assessment with generation samples. Updated training loop to log perplexity. All 224 tests passing. Phase 2 exit criteria updated: perplexity metrics ✅, evaluation script ✅. |
 | 2026-02-24 | `548da84` | **Checkpoint, inference, quality gate, coverage, doc sync**: Added `save_checkpoint` to `train.py`; inference end-to-end (temp/top-k/top-p). Fixed 9 lint/mypy violations. Refactored `extract_subset` helpers. 31 new unit tests (checkpoint, inference, boundary detectors, `create_simple_loaders`). Moved `install_vscode_extensions.sh` → `scripts/setup/`. Added `.claude/CLAUDE.md` bootstrap. Doc sync: Phase 2 diagram fixed (training/inference split), Option B stubs removed from PLAN.md + DESIGN.md, README stripped of mutable status (L005 added to LESSONS.md), SESSION.md next steps updated. Lint clean, mypy clean, 219 tests, 58% coverage. |
