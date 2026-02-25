@@ -9,6 +9,8 @@
 
 ## Quick Start
 
+From the project root:
+
 ```bash
 source setup.sh
 ```
@@ -70,7 +72,7 @@ config/.wslconfig  →  C:\Users\<YourUsername>\.wslconfig
 
 Then restart: `wsl --shutdown`
 
-See [config/.wslconfig](config/.wslconfig) for full documentation.
+See [config/.wslconfig](../../config/.wslconfig) for full documentation.
 
 ---
 
@@ -82,7 +84,15 @@ Verify your environment works:
 make test       # Python + C++ tests
 ```
 
-Then read [CONTRIBUTING.md](CONTRIBUTING.md#workflow) and [design/PLAN.md](design/PLAN.md#next-steps) to begin.
+Then read [CONTRIBUTING.md](../../CONTRIBUTING.md) and [docs/SESSION.md](../../docs/SESSION.md) to begin.
+
+---
+
+## Dataset Tooling
+
+Dataset preparation scripts live under `scripts/data/`. See [scripts/data/README.md](../data/README.md) for Quick Start, config reference, and size guide.
+
+For higher download rate limits, place a Hugging Face token in `.huggingface/.hf_token` (ignored by git) or export `HF_TOKEN`.
 
 ---
 
@@ -98,12 +108,12 @@ make lint       # Check code quality
 deactivate      # Exit virtual environment
 ```
 
-For architecture and development workflow, see [CONTRIBUTING.md](CONTRIBUTING.md) and [design/DESIGN.md](design/DESIGN.md).
+For architecture and development workflow, see [CONTRIBUTING.md](../../CONTRIBUTING.md) and [docs/DESIGN.md](../../docs/DESIGN.md).
 
 Read: [NVIDIA WSL User Guide](https://docs.nvidia.com/cuda/wsl-user-guide/)
 
 ## Next Read
 
-- [README.md](README.md): Project overview and status
-- [CONTRIBUTING.md](CONTRIBUTING.md): Workflow and contribution rules
-- [design/PLAN.md](design/PLAN.md): Session execution plan (phase progress, next steps)
+- [README.md](../../README.md): Project overview and status
+- [CONTRIBUTING.md](../../CONTRIBUTING.md): Workflow and contribution rules
+- [docs/SESSION.md](../../docs/SESSION.md): Current focus and immediate next steps

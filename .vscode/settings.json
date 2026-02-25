@@ -14,7 +14,6 @@
   "python.testing.pytestArgs": ["tests"],
   "python.analysis.typeCheckingMode": "strict",
   "mypy-type-checker.args": ["--config-file=pyproject.toml"],
-  "ruff.lint.args": ["--config=pyproject.toml"],
   "files.exclude": {
     "**/__pycache__": true,
     "**/*.pyc": true,
@@ -35,5 +34,6 @@
   "chat.tools.terminal.autoApprove": {
     "./scripts/ci/check_runs.sh": true,
     "./scripts/ci/poll_run.sh": true
-  }
+  },
+  "markdown-preview-github-styles.colorTheme": "dark"
 }

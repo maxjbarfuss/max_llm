@@ -74,6 +74,8 @@ def make_data_config(**overrides):
     values = {
         "dataset_path": "openwebtext",
         "tokenizer_name": "gpt2",
+        "tokenizer_mode": "codepoint",
+        "tokenizer_vocab_size": 128,
         "tokenizer_backend": "gpt2_bpe",
         "unigram_model_path": None,
         "max_length": 2048,
@@ -401,6 +403,8 @@ kv_cache_dtype = "fp8"
 dataset_path = "openwebtext"
 tokenizer_backend = "unigram"
 tokenizer_name = "unigram-local"
+tokenizer_mode = "codepoint"
+tokenizer_vocab_size = 128
 unigram_model_path = "./tokenizers/unigram.model"
 max_length = 2048
 num_workers = 6
@@ -500,6 +504,8 @@ seed = 42
                 [
                     'dataset_path = "openwebtext"',
                     'tokenizer_name = "gpt2"',
+                    'tokenizer_mode = "codepoint"',
+                    "tokenizer_vocab_size = 128",
                     'tokenizer_backend = "gpt2_bpe"',
                     'unigram_model_path = ""',
                     "max_length = 2048",
@@ -530,3 +536,30 @@ seed = 42
         assert config.training.batch_size == 16
         assert config.inference.max_new_tokens == 128
         assert config.data.tokenizer_name == "gpt2"
+
+
+class TestP2ExperimentToml:
+    """Smoke tests for the on-disk Phase 2 experiment.toml config file."""
+
+    def test_p2_toml_loads(self):
+        """config/experiment.toml loads and reflects Phase 2 model values."""
+        config_path = Path(__file__).parents[2] / "config" / "experiment.toml"
+        config = ExperimentConfig.from_toml(config_path)
+        assert config.name == "maxllm-p2-baseline"
+        assert config.model.hidden_size == 128
+        assert config.model.vocab_size == 256
+        assert config.model.num_layers == 1
+
+    def test_p2_toml_training_values(self):
+        """P2 training config reflects prototype-scale hyperparameters."""
+        config_path = Path(__file__).parents[2] / "config" / "experiment.toml"
+        config = ExperimentConfig.from_toml(config_path)
+        assert config.training.max_steps == 500
+        assert config.training.use_torch_compile is False
+        assert config.training.use_flash_attention is False
+
+    def test_p2_toml_data_seq_length(self):
+        """P2 data max_length is within model max_seq_length."""
+        config_path = Path(__file__).parents[2] / "config" / "experiment.toml"
+        config = ExperimentConfig.from_toml(config_path)
+        assert config.data.max_length <= config.model.max_seq_length

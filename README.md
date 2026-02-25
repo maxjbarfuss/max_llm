@@ -1,61 +1,75 @@
 # Max LLM
 
-Hybrid LLM research project (100–500M params): GQA/MLA + MoE + GRU output, optimized for local training on consumer hardware.
+Hands-on LLM research lab for building, training, and evaluating modern architectures on local hardware.
 
-**Status:** Phase 1 ✅ complete → Phase 2 (skeleton) kickoff next
-**Repository:** [github.com/maxjbarfuss/max_llm](https://github.com/maxjbarfuss/max_llm)
+**Status:** Current phase and progress live in [docs/SESSION.md](docs/SESSION.md) and [docs/PLAN.md](docs/PLAN.md).
+
+**Repository:**
+[github.com/maxjbarfuss/max_llm](https://github.com/maxjbarfuss/max_llm)
 
 ## Why This Project?
 
-**Learn by building.** Max LLM is a hands-on laboratory for understanding modern LLM architectures: how attention works, why mixture-of-experts scales differently, how to trade off memory for speed, and what makes one tokenizer better than another. Each phase builds incrementally—no black boxes, no mystery.
+**Learn by building.** Max LLM is a hands-on lab for modern sequence modeling. Each phase adds one core capability so architecture and training decisions can be tested, measured, and explained.
 
-**Experiment locally.** Train and iterate on consumer hardware (dual 24GB GPUs). No cloud costs, no waiting for expensive cluster time. Benchmark new ideas cheaply, measure trade-offs precisely, and keep reproducible records.
+**Experiment locally.** The project is optimized for consumer GPUs and fast iteration. The goal is to validate tradeoffs in throughput, memory, and quality without relying on cloud-scale infrastructure.
 
-**9-phase roadmap (phases 1–9) from scratch to hybrid models.** Start with character-level tokenization and linear layers (Phase 2), progress through standard transformers (Phase 3–4 with modern upgrades), then explore exotic architectures: mixture-of-experts (Phase 8) and GRU-transformer hybrids (Phase 9). **See what actually works**, not what papers claim.
+**Progressive roadmap.** The 9 phases move from minimal tokenization and linear models to full transformers and hybrid architectures. The emphasis is on clear, verifiable improvements rather than paper-chasing.
 
-**Comprehensive data strategy.** Build an unrestricted, diverse world model across Phases 2–5 (100–500M tokens including adult, controversial, and specialized content) for robust generalization. Layer safety guardrails through SFT and DPO in Phases 6–9. See [design/DESIGN.md#data-strategy-summary](design/DESIGN.md#data-strategy-summary) for sourcing guidelines and phase-by-phase data tasks.
+**Data strategy with intent.** Data selection, preprocessing, and evaluation are treated as first-class engineering work.
 
-**Reproducibility as a first principle.** Deterministic seeds, explicit configs, atomic commits linked to results. Every experiment is repeatable; every result is explainable.
+**Reproducibility by design.** Configs, seeds, and checkpoints are tracked so experiments can be re-run and compared reliably.
 
 ---
 
 ## Quick Start
 
-```bash
-source setup.sh
-```
+Start with setup, then pick the entrypoint you need:
 
-See [SETUP.md](SETUP.md) for full instructions.
+- [scripts/setup/README.md](scripts/setup/README.md): full environment setup steps and platform requirements
+- [scripts/build/README.md](scripts/build/README.md): C++ build wrapper and common build modes
+- [scripts/data/README.md](scripts/data/README.md): end-to-end data prep workflow with various configurations and datasets
+- [src/training/README.md](src/training/README.md): how to run training with various configurations
+- [src/inference/README.md](src/inference/README.md): how to run inference on multiple configurations
+- [tests/README.md](tests/README.md): how to run tests from the repo root or the tests/ folder
 
-## Architecture Evolution
+Docs and policies:
 
-Final architecture (Phase 9) showing the complete pipeline from text to output.
-Solid color = current component, rounded pill = replaced predecessor (colored by introducing phase).
+- [docs/SESSION.md](docs/SESSION.md): current focus, next steps, and session log (start here for status)
+- [docs/PLAN.md](docs/PLAN.md): phased execution roadmap and exit criteria (reference for current phase)
+- [docs/DESIGN.md](docs/DESIGN.md): architecture, engineering constraints, and data strategy
+- [CONTRIBUTING.md](CONTRIBUTING.md): repository workflow and contributor authorization
+- [.github/SKILLS.md](.github/SKILLS.md): AI agent instructions and working discipline
+- [.github/LESSONS.md](.github/LESSONS.md): recorded agent mistake patterns (read before each session)
+- [.github/CODEOWNERS](.github/CODEOWNERS): code ownership and review responsibility
+
+## Architecture
+
+Phase 8 combines GQA/MLA attention, MoE feedforward blocks, and a GRU output stage into a single local-first stack. The diagram below is a Phase 8 snapshot of the full text → output pipeline. Solid rectangles are current components in Phase 8. Rounded pills show predecessors replaced in earlier phases, colored by the phase they were introduced. For deeper design context, see [docs/DESIGN.md](docs/DESIGN.md).
 
 ```mermaid
 graph TD
-    In[Text Input]:::io --> Tok[BPE/Unigram Tokenizer]:::p4 --> Emb[Token Embedding]:::p2 --> N1
+    In[Text Input]:::io --> Tok[BPE/Unigram Tokenizer]:::p3 --> Emb[Token Embedding]:::p2 --> N1
 
     subgraph Block[Transformer Block x N]
-        N1[RMSNorm]:::p5 --> ATT[MLA]:::p8 --> R1[+ Residual]:::p3
-        RoPE[RoPE]:::p5 -.-> ATT
-        R1 --> N2[RMSNorm]:::p5 --> MOE[MoE Sparse SwiGLU]:::p8 --> R2[+ Residual]:::p3
+        N1[RMSNorm]:::p4 --> ATT[MLA]:::p7 --> R1[+ Residual]:::p3
+        RoPE[RoPE]:::p4 -.-> ATT
+        R1 --> N2[RMSNorm]:::p4 --> MOE[MoE Sparse SwiGLU]:::p7 --> R2[+ Residual]:::p3
     end
 
-    R2 --> GRU[GRU Block]:::p9 --> Head[LM Head]:::p3 --> Logits[Logits]:::io
+    R2 --> GRU[GRU Block]:::p8 --> Head[LM Head]:::p3 --> Logits[Logits]:::io
     Logits -->|training| Loss[Cross-Entropy Loss]:::io
-    Logits -->|inference| Samp[Sampling]:::io --> GenOut[Generated Text]:::io
+    Logits -->|inference| Samp[Sampler<br/>temp/top-k/top-p]:::p3 --> GenOut[Generated Text]:::io
 
     subgraph Replaced[Replaced Predecessors]
         direction LR
         CT([Char Tokenizer]):::p2
         LPE([Learned Pos Emb]):::p2
-        LF([Linear FFN]):::p2
+        LF([GELU MLP]):::p2
         LN([LayerNorm]):::p3
         MHA([Multi-Head Attn]):::p3
         GF([GELU FFN]):::p3
-        GQA2([GQA]):::p5
-        SW([Dense SwiGLU]):::p5
+        GQA2([GQA]):::p4
+        SW([Dense SwiGLU]):::p4
     end
 
     CT -.-> Tok
@@ -72,40 +86,19 @@ graph TD
     classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
     classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
-    classDef p5 fill:#E1BEE7,stroke:#7B1FA2,color:#4A148C
-    classDef p8 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
-    classDef p9 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
+    classDef p7 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
+    classDef p8 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
 ```
 
 | Color | Phase | Component |
 |-------|-------|-----------|
-| ⬛ Black | — | I/O: Text Input, Logits, Loss, Sampling, Generated Text |
+| ⬛ Black | — | I/O: Text Input, Logits, Loss, Generated Text |
 | 🟢 Green | 2 | Token Embedding |
-| 🔵 Blue | 3 | Residual connections, LM Head |
-| 🟠 Orange | 4 | BPE / Unigram Tokenizer |
-| 🟣 Purple | 5 | RMSNorm, RoPE |
-| 🔴 Red | 8 | MLA (replaces GQA), MoE (replaces dense SwiGLU) |
-| 🟡 Yellow | 9 | GRU hybrid blocks |
+| 🔵 Blue | 3 | Residual connections, LM Head, BPE / Unigram Tokenizer, Sampler (temp/top-k/top-p) |
+| 🟠 Orange | 4 | RMSNorm, RoPE, GQA (Llama-Style Upgrades) |
+| 🔴 Red | 7 | MLA (replaces GQA), MoE (replaces dense SwiGLU) |
+| 🟡 Yellow | 8 | GRU hybrid blocks |
 | Rounded pill | — | Replaced predecessors (colored by introducing phase) |
-
-## CI/CD
-
-Continuous integration runs on every push via GitHub Actions. See [scripts/ci/README.md](scripts/ci/README.md) for CI monitoring tools and working commands.
-
-## Docs Summary
-
-- [SETUP.md](SETUP.md): environment setup (WSL2 on Windows; Linux/macOS/WSL1 not supported)
-- [CONTRIBUTING.md](CONTRIBUTING.md): workflow and PR rules
-- [design/DESIGN.md](design/DESIGN.md): architecture, engineering principles, phased roadmap, testing strategy
-- [design/PLAN.md](design/PLAN.md): phase progress, next steps, execution tracking
-- [.github/CONTRIBUTORS.md](.github/CONTRIBUTORS.md): contributor authorization policy
-- [.github/SKILLS.md](.github/SKILLS.md): required technical skills and working discipline
-- [.github/CODEOWNERS](.github/CODEOWNERS): code review ownership
-
-## Contributor Entry Points
-
-- Human contributors: [CONTRIBUTING.md](CONTRIBUTING.md)
-- AI agents: [design/PLAN.md](design/PLAN.md) -> [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 
