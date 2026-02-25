@@ -7,13 +7,19 @@
 
 ## Current Focus
 
-**Phase 2 — perplexity metrics and end-to-end evaluation**
+**Phase 2 — TinyStories pipeline with proper boundary detection**
 
-Core Phase 2 infrastructure complete. Today: added perplexity computation to training loop, integration tests for full pipeline, and evaluation script for model assessment.
+TinyStories dataset now prepared with proper story boundaries (5 complete stories per 100K token subset). Boundary detection enhanced to support blank-line separators. Dataset comparison complete (WikiText vs TinyStories).
 
 ## Phase 2 Status
 
-Phase 1 complete. Phase 2 ~95% done: infrastructure, tokenizers, config, training loop, checkpointing, inference, and **perplexity metrics** all working. WikiText-103 validates end-to-end. Remaining: TinyStories pipeline, seed hardening, overfit test.
+Phase 1 complete. Phase 2 ~97% done: infrastructure, tokenizers, config, training loop, checkpointing, inference, perplexity metrics all working. WikiText & TinyStories datasets validated end-to-end with proper boundary detection. Remaining: seed hardening, overfit test.
+
+**Completed sequence (this session additions**):
+- ✅ TinyStories pipeline: YAML configs + prepare script (scripts/data/tinystories/)
+- ✅ Boundary detector enhancement: `BlankLineBoundary` + updated `TinyStoriesBoundary` to handle both formats
+- ✅ Dataset comparison: WikiText (loss 2.61) vs TinyStories (loss 2.74) — similar convergence, both valid
+- ✅ TinyStories extraction now respects story boundaries: **5 complete stories** in 100K token subset
 
 **Completed sequence:**
 1. ✅ Tokenizer + config system (done — p2-step1)
@@ -32,12 +38,10 @@ Phase 1 complete. Phase 2 ~95% done: infrastructure, tokenizers, config, trainin
 
 ## Next Steps (Priority Order)
 
-1. 🎯 TinyStories data path + YAML: add `scripts/data/tinystories/default_utf8.yaml`; run normalize/tokenize using `run_data_prep.py`
-2. Validate TinyStories token counts (chars/token sanity) and boundary handling (`<|endoftext|>`)
-3. Run `python -m src.training.train` on TinyStories subset; capture loss curve and compare vs WikiText small
-4. Seed hardening (Python/NumPy/PyTorch CPU/CUDA; deterministic replay)
-5. Overfit 10K-token subset (target: loss < 0.1 within 500 steps)
-6. (Stretch) Add simple mixed-source sampler: interleave TinyStories + WikiText caches by weight
+1. ☐ Seed hardening (Python/NumPy/PyTorch CPU/CUDA; deterministic replay)
+2. ☐ Overfit 10K-token subset (target: loss < 0.1 within 500 steps)
+3. ☐ (Stretch) Add simple mixed-source sampler: interleave TinyStories + WikiText caches by weight
+4. ⏭️ **Phase 3 begins**: Minimal Transformer (multi-head causal attention, FFN blocks)
 
 **Config-driven execution**: All data-prep driven by YAML configs in `scripts/data/<dataset>/`. Single runner:
 ```bash

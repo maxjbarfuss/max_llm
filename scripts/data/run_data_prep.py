@@ -170,7 +170,8 @@ def main() -> None:
         print("Skipping normalization (workflow.normalize=false)")
 
     # Step 2: Cutoff (optional)
-    token_input_path = paths["normalized"]
+    # When normalize is false, use source; otherwise use normalized path
+    token_input_path = paths["source"] if not normalize else paths["normalized"]
     if cutoff_mode != "none":
         if paths["text_subset"] is None:
             raise ValueError("text_subset path is required for cutoff mode")
@@ -181,14 +182,14 @@ def main() -> None:
             if cutoff_rows is None:
                 raise ValueError("cutoff.rows is required when cutoff.mode=row")
             print(f"Extracting rows: {cutoff_rows} -> {paths['text_subset']}")
-            write_first_n_lines(paths["normalized"], paths["text_subset"], int(cutoff_rows))
+            write_first_n_lines(token_input_path, paths["text_subset"], int(cutoff_rows))
         else:
             args = [
                 sys.executable,
                 "-m",
                 "src.data.pipeline.extract_text",
                 "--input",
-                str(paths["normalized"]),
+                str(token_input_path),
                 "--output",
                 str(paths["text_subset"]),
                 "--size",

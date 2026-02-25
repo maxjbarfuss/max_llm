@@ -3,6 +3,7 @@
 import pytest
 
 from src.data.datasets.boundary import (
+    BlankLineBoundary,
     NoBoundary,
     PatternBoundary,
     TinyStoriesBoundary,
@@ -53,17 +54,46 @@ class TestTinyStoriesBoundary:
         assert det.is_boundary("  <|endoftext|>  ")
         assert det.is_boundary("<|endoftext|>\n")
 
+    def test_blank_line_is_boundary(self):
+        """Blank/empty lines are boundaries (karpathy tinystories variant)."""
+        det = TinyStoriesBoundary()
+        assert det.is_boundary("")
+        assert det.is_boundary("   ")
+        assert det.is_boundary("\t")
+        assert det.is_boundary("\n")
+
     def test_plain_text_not_boundary(self):
         """Normal story text is not a boundary."""
         det = TinyStoriesBoundary()
         assert not det.is_boundary("Once upon a time there was a bunny.")
-        assert not det.is_boundary("")
 
     def test_partial_token_not_boundary(self):
         """Partial or embedded token strings are not boundaries."""
         det = TinyStoriesBoundary()
         assert not det.is_boundary("endoftext")
         assert not det.is_boundary("some text <|endoftext|> more text")
+
+
+class TestBlankLineBoundary:
+    def test_empty_string_is_boundary(self):
+        """Empty string is a boundary."""
+        det = BlankLineBoundary()
+        assert det.is_boundary("")
+
+    def test_whitespace_only_is_boundary(self):
+        """Lines with only whitespace are boundaries."""
+        det = BlankLineBoundary()
+        assert det.is_boundary("   ")
+        assert det.is_boundary("\t")
+        assert det.is_boundary("\t  \t")
+        assert det.is_boundary("\n")
+
+    def test_text_with_whitespace_not_boundary(self):
+        """Lines with any non-whitespace are not boundaries."""
+        det = BlankLineBoundary()
+        assert not det.is_boundary("a")
+        assert not det.is_boundary(" text ")
+        assert not det.is_boundary("\t x \t")
 
 
 class TestPatternBoundary:
@@ -102,6 +132,10 @@ class TestGetBoundaryDetector:
     def test_tinystories_returns_tinystories_boundary(self):
         """dataset='tinystories' returns TinyStoriesBoundary."""
         assert isinstance(get_boundary_detector(dataset="tinystories"), TinyStoriesBoundary)
+
+    def test_blank_line_returns_blank_line_boundary(self):
+        """dataset='blank_line' returns BlankLineBoundary."""
+        assert isinstance(get_boundary_detector(dataset="blank_line"), BlankLineBoundary)
 
     def test_unknown_dataset_raises(self):
         """Unknown dataset name raises ValueError with helpful message."""

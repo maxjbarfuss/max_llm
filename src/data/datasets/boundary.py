@@ -35,16 +35,36 @@ class WikiTextBoundary(BoundaryDetector):
         return bool(self._PATTERN.match(line))
 
 
-class TinyStoriesBoundary(BoundaryDetector):
-    """Story separator token used in TinyStories (and GPT-style datasets).
+class BlankLineBoundary(BoundaryDetector):
+    """Blank or whitespace-only lines mark document boundaries.
 
-    Each story ends with '<|endoftext|>' on its own line; the *next* story
-    begins immediately after.  We treat the separator line itself as the
-    boundary so the extractor starts a new document there.
+    Used by datasets (e.g., karpathy/tinystories-gpt4-clean) where stories
+    are separated by empty lines rather than explicit delimiters.
     """
 
     def is_boundary(self, line: str) -> bool:
-        return line.strip() == "<|endoftext|>"
+        return line.strip() == ""
+
+
+class TinyStoriesBoundary(BoundaryDetector):
+    """Story separators in TinyStories datasets.
+
+    Supports two formats:
+    1. GPT-style with '<|endoftext|>' token on its own line
+    2. karpathy/tinystories-gpt4-clean with blank line separators
+
+    Checks for either format to be compatible with dataset variants.
+    """
+
+    def is_boundary(self, line: str) -> bool:
+        stripped = line.strip()
+        # GPT-style endoftext token
+        if stripped == "<|endoftext|>":
+            return True
+        # Blank line separator (karpathy variant)
+        if stripped == "":
+            return True
+        return False
 
 
 class PatternBoundary(BoundaryDetector):
@@ -67,6 +87,7 @@ class NoBoundary(BoundaryDetector):
 _REGISTRY: dict[str, type[BoundaryDetector]] = {
     "wikitext": WikiTextBoundary,
     "tinystories": TinyStoriesBoundary,
+    "blank_line": BlankLineBoundary,
 }
 
 
