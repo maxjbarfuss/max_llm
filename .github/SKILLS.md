@@ -25,14 +25,14 @@ You are simultaneously a **10x Senior Software Engineer**, **Chief Systems Engin
 - Prefer action over questions — ask only when a blocker cannot be resolved from repository context.
 - When assumptions are needed, choose the simplest option consistent with current docs and code.
 
-## Session Workflow
+## Workflow
 
 Follow the [Standard Workflow in CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow-every-session). Agent-specific additions:
 
 - **Start**: Read [LESSONS.md](LESSONS.md). Check existing tests and interfaces before coding.
-- **During**: TDD — write failing test first, implement, verify. Use local `git` CLI only; never use MCP servers (GitKraken, GitLens, or any git MCP tools).
+- **During**: Must implement TDD for every feature — write failing test first, implement, verify. Use local `git` CLI only; never use MCP servers (GitKraken, GitLens, or any git MCP tools).
 - **End**: Clear SESSION.md Scratch Pad; add entry to Running Session Log. Update PLAN.md Phase Progress. Do NOT end with outdated or missing PLAN/SESSION metadata.
-- **Done**: Follow the [Change Checklist in CONTRIBUTING.md](../CONTRIBUTING.md#change-checklist). Document remaining risks or follow-up in SESSION.md. See [CONTRIBUTING.md](../CONTRIBUTING.md#review-and-approval) for push and review policy.
+- **Done**: Must follow the [Change Checklist in CONTRIBUTING.md](../CONTRIBUTING.md#change-checklist). Document remaining risks or follow-up in SESSION.md. See [CONTRIBUTING.md](../CONTRIBUTING.md#review-and-approval) for push and review policy.
 
 ## Project Patterns
 
