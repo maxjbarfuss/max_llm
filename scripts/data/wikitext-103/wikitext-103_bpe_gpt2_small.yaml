@@ -1,0 +1,24 @@
+paths:
+  source: /mnt/d/dev/data/wikitext-103-raw/train.txt
+  output_dir: data/fast
+  normalized_path: data/fast/wikitext_2mb_normalized.txt
+  # token_cache_path: slow-disk cache not needed; normalized file is small
+  token_cache_path: data/fast/wikitext_bpe_gpt2_2mb_tokens.npy
+  subset_tokens_path: data/fast/wikitext_bpe_gpt2_500k_tokens.npy
+  metadata_path: data/fast/wikitext_bpe_gpt2_500k_tokens.meta.json
+
+workflow:
+  normalize: true    # Checks cache first; skips if data/fast/wikitext_2mb_normalized.txt exists
+  tokenize: true
+  force: false
+
+cutoff:
+  mode: none         # Tokenize the entire normalized file
+
+subset:
+  size: 500K
+
+tokenizer:
+  name: bpe
+  encoding: gpt2
+  vocab_size: 50257  # Informational; tiktoken determines actual size

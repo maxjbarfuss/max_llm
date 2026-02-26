@@ -33,6 +33,7 @@ def tokenize_dataset(
     tokenizer_name: str,
     tokenizer_mode: str = "codepoint",
     vocab_size: int = 128,
+    encoding: str = "gpt2",
     chunk_size: int = 100_000,  # Process in chunks to show progress
 ) -> None:
     """Tokenize text dataset and save as numpy array.
@@ -40,18 +41,22 @@ def tokenize_dataset(
     Args:
         input_path: Source text file (normalized)
         output_path: Destination .npy file
-        tokenizer_name: Tokenizer to use (e.g., 'char')
-        tokenizer_mode: Tokenizer mode (codepoint, utf8, utf16, utf32)
-        vocab_size: Vocabulary size for tokenizer (default: 128)
+        tokenizer_name: Tokenizer to use (e.g., 'char', 'bpe')
+        tokenizer_mode: Tokenizer mode for char tokenizer (codepoint, utf8, utf16, utf32)
+        vocab_size: Vocabulary size for codepoint mode (default: 128)
+        encoding: tiktoken encoding name for BPE tokenizer (default: 'gpt2')
         chunk_size: Characters to process per chunk for progress display
     """
     console.print("[bold blue]Tokenizing dataset[/bold blue]")
     console.print(f"  Input: {input_path}")
     console.print(f"  Output: {output_path}")
     console.print(f"  Tokenizer: {tokenizer_name}")
-    console.print(f"  Mode: {tokenizer_mode}")
-    if tokenizer_mode == "codepoint":
-        console.print(f"  Vocab size: {vocab_size}")
+    if tokenizer_name == "bpe":
+        console.print(f"  Encoding: {encoding}")
+    else:
+        console.print(f"  Mode: {tokenizer_mode}")
+        if tokenizer_mode == "codepoint":
+            console.print(f"  Vocab size: {vocab_size}")
 
     if not input_path.exists():
         console.print(f"[bold red]Error:[/bold red] Input file not found: {input_path}")
@@ -62,7 +67,9 @@ def tokenize_dataset(
 
     # Load tokenizer
     try:
-        if tokenizer_mode == "codepoint":
+        if tokenizer_name == "bpe":
+            tokenizer = TokenizerFactory.create(tokenizer_name, encoding=encoding)
+        elif tokenizer_mode == "codepoint":
             tokenizer = TokenizerFactory.create(
                 tokenizer_name,
                 mode=tokenizer_mode,
@@ -170,6 +177,11 @@ Examples:
         default=128,
         help="Vocabulary size for codepoint mode (default: 128)",
     )
+    parser.add_argument(
+        "--encoding",
+        default="gpt2",
+        help="tiktoken encoding for BPE tokenizer (default: gpt2)",
+    )
 
     args = parser.parse_args()
 
@@ -179,6 +191,7 @@ Examples:
         tokenizer_name=args.tokenizer,
         tokenizer_mode=args.mode,
         vocab_size=args.vocab_size,
+        encoding=args.encoding,
     )
 
 

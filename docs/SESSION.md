@@ -7,51 +7,38 @@
 
 ## Current Focus
 
-**Phase 2 — Complete ✅**
+**Phase 3 — In Progress 🔄**
 
-All Phase 2 exit criteria met: infrastructure, tokenizers, config, training loop, checkpointing, inference, perplexity metrics, seed hardening, and overfit testing. 240 unit tests passing. Ready to begin Phase 3 (Transformer decoder).
+Phase 3 started. BPE tokenizer (tiktoken/gpt2) implemented and integrated into data pipeline. Token and positional embedding modules implemented. BPE data prep workflow extended. Exploration training run: SimpleLM + BPE (500 steps, WikiText 2MB) establishes BPE baseline. 304 tests passing.
 
-## Phase 2 Status
+## Phase 3 Status
 
-**✅ Phase 2 Complete (100%)**
+**🔄 Phase 3 In Progress (~10%)**
 
-Phase 1 complete. Phase 2 complete: infrastructure, tokenizers, config, training loop, checkpointing, inference, perplexity metrics, seed hardening, and overfit test all working. WikiText & TinyStories datasets validated end-to-end with proper boundary detection. All 240 unit tests passing.
+**Completed this session:**
+- ✅ `src/tokenizer/bpe_tokenizer.py`: BPETokenizer wrapping tiktoken (gpt2/cl100k_base/o200k_base); `encode`/`decode`/`count_tokens`/`vocab_size`; accepts `**_kwargs` for config compat
+- ✅ `src/tokenizer/__init__.py`: BPETokenizer registered as `"bpe"` in TokenizerFactory
+- ✅ `src/models/embeddings/token_embedding.py`: TokenEmbedding (`vocab_size × d_model`), N(0, 0.02) init
+- ✅ `src/models/position/learned_position.py`: LearnedPositionEmbedding (`max_seq_len × d_model`), N(0, 0.02) init, returns `(1, T, d_model)` for broadcast
+- ✅ `requirements.txt`: added `tiktoken>=0.5.0`
+- ✅ Data pipeline BPE support: `run_data_prep.py` + `tokenize.py` extended with `--encoding` flag for BPE tokenizer
+- ✅ `scripts/data/wikitext-103/wikitext-103_bpe_gpt2_small.yaml`: YAML config for BPE WikiText prep
+- ✅ `config/experiment_p3_bpe.toml`: exploration config — SimpleLM + BPE gpt2 (vocab 50304)
+- ✅ Exploration run: SimpleLM + BPE, 500 steps, WikiText 442K tokens; loss 26.03→7.69 (ppl 2179)
+- ✅ 304 unit tests passing (272 P2 + 19 BPE + 13 embeddings)
 
-**Completed sequence (this session additions)**:
-- ✅ Overfit test: `tests/unit/test_overfit.py` with 3 comprehensive tests
-- ✅ Overfit verification: Model achieves train loss < 0.1 on 10K-token subset within 500 steps
-- ✅ Convergence validation: Loss trends downward with monotonic approximate decrease
-- ✅ Step threshold verified: Target loss achieved within 500-step limit
-- ✅ Seed hardening: `src/utils/seed.py` with `seed_everything` utility
-- ✅ Deterministic training: Python/NumPy/PyTorch CPU/CUDA seeds properly managed
-- ✅ DataLoader reproducibility: Generator-based seeding + worker_init_fn
-- ✅ Deterministic replay verification: 8 unit tests (`tests/unit/test_seed.py`) confirming bit-identical training trajectories
-- ✅ Training entrypoint integration: `main()` calls `seed_everything` at startup
-
-**Completed sequence (previous sessions)**:
-- ✅ TinyStories pipeline: YAML configs + prepare script (scripts/data/tinystories/)
-- ✅ Boundary detector enhancement: `BlankLineBoundary` + updated `TinyStoriesBoundary` to handle both formats
-- ✅ Dataset comparison: WikiText (loss 2.61) vs TinyStories (loss 2.74) — similar convergence, both valid
-- ✅ TinyStories extraction now respects story boundaries: **5 complete stories** in 100K token subset
-
-**Completed sequence:**
-1. ✅ Tokenizer + config system (done — p2-step1)
-2. ✅ Data pipeline framework — YAML-driven normalize/tokenize/extract runners (done — p2-step2 through refactors)
-3. ✅ CharTokenizer: UTF-8/16/32 + codepoint modes, roundtrip tests (done — p2-step2)
-4. ✅ Config system: `config/experiment.toml` fully populated, `src.training.train` wired (done — p2-step1)
-5. ✅ BaseLearningModel ABC + SimpleLM: token embedding → GELU MLP → LM head (done — p2-step3)
-6. ✅ Data loader + training loop: DataLoader, train_step, loss computation (done — p2-step4)
-7. ✅ WikiText-103 pipeline: normalize → tokenize → extract subset (done — recent refactors)
-8. ✅ Training validated: 100k-token subset, loss 16.01→2.61 over 500 steps (done)
-9. ✅ Checkpointing: `save_checkpoint` saves model + optimizer state to `output_dir/checkpoint.pt`; called from `train` entrypoint (done)
-10. ✅ Inference: `src/inference/run.py` — temperature, top-k, top-p sampling; loads checkpoint; text-in → text-out (done)
-11. ✅ Perplexity metrics: `train()` returns dict with losses + perplexities; `compute_perplexity()` helper (done — this session)
-12. ✅ Integration tests: `tests/unit/test_integration_p2.py` — end-to-end pipeline validation (done — this session)
-13. ✅ Evaluation script: `scripts/evaluate_p2.py` — checkpoint assessment with generation samples (done — this session)
+**Remaining Phase 3 work (next sessions):**
+- ☐ CausalMultiHeadAttention (Q/K/V proj, causal mask, scaled dot-product)
+- ☐ FeedForward block (Linear → GELU → Linear, 4× expansion)
+- ☐ TransformerBlock (pre-norm LN → MHA → residual → LN → FFN → residual)
+- ☐ DecoderLM (embeddings → N blocks → LM head, weight-tied, proper weight init)
+- ☐ Training loop upgrades (LR scheduler, AMP, gradient accumulation, tokens/sec logging)
+- ☐ Integration test (text → BPE → batch → DecoderLM → loss → generate)
+- ☐ OpenWebText/FineWeb data pipeline, HuggingFaceDownloader, Parquet intermediate, ChunkedTokenCache
 
 ## Next Steps (Priority Order)
 
-⏭️ **Phase 3 begins**: Minimal Transformer (token/position embeddings, multi-head causal attention, FFN blocks, weight initialization)
+⏭️ **Phase 3 continues**: CausalMultiHeadAttention (TDD red→green), then FFN, TransformerBlock, DecoderLM — vertical slice ending in an overfit test with the full decoder
 
 **Config-driven execution**: All data-prep driven by YAML configs in `scripts/data/<dataset>/`. Single runner:
 ```bash
@@ -65,7 +52,7 @@ See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) f
 
 > Ephemeral — clear this section at commit time. Use for in-progress notes only.
 
-(Cleared for commit)
+(cleared)
 
 ---
 
@@ -75,6 +62,7 @@ See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) f
 
 | Date | Commit | Summary |
 |---|---|---|
+| 2026-02-26 | phase3 branch | **Phase 3 start — BPE tokenizer + embeddings**: Implemented `BPETokenizer` (tiktoken gpt2/cl100k/o200k) with factory registration; `TokenEmbedding` and `LearnedPositionEmbedding` modules with N(0,0.02) init. Extended data pipeline (`run_data_prep.py`, `tokenize.py`) with BPE encoding support + `--encoding` flag. Added `wikitext-103_bpe_gpt2_small.yaml` YAML config and `experiment_p3_bpe.toml`. Exploration training run: SimpleLM + BPE gpt2, 500 steps, 442K tokens, loss 26.03→7.69. Added `tiktoken>=0.5.0` to requirements. 304 tests passing, `make check` clean. |
 | 2026-02-25 | post-`main`+unstaged | **Phase 2 final review + fixes**: Comprehensive pre-Phase-3 review. Found and fixed two bugs introduced by inference refactor: `scripts/evaluate_p2.py` imported `load_checkpoint` and `sample_token` from `src.inference.run` (neither existed post-refactor); corrected to `load_checkpoint_into_model`/`create_tokenizer_from_data_config` from `src.inference.utils` and `sample_token` from `src.inference.sampler`. Fixed `src/data/datasets/wikitext/normalize.py:281` line-length violation (117→98 chars). All 272 tests passing. No other issues: mypy clean, no TODOs/FIXMEs, 97–100% coverage on all critical modules. Phase 2 exit criteria fully met. Ready for Phase 3. |
 | 2026-02-25 | post-`main`+unstaged | **Inference refactor + utils consolidation**: Extracted shared inference utilities into `src/inference/utils.py` (device resolution, checkpoint loading, tokenizer creation). Refactored `src/inference/chat.py` and `src/inference/run.py` to use shared helpers, removing duplicate logic. Added `tests/unit/test_inference_utils.py` with 14 tests covering device resolution, checkpoint formats, and tokenizer creation; updated checkpoint/integration tests to import new helper. All unit tests passing (272). Lint + mypy clean. |
 | 2026-02-25 | post-`main`+unstaged | **Parameter tuning for real learning + interactive chat**: Created `config/experiment_curriculum.toml` with tuned parameters (hidden_size=256, num_layers=6, batch_size=8, lr=0.0005, dropout=0.1) to enable real learning without overfitting. Prepared full UTF-8 datasets: TinyStories (2.15M tokens) + WikiText-103 (2.13M tokens). Trained on 5000 steps achieving: initial_loss=24.56 → final_loss=2.56 (perplexity 46B → 12.87). Created interactive chat interface `src/inference/chat.py` with temperature/top-p/top-k sampling. Chat mode tested and working. Model generates recognizable word patterns with expected byte-level garbling (Phase 2 baseline). Results summary in `outputs/curriculum-alternating/README.md`. Ready for Phase 3 transformer. |

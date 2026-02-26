@@ -135,6 +135,7 @@ def main() -> None:
 
     tokenizer_name = str(get_nested(cfg, ["tokenizer", "name"], "char"))
     tokenizer_mode = str(get_nested(cfg, ["tokenizer", "mode"], "codepoint"))
+    tokenizer_encoding = str(get_nested(cfg, ["tokenizer", "encoding"], "gpt2"))
     vocab_size = int(get_nested(cfg, ["tokenizer", "vocab_size"], 128))
 
     cutoff_mode = str(get_nested(cfg, ["cutoff", "mode"], "article"))
@@ -149,7 +150,7 @@ def main() -> None:
 
     if cutoff_mode not in {"article", "row", "delimiter", "none"}:
         raise ValueError("cutoff.mode must be one of: article, row, delimiter, none")
-    if tokenizer_mode not in {"codepoint", "utf8", "utf16", "utf32"}:
+    if tokenizer_name == "char" and tokenizer_mode not in {"codepoint", "utf8", "utf16", "utf32"}:
         raise ValueError("tokenizer.mode must be one of: codepoint, utf8, utf16, utf32")
 
     # Step 1: Normalize
@@ -224,11 +225,13 @@ def main() -> None:
                 str(token_cache),
                 "--tokenizer",
                 tokenizer_name,
-                "--mode",
-                tokenizer_mode,
             ]
-            if tokenizer_mode == "codepoint":
-                args += ["--vocab-size", str(vocab_size)]
+            if tokenizer_name == "bpe":
+                args += ["--encoding", tokenizer_encoding]
+            else:
+                args += ["--mode", tokenizer_mode]
+                if tokenizer_mode == "codepoint":
+                    args += ["--vocab-size", str(vocab_size)]
             run_cmd(args)
     else:
         if not paths["token_cache"].exists():
@@ -266,6 +269,7 @@ def main() -> None:
         "subset_size": subset_size,
         "tokenizer": tokenizer_name,
         "tokenizer_mode": tokenizer_mode,
+        "tokenizer_encoding": tokenizer_encoding if tokenizer_name == "bpe" else None,
         "tokenizer_vocab_size": vocab_size,
         "token_input": str(token_input_path),
         "token_cache": str(paths["token_cache"]),

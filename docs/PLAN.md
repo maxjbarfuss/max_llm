@@ -145,16 +145,17 @@ Quality:
 **Tasks**:
 
 Tokenizer:
-- ☐ Implement BPE tokenizer via `tiktoken` or `sentencepiece`
-- ☐ Import and verify BPE vocab (32K tokens typical)
+- ✅ Implement BPE tokenizer via `tiktoken` (`src/tokenizer/bpe_tokenizer.py`; gpt2/cl100k/o200k; 19 tests)
+- ✅ Import and verify BPE vocab — gpt2: 50,257 tokens; cl100k_base: 100,277 tokens
 - ☐ Benchmark BPE vs Unigram on identical corpus slices (compression ratio, vocab diversity, training speed)
 - ☐ Select best tokenizer based on at least one dimension of improvement
 - ☐ Document vocabulary mismatch constraints and token alignment strategy
-- ☐ Update `scripts/data/` configs to use selected tokenizer
+- ✅ Update `scripts/data/` configs — BPE support added to pipeline; `wikitext-103_bpe_gpt2_small.yaml`
 
 Data:
 - ☐ Prepare OpenWebText subset (10–50M tokens); document deduplication rate
-- ☐ Re-tokenize existing Phase 2 datasets (WikiText-103, TinyStories) with BPE
+- ✅ Re-tokenize WikiText-103 with BPE (442K gpt2 tokens; 4.54 chars/token; `data/fast/wikitext_bpe_gpt2_*.npy`)
+- ☐ Re-tokenize TinyStories with BPE
 - ☐ `HuggingFaceDownloader`: `download(dataset_name, cache_dir)` + `discover_schema()` → discovery report; add `--discover` mode to data CLI
 - ☐ Formalize `DatasetProcessor` ABC and `WikiTextProcessor` wrapping `normalize_wikitext.py`
 - ☐ Intermediate Parquet schema for normalized docs: doc_id, text, split, char_count (replaces .txt cache; enables efficient doc-level queries)
@@ -163,8 +164,8 @@ Data:
 - ☐ Memory-mapped data reads and DataLoader shuffling at scale; verify I/O does not bottleneck training
 
 Components:
-- ☐ Token embedding (vocab_size × d_model)
-- ☐ Learned position embedding (max_seq_len × d_model)
+- ✅ Token embedding (vocab_size × d_model) — `src/models/embeddings/token_embedding.py`; N(0,0.02) init; 7 tests
+- ✅ Learned position embedding (max_seq_len × d_model) — `src/models/position/learned_position.py`; N(0,0.02) init; 6 tests
 - ☐ Transformer block (repeat N times): pre-norm LayerNorm → multi-head causal attention → residual → FFN → residual
 - ☐ Multi-head causal self-attention: Q/K/V project, scaled dot-product, upper-triangular mask
 - ☐ Feed-forward: Linear → GELU → Linear (d_model → 4×d_model → d_model)
