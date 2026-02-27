@@ -1,11 +1,11 @@
-"""Unit tests for the Phase 2 training loop."""
+"""Unit tests for the Phase 2/3 training loop."""
 
 import pytest
 import torch
 
 from src.config.model import ModelConfig
 from src.models.learning_model import SimpleLM
-from src.training.loop import train, train_step
+from src.training.loop import optimizer_step, train, train_step
 from src.training.train import create_simple_loaders
 
 
@@ -58,11 +58,13 @@ class TestTrainStep:
         assert loss > 0.0
 
     def test_parameters_change_after_step(self):
-        """Model parameters are updated after a training step."""
+        """Model parameters are updated after a training step + optimizer step."""
         model = _make_model()
+        optimizer = _make_optimizer(model)
         params_before = [p.clone() for p in model.parameters()]
         x, y = _make_batch()
-        train_step(model, x, y, _make_optimizer(model))
+        train_step(model, x, y, optimizer)
+        optimizer_step(optimizer, model=model)  # Explicit optimizer step
         params_after = list(model.parameters())
         assert any(
             not torch.equal(before, after)
@@ -224,3 +226,246 @@ class TestCreateSimpleLoaders:
         x, y = next(iter(train_loader))
         assert x.shape == (4, seq_len)
         assert y.shape == (4, seq_len)
+
+
+class TestEnhancedTrainingFeatures:
+    """Tests for Phase 3 training loop enhancements."""
+
+    def test_train_step_with_accumulation(self):
+        """Test train_step with gradient accumulation."""
+        model = _make_model()
+        x, y = _make_batch()
+        optimizer = _make_optimizer(model)
+
+        # First step: accumulate gradients
+        train_step(
+            model=model,
+            x=x,
+            y=y,
+            optimizer=optimizer,
+            accumulate_grad=True,
+        )
+
+        # Gradients should exist
+        assert model.token_emb.weight.grad is not None
+        grad_sum_1 = model.token_emb.weight.grad.sum().item()
+
+        # Second step: accumulate more gradients
+        train_step(
+            model=model,
+            x=x,
+            y=y,
+            optimizer=optimizer,
+            accumulate_grad=True,
+        )
+
+        # Gradients should have accumulated
+        grad_sum_2 = model.token_emb.weight.grad.sum().item()
+        assert abs(grad_sum_2) > abs(grad_sum_1)  # More gradients accumulated
+
+    def test_train_step_amp_cpu(self):
+        """Test that AMP on CPU falls back gracefully (no error)."""
+        model = _make_model()
+        x, y = _make_batch()
+        optimizer = _make_optimizer(model)
+
+        # AMP on CPU should not crash
+        loss = train_step(
+            model=model,
+            x=x,
+            y=y,
+            optimizer=optimizer,
+            use_amp=True,
+        )
+
+        assert isinstance(loss, float)
+        assert loss > 0
+
+    def test_optimizer_step_gradient_clipping(self):
+        """Test gradient clipping in optimizer_step."""
+        model = _make_model()
+        optimizer = _make_optimizer(model)
+
+        # Create large gradients
+        for param in model.parameters():
+            param.grad = torch.randn_like(param) * 100.0
+
+        # Apply gradient clipping (should not crash)
+        optimizer_step(
+            optimizer=optimizer,
+            gradient_clip_norm=1.0,
+            model=model,
+        )
+
+    def test_train_with_gradient_accumulation(self):
+        """Test training with gradient accumulation."""
+        from torch.utils.data import DataLoader, TensorDataset
+
+        model = _make_model()
+        x = torch.randint(0, 128, (20, 8))
+        y = torch.randint(0, 128, (20, 8))
+        loader = DataLoader(TensorDataset(x, y), batch_size=4)
+
+        metrics = train(
+            model=model,
+            train_loader=loader,
+            optimizer=_make_optimizer(model),
+            max_steps=3,
+            log_interval=0,
+            gradient_accumulation_steps=2,
+        )
+
+        # Should have 3 steps worth of losses
+        assert len(metrics["losses"]) == 3
+        assert len(metrics["perplexities"]) == 3
+
+    def test_train_with_gradient_clipping(self):
+        """Test training with gradient clipping."""
+        from torch.utils.data import DataLoader, TensorDataset
+
+        model = _make_model()
+        x = torch.randint(0, 128, (20, 8))
+        y = torch.randint(0, 128, (20, 8))
+        loader = DataLoader(TensorDataset(x, y), batch_size=4)
+
+        metrics = train(
+            model=model,
+            train_loader=loader,
+            optimizer=_make_optimizer(model),
+            max_steps=5,
+            log_interval=0,
+            gradient_clip_norm=1.0,
+        )
+
+        # Training should complete without error
+        assert len(metrics["losses"]) == 5
+
+    def test_train_with_scheduler(self):
+        """Test training with LR scheduler."""
+        from torch.utils.data import DataLoader, TensorDataset
+
+        from src.training.scheduler import get_cosine_schedule_with_warmup
+
+        model = _make_model()
+        optimizer = _make_optimizer(model)
+        x = torch.randint(0, 128, (20, 8))
+        y = torch.randint(0, 128, (20, 8))
+        loader = DataLoader(TensorDataset(x, y), batch_size=4)
+
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer=optimizer,
+            num_warmup_steps=2,
+            num_training_steps=10,
+        )
+
+        # Record initial LR
+        initial_lr = optimizer.param_groups[0]["lr"]
+
+        metrics = train(
+            model=model,
+            train_loader=loader,
+            optimizer=optimizer,
+            max_steps=10,
+            log_interval=0,
+            lr_scheduler=scheduler,
+        )
+
+        # LR should have changed
+        final_lr = optimizer.param_groups[0]["lr"]
+        assert final_lr != initial_lr
+
+        # Training should complete
+        assert len(metrics["losses"]) == 10
+
+    def test_train_with_tokens_per_sec_logging(self):
+        """Test training with tokens/sec logging."""
+        from torch.utils.data import DataLoader, TensorDataset
+
+        model = _make_model()
+        x = torch.randint(0, 128, (20, 8))
+        y = torch.randint(0, 128, (20, 8))
+        loader = DataLoader(TensorDataset(x, y), batch_size=4)
+
+        metrics = train(
+            model=model,
+            train_loader=loader,
+            optimizer=_make_optimizer(model),
+            max_steps=5,
+            log_interval=0,
+            log_tokens_per_sec=True,
+        )
+
+        # Should have tokens_per_sec metrics
+        assert "tokens_per_sec" in metrics
+        assert len(metrics["tokens_per_sec"]) == 5
+
+        # All values should be positive
+        for tps in metrics["tokens_per_sec"]:
+            assert tps > 0
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+    def test_train_with_gpu_memory_logging(self):
+        """Test training with GPU memory logging."""
+        from torch.utils.data import DataLoader, TensorDataset
+
+        model = _make_model().cuda()
+        x = torch.randint(0, 128, (20, 8)).cuda()
+        y = torch.randint(0, 128, (20, 8)).cuda()
+        loader = DataLoader(TensorDataset(x, y), batch_size=4)
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+        metrics = train(
+            model=model,
+            train_loader=loader,
+            optimizer=optimizer,
+            max_steps=5,
+            log_interval=0,
+            log_gpu_memory=True,
+        )
+
+        # Should have GPU memory metrics
+        assert "gpu_memory_mb" in metrics
+        assert len(metrics["gpu_memory_mb"]) == 5
+
+        # All values should be positive
+        for mem in metrics["gpu_memory_mb"]:
+            assert mem > 0
+
+    def test_train_combines_all_features(self):
+        """Test training with all features enabled simultaneously."""
+        from torch.utils.data import DataLoader, TensorDataset
+
+        from src.training.scheduler import get_cosine_schedule_with_warmup
+
+        model = _make_model()
+        x = torch.randint(0, 128, (20, 8))
+        y = torch.randint(0, 128, (20, 8))
+        loader = DataLoader(TensorDataset(x, y), batch_size=4)
+
+        optimizer = _make_optimizer(model)
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer=optimizer,
+            num_warmup_steps=2,
+            num_training_steps=10,
+        )
+
+        metrics = train(
+            model=model,
+            train_loader=loader,
+            optimizer=optimizer,
+            max_steps=10,
+            log_interval=0,
+            gradient_accumulation_steps=2,
+            gradient_clip_norm=1.0,
+            use_amp=False,  # Keep False for CPU testing
+            lr_scheduler=scheduler,
+            log_tokens_per_sec=True,
+            log_gpu_memory=False,  # Keep False for CPU testing
+        )
+
+        # All features should work together
+        assert len(metrics["losses"]) == 10
+        assert len(metrics["perplexities"]) == 10
+        assert len(metrics["tokens_per_sec"]) == 10
+        assert "gpu_memory_mb" not in metrics  # Not requested

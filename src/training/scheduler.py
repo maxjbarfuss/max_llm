@@ -1,0 +1,63 @@
+"""Learning rate schedulers for training."""
+
+from __future__ import annotations
+
+import math
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import torch.optim
+    import torch.optim.lr_scheduler
+
+
+def get_cosine_schedule_with_warmup(
+    optimizer: torch.optim.Optimizer,
+    num_warmup_steps: int,
+    num_training_steps: int,
+    min_lr_ratio: float = 0.1,
+    last_epoch: int = -1,
+) -> torch.optim.lr_scheduler.LambdaLR:
+    """Create learning rate scheduler with linear warmup and cosine decay.
+
+    Schedule:
+        - Steps 0 to num_warmup_steps: Linear warmup from 0 to base_lr
+        - Steps num_warmup_steps to num_training_steps: Cosine decay from base_lr to min_lr
+
+    Args:
+        optimizer: Optimizer to schedule.
+        num_warmup_steps: Number of warmup steps.
+        num_training_steps: Total number of training steps.
+        min_lr_ratio: Minimum LR as fraction of base LR (default: 0.1).
+        last_epoch: Last epoch index for resuming (default: -1).
+
+    Returns:
+        LambdaLR scheduler instance.
+
+    Example:
+        >>> optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+        >>> scheduler = get_cosine_schedule_with_warmup(
+        ...     optimizer, num_warmup_steps=100, num_training_steps=1000
+        ... )
+        >>> for step in range(1000):
+        ...     loss.backward()
+        ...     optimizer.step()
+        ...     scheduler.step()
+    """
+    import torch.optim.lr_scheduler
+
+    def lr_lambda(current_step: int) -> float:
+        """Compute LR multiplier for current step."""
+        # Warmup phase: linear ramp from 0 to 1
+        if current_step < num_warmup_steps:
+            return float(current_step) / float(max(1, num_warmup_steps))
+
+        # Decay phase: cosine decay from 1 to min_lr_ratio
+        progress = float(current_step - num_warmup_steps) / float(
+            max(1, num_training_steps - num_warmup_steps)
+        )
+        # Clamp progress to [0, 1] in case we exceed num_training_steps
+        progress = min(1.0, progress)
+        cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return min_lr_ratio + (1.0 - min_lr_ratio) * cosine_decay
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)

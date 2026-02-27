@@ -93,6 +93,15 @@ Practical workflows and tool use patterns for working efficiently on max_llm. Th
 - Prepare comprehensive commit with `run_in_terminal` (single command: `git add -A && git commit -m "..."`)`
 - For atomic commits across multiple files, stage them together (avoid multiple commits per message)
 
+## Commit Workflow (Required)
+
+Before each commit:
+
+1. Run applicable verification (tests, lint, format).
+2. Update plan/progress artifact and the active session file.
+3. Stage and review the final diff to confirm those updates are included.
+4. Commit with a conventional message; if plan/session updates are not applicable, state why in the handoff.
+
 ## Tool Preferences
 
 | Task | Preferred Tool | Rationale |

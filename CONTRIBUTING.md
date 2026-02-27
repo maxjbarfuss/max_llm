@@ -88,6 +88,8 @@ See [tests/README.md](tests/README.md) for additional test commands and expectat
 
 ### Change Checklist
 
+Use the required commit workflow in [.github/SKILLS.md](.github/SKILLS.md#commit-workflow-required) as the single source of truth.
+
 Before committing and pushing, confirm:
 
 1. **Quality Gate**: All checks pass locally:

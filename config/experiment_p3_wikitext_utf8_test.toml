@@ -1,0 +1,70 @@
+# Phase 3 — WikiText UTF8 full training test (1000 steps)
+# Full training validation with all modern training features enabled.
+
+[experiment]
+name = "maxllm-p3-wikitext-utf8-test"
+output_dir = "./outputs/p3-wikitext-utf8-test"
+
+[model]
+model_type = "decoder_lm"
+hidden_size = 256
+num_layers = 4
+num_heads = 8
+vocab_size = 256
+max_seq_length = 512
+mla_latent_dim = 64
+rope_base = 10000
+intermediate_size = 1024
+num_experts = 1
+experts_per_token = 1
+moe_frequency = 0
+gru_hidden_size = 256
+dropout = 0.1
+
+[training]
+batch_size = 8
+gradient_accumulation_steps = 2
+max_steps = 1000
+warmup_steps = 100
+learning_rate = 0.0003
+weight_decay = 0.01
+betas = [0.9, 0.999]
+epsilon = 1.0e-8
+gradient_clip_norm = 1.0
+precision_schedule = [[0, -1, "bf16"]]
+moe_balance_loss_weight = 0.0
+distributed_backend = "ddp"
+checkpoint_interval = 200
+eval_interval = 200
+log_interval = 50
+keep_last_n_checkpoints = 3
+use_torch_compile = false
+use_flash_attention = false
+selective_checkpointing = false
+
+[inference]
+device = "auto"
+max_new_tokens = 64
+temperature = 1.0
+top_p = 0.9
+top_k = 0
+use_kv_cache = false
+kv_cache_dtype = "bf16"
+
+[data]
+dataset_path = "data/fast/wikitext_5m_tokens__utf8.npy"
+tokenizer_name = "char"
+tokenizer_mode = "utf8"
+tokenizer_vocab_size = 256
+tokenizer_backend = "gpt2_bpe"
+unigram_model_path = ""
+max_length = 512
+num_workers = 4
+prefetch_factor = 2
+pin_memory = true
+persistent_workers = false
+streaming = false
+cache_dir = "./data/cache"
+num_shards = 1
+validation_split = 0.1
+seed = 42

@@ -33,6 +33,8 @@ Any agent working on this codebase should operate as simultaneously a **10x Seni
 
 Follow the [Standard Workflow in CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow-every-session). Project-specific requirements:
 
+> **Commit rule**: Follow the required commit workflow in [SKILLS.md](SKILLS.md#commit-workflow-required) for every commit.
+
 - **Start**: Read [LESSONS.md](LESSONS.md). Check existing tests and interfaces before coding.
 - **During**: Must implement TDD for every feature — write failing test first, implement, verify. Use local `git` CLI only; never use MCP git servers or wrapper tools (e.g., GitKraken, GitLens).
 - **End**: Clear SESSION.md Scratch Pad; add entry to Running Session Log. Update PLAN.md Phase Progress. Do NOT end with outdated or missing PLAN/SESSION metadata.

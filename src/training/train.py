@@ -15,9 +15,12 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.config.experiment import ExperimentConfig
+from src.inference.utils import resolve_device
 from src.models.learning_model import AttentionLM, BaseLearningModel, DecoderLM, SimpleLM
 from src.tokenizer import TokenizerFactory
 from src.training.loop import train
+from src.training.optimizer import configure_optimizer_param_groups
+from src.training.scheduler import get_cosine_schedule_with_warmup
 from src.utils import seed_everything, seed_worker
 
 
@@ -58,6 +61,7 @@ def create_simple_loaders(
     batch_size: int,
     validation_split: float = 0.1,
     seed: int = 42,
+    device: torch.device | None = None,
 ) -> tuple[DataLoader, DataLoader]:
     """Create train and validation data loaders from token sequence.
 
@@ -67,6 +71,7 @@ def create_simple_loaders(
         batch_size: Batch size for loaders
         validation_split: Fraction of data to use for validation
         seed: Random seed for reproducibility
+        device: Device for pin_memory setting (pinned if CUDA)
 
     Returns:
         Tuple of (train_loader, val_loader)
@@ -100,14 +105,20 @@ def create_simple_loaders(
     train_dataset = TensorDataset(inputs_tensor[:split_idx], targets_tensor[:split_idx])
     val_dataset = TensorDataset(inputs_tensor[split_idx:], targets_tensor[split_idx:])
 
+    # Determine pin_memory setting based on device
+    pin_memory = device is not None and device.type == "cuda"
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         generator=generator,
         worker_init_fn=seed_worker,
+        pin_memory=pin_memory,
     )
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=False, pin_memory=pin_memory
+    )
 
     return train_loader, val_loader
 
@@ -118,15 +129,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901
     args = parse_args()
     config = ExperimentConfig.from_toml(args.config)
 
     # Set all random seeds for reproducibility
     seed_everything(config.data.seed, deterministic=True)
 
+    # Resolve device (auto-detect CUDA if available)
+    device = resolve_device("auto")
+
     print(f"Experiment : {config.name}")
     print(f"Output dir : {config.output_dir}")
+    print(f"Device      : {device}")
     print(
         f"Model      : hidden_size={config.model.hidden_size}, "
         f"vocab_size={config.model.vocab_size}, "
@@ -178,6 +193,7 @@ def main() -> None:
         batch_size=config.training.batch_size,
         validation_split=config.data.validation_split,
         seed=config.data.seed,
+        device=device,
     )
 
     if len(train_loader.dataset) == 0:  # type: ignore[arg-type]
@@ -197,13 +213,64 @@ def main() -> None:
             "Supported types: simple_lm, attention_lm, decoder_lm"
         )
 
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=config.training.learning_rate,
-        betas=config.training.betas,
-        eps=config.training.epsilon,
-        weight_decay=config.training.weight_decay,
+    # Move model to device
+    model = model.to(device)
+
+    # Configure optimizer with parameter groups (selective weight decay)
+    if config.training.weight_decay > 0:
+        print(
+            "Optimizer  : Using selective weight decay " "(excluding bias and LayerNorm parameters)"
+        )
+        param_groups = configure_optimizer_param_groups(
+            model=model,
+            weight_decay=config.training.weight_decay,
+            learning_rate=config.training.learning_rate,
+            betas=config.training.betas,
+            eps=config.training.epsilon,
+        )
+        optimizer = torch.optim.Adam(param_groups)
+    else:
+        # No weight decay: use simple parameter list
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=config.training.learning_rate,
+            betas=config.training.betas,
+            eps=config.training.epsilon,
+            weight_decay=0.0,
+        )
+
+    # Create learning rate scheduler
+    lr_scheduler = get_cosine_schedule_with_warmup(
+        optimizer=optimizer,
+        num_warmup_steps=config.training.warmup_steps,
+        num_training_steps=config.training.max_steps,
+        min_lr_ratio=0.1,
     )
+    print(
+        f"Scheduler  : Warmup {config.training.warmup_steps} steps, "
+        f"cosine decay to 10% over {config.training.max_steps} steps"
+    )
+
+    # Determine mixed precision setting from precision_schedule
+    # For now, use the first schedule entry; Phase 4 will implement full schedule support
+    use_amp = False
+    if config.training.precision_schedule:
+        first_precision = config.training.precision_schedule[0][2]
+        if first_precision in ("bf16", "mixed"):
+            use_amp = True
+            print(f"Precision  : Using mixed precision (AMP) with {first_precision}")
+
+    # Gradient clipping
+    gradient_clip_norm = config.training.gradient_clip_norm
+    if gradient_clip_norm > 0:
+        print(f"Gradient   : Clipping at norm {gradient_clip_norm}")
+
+    # Gradient accumulation
+    if config.training.gradient_accumulation_steps > 1:
+        print(
+            f"Accumulation: {config.training.gradient_accumulation_steps} micro-batches "
+            f"(effective batch size: {config.training.effective_batch_size})"
+        )
 
     # Train
     metrics = train(
@@ -212,6 +279,12 @@ def main() -> None:
         optimizer=optimizer,
         max_steps=config.training.max_steps,
         log_interval=config.training.log_interval,
+        gradient_accumulation_steps=config.training.gradient_accumulation_steps,
+        gradient_clip_norm=gradient_clip_norm if gradient_clip_norm > 0 else None,
+        use_amp=use_amp,
+        lr_scheduler=lr_scheduler,
+        log_tokens_per_sec=True,
+        log_gpu_memory=True,
     )
 
     print(
