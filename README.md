@@ -57,8 +57,8 @@ graph TD
     end
 
     R2 --> GRU[GRU Block]:::p8 --> Head[LM Head]:::p3 --> Logits[Logits]:::io
-    Logits -->|training| Loss[Cross-Entropy Loss]:::io
-    Logits -->|inference| Samp[Sampler<br/>temp/top-k/top-p]:::p3 --> GenOut[Generated Text]:::io
+    Logits -->|training| Loss[CE Loss + DPO]:::io
+    Logits -->|inference| Samp[Sampler + KV-cache]:::p56 --> GenOut[Generated Text]:::io
 
     subgraph Replaced[Replaced Predecessors]
         direction LR
@@ -73,7 +73,6 @@ graph TD
     end
 
     CT -.-> Tok
-    Emb -.-> LPE
     LPE -.-> RoPE
     LF -.-> GF
     LN -.-> N1
@@ -86,6 +85,7 @@ graph TD
     classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
     classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
+    classDef p56 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
     classDef p7 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
     classDef p8 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
 ```
@@ -94,9 +94,10 @@ graph TD
 |-------|-------|-----------|
 | ⬛ Black | — | I/O: Text Input, Logits, Loss, Generated Text |
 | 🟢 Green | 2 | Token Embedding |
-| 🔵 Blue | 3 | Residual connections, LM Head, BPE / Unigram Tokenizer, Sampler (temp/top-k/top-p) |
-| 🟠 Orange | 4 | RMSNorm, RoPE, GQA (Llama-Style Upgrades) |
-| 🔴 Red | 7 | MLA (replaces GQA), MoE (replaces dense SwiGLU) |
+| 🔵 Blue | 3 | Residual connections, LM Head, BPE / Unigram Tokenizer |
+| 🟠 Orange | 4 | RMSNorm, RoPE, GQA (Llama-Style Upgrades; GQA replaced in Phase 7) |
+| 🟣 Purple | 5–6 | Sampler + KV-cache (inference), LoRA (fine-tuning), DPO (alignment) |
+| 🔴 Red | 7 | MLA (replaces GQA), MoE Sparse SwiGLU (replaces dense) |
 | 🟡 Yellow | 8 | GRU hybrid blocks |
 | Rounded pill | — | Replaced predecessors (colored by introducing phase) |
 

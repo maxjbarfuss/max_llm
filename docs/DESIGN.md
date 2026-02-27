@@ -16,7 +16,7 @@
 ---
 title: Phase 2 – Skeleton
 ---
-graph LR
+graph TD
     A[Text]:::io --> B[Char Tokenizer]:::p2 --> C[Token Emb + Learned Pos]:::p2 --> D[GELU MLP]:::p2 --> E[LM Head]:::p2 --> F[Logits]:::io
     F -->|training| G[Cross-Entropy Loss]:::io
     F -->|inference| H[Greedy Sampling]:::p2 --> I[Text]:::io
@@ -30,7 +30,7 @@ graph LR
 ---
 title: Phase 3 – Minimal Transformer + Tokenizer Upgrade
 ---
-graph LR
+graph TD
     A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb + Learned Pos]:::p3 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
@@ -49,17 +49,18 @@ graph LR
 ---
 title: Phase 4 – Llama-Style Upgrades
 ---
-graph LR
-    A[Text]:::io --> B[BPE Tokenizer]:::p4 --> C[Token Emb]:::p4 --> Block
+graph TD
+    A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
-        D[RMSNorm]:::p4 --> E[GQA]:::p4 --> F[+ Residual]:::p4 --> G[RMSNorm]:::p4 --> H[SwiGLU FFN]:::p4 --> I[+ Residual]:::p4
+        D[RMSNorm]:::p4 --> E[GQA]:::p4 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[SwiGLU FFN]:::p4 --> I[+ Residual]:::p3
         RoPE:::p4 -.-> E
     end
-    Block --> J[LM Head]:::p4 --> K[Logits]:::io
+    Block --> J[LM Head]:::p3 --> K[Logits]:::io
     K -->|training| L[Cross-Entropy Loss]:::io
     K -->|inference| M[Sampler<br/>temp/top-k/top-p]:::p3 --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
     classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
 ```
@@ -70,20 +71,22 @@ graph LR
 ---
 title: Phases 5–6 – Inference + Fine-tuning
 ---
-graph LR
-    A[Text]:::io --> B[BPE Tokenizer]:::p56 --> C[Token Emb]:::p56 --> Block
+graph TD
+    A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
-        D[RMSNorm]:::p56 --> E[GQA + KV-Cache]:::p56 --> F[+ Residual]:::p56 --> G[RMSNorm]:::p56 --> H[SwiGLU FFN]:::p56 --> I[+ Residual]:::p56
-        RoPE:::p56 -.-> E
+        D[RMSNorm]:::p4 --> E[GQA + KV-Cache]:::p4 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[SwiGLU FFN]:::p4 --> I[+ Residual]:::p3
+        RoPE:::p4 -.-> E
     end
-    Block --> J[LM Head]:::p56 --> K[Logits]:::io
+    Block --> J[LM Head]:::p3 --> K[Logits]:::io
     K -->|training| L[CE Loss + DPO]:::io
     K -->|inference| M[Sampler + KV-cache]:::p56 --> N[Text]:::io
     LoRA:::p56 -.-> Block
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
-    classDef p56 fill:#B3E5FC,stroke:#0277BD,color:#01579B
+    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
+    classDef p56 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
 ```
 
 - **Phases 5–6**: Same forward architecture as Phase 4 + **KV-cache**, **top-p sampling**, **SFT**, **LoRA**, **DPO**
@@ -92,18 +95,21 @@ graph LR
 ---
 title: Phase 7 – MoE + MLA
 ---
-graph LR
-    A[Text]:::io --> B[BPE/Unigram Tokenizer]:::p7 --> C[Token Emb]:::p7 --> Block
+graph TD
+    A[Text]:::io --> B[BPE/Unigram Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
-        D[RMSNorm]:::p7 --> E[MLA]:::p7 --> F[+ Residual]:::p7 --> G[RMSNorm]:::p7 --> H[MoE Sparse SwiGLU]:::p7 --> I[+ Residual]:::p7
-        RoPE:::p7 -.-> E
+        D[RMSNorm]:::p4 --> E[MLA]:::p7 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[MoE Sparse SwiGLU]:::p7 --> I[+ Residual]:::p3
+        RoPE:::p4 -.-> E
     end
-    Block --> J[LM Head]:::p7 --> K[Logits]:::io
+    Block --> J[LM Head]:::p3 --> K[Logits]:::io
     K -->|training| L[CE Loss + DPO]:::io
     K -->|inference| M[Sampler + KV-cache]:::p56 --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p56 fill:#B3E5FC,stroke:#0277BD,color:#01579B
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
+    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
+    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
+    classDef p56 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
     classDef p7 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
 ```
 
@@ -113,18 +119,22 @@ graph LR
 ---
 title: Phase 8 – GRU Hybrid
 ---
-graph LR
-    A[Text]:::io --> B[BPE/Unigram Tokenizer]:::p8 --> C[Token Emb]:::p8 --> Block
+graph TD
+    A[Text]:::io --> B[BPE/Unigram Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Mixed Block x N]
         direction LR
-        D[RMSNorm]:::p8 --> E[MLA]:::p8 --> F[+ Residual]:::p8 --> G[RMSNorm]:::p8 --> H[MoE Sparse SwiGLU]:::p8 --> I[+ Residual]:::p8
-        RoPE:::p8 -.-> E
+        D[RMSNorm]:::p4 --> E[MLA]:::p7 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[MoE Sparse SwiGLU]:::p7 --> I[+ Residual]:::p3
+        RoPE:::p4 -.-> E
     end
-    Block --> GRU[GRU Block]:::p8 --> J[LM Head]:::p8 --> K[Logits]:::io
+    Block --> GRU[GRU Block]:::p8 --> J[LM Head]:::p3 --> K[Logits]:::io
     K -->|training| L[CE Loss + DPO]:::io
     K -->|inference| M[Sampler + KV-cache]:::p56 --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p56 fill:#B3E5FC,stroke:#0277BD,color:#01579B
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
+    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
+    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
+    classDef p56 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
+    classDef p7 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
     classDef p8 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
 ```
 
@@ -140,17 +150,17 @@ Training: Logits → Cross-Entropy Loss (all phases). Inference: Logits → Soft
 
 | Component | Phase | Phases Used | Notes |
 |-----------|-------|-------------|-------|
-| Embeddings | 2 | 2–9 | Token + positional (learned, then RoPE) |
-| Transformer block | 3 | 3–9 | Pre-norm, causal attention, residual FFN |
-| RoPE | 5 | 5–9 | Replaces learned positional, supports extrapolation |
-| SwiGLU | 5 | 5–9 | Replaces GELU-based FFN |
-| GQA | 5 | 5–9 | Reduces KV cache, improves scaling |
-| MLA | 8 | 8–9 | Latent KV compression, upgrades GQA (DeepSeek-style) |
-| MoE layer | 8 | 8–9 | Sparse routing, expert utilization tracking |
-| GRU stage | 9 | 9 only | Optional recurrent alternative/augment |
-| KV-cache | 6 | 6–9 | Cached K/V for O(n) autoregressive generation |
-| LoRA | 6 | 6–9 | Low-rank adaptation; < 1% trainable params |
-| Reward model | 7 | 7–9 | Learned reward function for PPO/GRPO alignment |
+| Embeddings | 2 | 2–8 | Token + positional (learned, then RoPE) |
+| Transformer block | 3 | 3–8 | Pre-norm, causal attention, residual FFN |
+| RoPE | 4 | 4–8 | Replaces learned positional, supports extrapolation |
+| SwiGLU | 4 | 4–8 | Replaces GELU-based FFN |
+| GQA | 4 | 4–6 | Reduces KV cache; replaced by MLA in Phase 7 |
+| KV-cache | 5 | 5–8 | Cached K/V for O(n) autoregressive generation |
+| LoRA | 5 | 5–8 | Low-rank adaptation; < 1% trainable params |
+| Reward model | 6 | 6–8 | Learned reward function for PPO/GRPO alignment |
+| MLA | 7 | 7–8 | Latent KV compression, upgrades GQA (DeepSeek-style) |
+| MoE layer | 7 | 7–8 | Sparse routing, expert utilization tracking |
+| GRU stage | 8 | 8 only | Optional recurrent alternative/augment |
 
 **Hardware targets**: Dual 24GB GPUs (consumer/RTX level); single GPU inference; graceful CPU fallback.
 

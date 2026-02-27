@@ -15,7 +15,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation & Tests | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, reproducible env notes |
 | **2** | ✅ Done | Skeleton | M | Low (scope clarity) | TinyStories + Wiki-103 subset (100K+) | Tokenizer modes, data pipeline, training loop, checkpointing, inference, seed hardening, overfit test (deterministic replay + overfitting verified)
-| **3** | 🔄 In Progress (~20%) | Decoder + Tokenizer + Scaling | L | High (training stability + distributed) | WikiText BPE (442K), OpenWebText (10M+), FineWeb (50M+) | BPE tokenizer (gpt2), embeddings, CausalMultiHeadAttention (15 tests), AttentionLM validation, model_type factory |
+| **3** | 🔄 In Progress (~45%) | Decoder + Tokenizer + Scaling | L | High (training stability + distributed) | WikiText BPE (442K), OpenWebText (10M+), FineWeb (50M+) | BPE tokenizer (gpt2), embeddings, CausalMultiHeadAttention (15 tests), FeedForward, TransformerBlock, DecoderLM, AttentionLM/DecoderLM validation |
 | **4** | — | Llama-Style Architecture | XL | High (data complexity) | 100M+ tokens; staged curriculum | Architecture A/B report, curriculum manifest, stage-transition metrics |
 | **5** | — | Inference + Fine-tuning | L | Med (forgetting risk) | SFT instruction pairs; replay buffer | SFT runbook, LoRA adapters/merged weights, continual-learning eval report |
 | **6** | — | Alignment + Reward Modeling | XL | High (alignment instability) | Preference data + reward model | Alignment experiment report, reward-model card, safety evaluation summary |
@@ -169,10 +169,10 @@ Components:
 - ✅ Learned position embedding (max_seq_len × d_model) — `src/models/position/learned_position.py`; N(0,0.02) init; 6 tests
 - ✅ Multi-head causal self-attention — `src/models/attention/causal_mha.py`: Q/K/V project, scaled dot-product, upper-triangular mask, Xavier uniform init; 15 tests
 - ✅ AttentionLM test model — `src/models/learning_model/attention_lm.py`: token+pos embeddings → pre-norm → attention → residual → LM head; weight-tied; validated end-to-end
-- ✅ Model factory — `src/config/model.py`: Added `model_type` field; `src/training/train.py` factory supports "simple_lm", "attention_lm"
-- ☐ Transformer block (repeat N times): pre-norm LayerNorm → multi-head causal attention → residual → FFN → residual
-- ☐ Feed-forward: Linear → GELU → Linear (d_model → 4×d_model → d_model)
-- ☐ DecoderLM: embeddings → N transformer blocks → LM head (weight-tied)
+- ✅ Model factory — `src/config/model.py`: Added `model_type` field; `src/training/train.py` factory supports "simple_lm", "attention_lm", "decoder_lm"
+- ✅ Transformer block (repeat N times): pre-norm LayerNorm → multi-head causal attention → residual → FFN → residual
+- ✅ Feed-forward: Linear → GELU → Linear (d_model → 4×d_model → d_model)
+- ✅ DecoderLM: embeddings → N transformer blocks → LM head (weight-tied)
 - ☐ Weight initialization: Xavier uniform for linear layers, learned embeddings from N(0, 0.02)
 - ☐ Hyperparameters: 2–4 layers, 128–256 d_model, 4 heads, 128–512 context
 
@@ -193,7 +193,7 @@ Training infrastructure:
 
 Evaluation and quality:
 - ☐ Shape/dtype assertions for all layers
-- ☐ Integration test: full pipeline (raw text → BPE tokenize → batch → forward → loss → generate)
+- ✅ Integration test: full pipeline (raw text → BPE tokenize → batch → forward → loss → generate)
 - ☐ Logging: tokens/sec, GPU memory, eval every N steps
 - ☐ Loss curves to CSV or TensorBoard
 - ☐ Multi-GPU consistency validation (same seed, same loss across ranks)
