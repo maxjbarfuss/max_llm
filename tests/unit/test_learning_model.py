@@ -11,6 +11,7 @@ from src.models.learning_model import BaseLearningModel, SimpleLM
 
 def make_p2_model_config(**overrides: object) -> ModelConfig:
     values: dict[str, object] = {
+        "model_type": "simple_lm",
         "hidden_size": 128,
         "num_layers": 1,
         "num_heads": 4,

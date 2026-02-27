@@ -1,3 +1,5 @@
 """Attention mechanisms including MLA."""
 
-__all__ = []
+from src.models.attention.causal_mha import CausalMultiHeadAttention
+
+__all__ = ["CausalMultiHeadAttention"]

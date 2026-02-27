@@ -312,8 +312,7 @@ flowchart LR
 - Phase 5+: Architecture comparison tests (A/B), throughput benchmarks
 - Phase 6+: SFT pipeline tests, LoRA merge correctness, KV-cache equivalence, evaluation harness integration
 - Phase 7+: Preference data loading, DPO/RL loss computation, reward model accuracy, safety evaluation suite
-- Phase 8+: Expert routing tests, load-balance convergence, MLA vs GQA equivalence at matching configs
-- Phase 9: GRU forward/backward, hybrid integration, NIAH retrieval, cross-architecture comparison suite
+- Phase 8: Expert routing tests, load-balance convergence, MLA vs GQA equivalence at matching configs, GRU forward/backward, hybrid integration, NIAH retrieval, cross-architecture comparison suite
 
 **Python test standards**:
 - One test file per module; use fixtures; no setup duplication

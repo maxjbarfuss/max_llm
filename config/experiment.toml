@@ -6,6 +6,7 @@ name = "maxllm-p2-baseline"
 output_dir = "./outputs/p2-baseline"
 
 [model]
+model_type = "simple_lm"
 hidden_size = 128
 num_layers = 1
 num_heads = 4
@@ -17,7 +18,7 @@ intermediate_size = 512   # 4 × hidden_size
 num_experts = 1           # MoE disabled (moe_frequency = 0)
 experts_per_token = 1
 moe_frequency = 0         # 0 = MoE disabled in Phase 2
-gru_hidden_size = 128     # placeholder — used from Phase 9
+gru_hidden_size = 128     # placeholder — used from Phase 8
 dropout = 0.0             # no dropout; overfitting is the Phase 2 goal
 
 [training]

@@ -10,6 +10,7 @@ from .toml_utils import load_toml, section_or_root
 class ModelConfig:
     """Model architecture configuration."""
 
+    model_type: str  # "simple_lm", "attention_lm", "decoder_lm", etc.
     hidden_size: int
     num_layers: int
     num_heads: int
@@ -33,6 +34,18 @@ class ModelConfig:
 
     def _validate_basic(self) -> None:
         """Validate basic scalar constraints."""
+        valid_model_types = {
+            "simple_lm",
+            "attention_lm",
+            "decoder_lm",
+            "llama_lm",
+            "moe_lm",
+            "hybrid_lm",
+        }
+        if self.model_type not in valid_model_types:
+            raise ValueError(
+                f"model_type must be one of {valid_model_types}, got '{self.model_type}'"
+            )
         if self.hidden_size <= 0:
             raise ValueError("hidden_size must be positive")
         if self.num_layers <= 0:

@@ -9,6 +9,7 @@ from src.models.learning_model import SimpleLM
 
 def _make_model() -> SimpleLM:
     config = ModelConfig(
+        model_type="simple_lm",
         hidden_size=64,
         num_layers=1,
         num_heads=4,

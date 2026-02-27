@@ -15,6 +15,7 @@ from src.utils import seed_everything
 def _make_model_config() -> ModelConfig:
     """Create a minimal model config for testing."""
     return ModelConfig(
+        model_type="simple_lm",
         hidden_size=64,  # Must be multiple of 64
         num_layers=1,
         num_heads=4,

@@ -12,6 +12,7 @@ from src.config import DataConfig, ExperimentConfig, InferenceConfig, ModelConfi
 
 def make_model_config(**overrides):
     values = {
+        "model_type": "simple_lm",
         "hidden_size": 768,
         "num_layers": 12,
         "num_heads": 12,
@@ -355,6 +356,7 @@ name = "toml-test"
 output_dir = "./tmp-outputs"
 
 [model]
+model_type = "simple_lm"
 hidden_size = 768
 num_layers = 12
 num_heads = 12
@@ -442,6 +444,7 @@ seed = 42
         model_file.write_text(
             "\n".join(
                 [
+                    'model_type = "simple_lm"',
                     "hidden_size = 768",
                     "num_layers = 12",
                     "num_heads = 12",

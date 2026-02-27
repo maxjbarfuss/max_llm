@@ -14,6 +14,7 @@ from src.training.train import create_simple_loaders, save_checkpoint
 def _make_model_config() -> ModelConfig:
     """Create a model config for testing."""
     return ModelConfig(
+        model_type="simple_lm",
         hidden_size=64,
         num_layers=1,
         num_heads=4,

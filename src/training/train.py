@@ -15,7 +15,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.config.experiment import ExperimentConfig
-from src.models.learning_model import BaseLearningModel, SimpleLM
+from src.models.learning_model import AttentionLM, BaseLearningModel, SimpleLM
 from src.tokenizer import TokenizerFactory
 from src.training.loop import train
 from src.utils import seed_everything, seed_worker
@@ -183,8 +183,18 @@ def main() -> None:
     if len(train_loader.dataset) == 0:  # type: ignore[arg-type]
         raise ValueError("Training split is empty after applying validation_split")
 
-    # Create model and optimizer
-    model = SimpleLM.from_config(config.model)
+    # Create model based on model_type
+    model: BaseLearningModel
+    if config.model.model_type == "simple_lm":
+        model = SimpleLM.from_config(config.model)
+    elif config.model.model_type == "attention_lm":
+        model = AttentionLM.from_config(config.model)
+    else:
+        raise ValueError(
+            f"Unknown model_type: {config.model.model_type}. "
+            "Supported types: simple_lm, attention_lm"
+        )
+
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=config.training.learning_rate,

@@ -54,6 +54,14 @@
 
 ---
 
+## L007 — Always Activate Virtual Environment for Python Commands
+
+**Observed behavior**: Agent ran Python commands (`python`, `pytest`, `ruff`, `mypy`, `black`) without first sourcing the virtual environment, causing "command not found" or "module not found" errors. Agent retried multiple times before realizing the venv needed to be activated.
+
+**Correct approach**: This workspace uses a Python virtual environment at `/home/max/dev/max_llm/.venv`. Always prefix Python-related commands with `source /home/max/dev/max_llm/.venv/bin/activate &&`. For example: `source /home/max/dev/max_llm/.venv/bin/activate && python -m pytest tests/`. The venv must be activated for all Python tooling (pytest, ruff, mypy, black, pip) and script execution.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:

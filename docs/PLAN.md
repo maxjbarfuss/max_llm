@@ -15,7 +15,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation & Tests | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, reproducible env notes |
 | **2** | ✅ Done | Skeleton | M | Low (scope clarity) | TinyStories + Wiki-103 subset (100K+) | Tokenizer modes, data pipeline, training loop, checkpointing, inference, seed hardening, overfit test (deterministic replay + overfitting verified)
-| **3** | — | Decoder + Tokenizer + Scaling | L | High (training stability + distributed) | OpenWebText (10M+), FineWeb (50M+) | Decoder baseline, tokenizer benchmark, throughput report, distributed training logs, stability diagnostics |
+| **3** | 🔄 In Progress (~20%) | Decoder + Tokenizer + Scaling | L | High (training stability + distributed) | WikiText BPE (442K), OpenWebText (10M+), FineWeb (50M+) | BPE tokenizer (gpt2), embeddings, CausalMultiHeadAttention (15 tests), AttentionLM validation, model_type factory |
 | **4** | — | Llama-Style Architecture | XL | High (data complexity) | 100M+ tokens; staged curriculum | Architecture A/B report, curriculum manifest, stage-transition metrics |
 | **5** | — | Inference + Fine-tuning | L | Med (forgetting risk) | SFT instruction pairs; replay buffer | SFT runbook, LoRA adapters/merged weights, continual-learning eval report |
 | **6** | — | Alignment + Reward Modeling | XL | High (alignment instability) | Preference data + reward model | Alignment experiment report, reward-model card, safety evaluation summary |
@@ -147,6 +147,7 @@ Quality:
 Tokenizer:
 - ✅ Implement BPE tokenizer via `tiktoken` (`src/tokenizer/bpe_tokenizer.py`; gpt2/cl100k/o200k; 19 tests)
 - ✅ Import and verify BPE vocab — gpt2: 50,257 tokens; cl100k_base: 100,277 tokens
+- ✅ BPE tokenizer integrated into TokenizerFactory with "bpe" type
 - ☐ Benchmark BPE vs Unigram on identical corpus slices (compression ratio, vocab diversity, training speed)
 - ☐ Select best tokenizer based on at least one dimension of improvement
 - ☐ Document vocabulary mismatch constraints and token alignment strategy
@@ -166,17 +167,19 @@ Data:
 Components:
 - ✅ Token embedding (vocab_size × d_model) — `src/models/embeddings/token_embedding.py`; N(0,0.02) init; 7 tests
 - ✅ Learned position embedding (max_seq_len × d_model) — `src/models/position/learned_position.py`; N(0,0.02) init; 6 tests
+- ✅ Multi-head causal self-attention — `src/models/attention/causal_mha.py`: Q/K/V project, scaled dot-product, upper-triangular mask, Xavier uniform init; 15 tests
+- ✅ AttentionLM test model — `src/models/learning_model/attention_lm.py`: token+pos embeddings → pre-norm → attention → residual → LM head; weight-tied; validated end-to-end
+- ✅ Model factory — `src/config/model.py`: Added `model_type` field; `src/training/train.py` factory supports "simple_lm", "attention_lm"
 - ☐ Transformer block (repeat N times): pre-norm LayerNorm → multi-head causal attention → residual → FFN → residual
-- ☐ Multi-head causal self-attention: Q/K/V project, scaled dot-product, upper-triangular mask
 - ☐ Feed-forward: Linear → GELU → Linear (d_model → 4×d_model → d_model)
-- ☐ LM head: Linear (d_model → vocab_size), weight-tied to token embedding
+- ☐ DecoderLM: embeddings → N transformer blocks → LM head (weight-tied)
 - ☐ Weight initialization: Xavier uniform for linear layers, learned embeddings from N(0, 0.02)
 - ☐ Hyperparameters: 2–4 layers, 128–256 d_model, 4 heads, 128–512 context
 
 Training infrastructure:
-- ☐ Cross-entropy loss (next-token prediction)
-- ☐ Greedy generation (argmax sampling)
-- ☐ Temperature + top-k sampling
+- ✅ Cross-entropy loss (next-token prediction)
+- ✅ Greedy generation (argmax sampling)
+- ✅ Temperature + top-k + top-p sampling (Phase 2 complete)
 - ☐ Learning rate scheduler (linear warmup → cosine decay)
 - ☐ Gradient clipping (global norm ≤ 1.0)
 - ☐ Weight decay on all params except bias and LayerNorm
@@ -198,10 +201,10 @@ Evaluation and quality:
 **Exit Criteria**:
 - ☐ Model overfits 1K-token subset (train loss < 0.5 after 1000 steps; train perplexity < 2.0)
 - ☐ Generated 100-token samples contain coherent English phrases (manual inspection logged)
-- ☐ All shape/dtype tests pass; causal mask verified (no future token leakage)
-- ☐ Integration test passes: end-to-end pipeline from raw text to generated output
+- ✅ All shape/dtype tests pass; causal mask verified (no future token leakage) — 15 attention tests passing
+- ✅ Integration test: AttentionLM end-to-end training + inference validated (loss 10.82→6.66, ppl 50K→783)
 - ☐ Tokenizer benchmark complete: BPE vs Unigram decision documented with compression ratio, vocab size, and throughput
-- ☐ BPE tokenizer integrated and verified on Phase 2 datasets (WikiText-103, TinyStories)
+- ✅ BPE tokenizer integrated and verified on Phase 2 datasets (WikiText-103 BPE: 442K tokens, gpt2 encoding)
 - ☐ OpenWebText subset (10–50M tokens) prepared, deduplicated, and deduplication rate documented
 - ☐ FineWeb subset (50–100M tokens) integrated, deduplicated, and memory-mapped; data loading does not bottleneck training
 - ☐ 50–100M token training for 10K+ steps, no NaN/Inf; gradient norm stays within 2× of moving average

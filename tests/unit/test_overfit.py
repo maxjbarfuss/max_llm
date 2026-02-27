@@ -11,6 +11,7 @@ from src.training.train import create_simple_loaders
 def _make_model() -> SimpleLM:
     """Create a small model for Phase 2 overfitting."""
     config = ModelConfig(
+        model_type="simple_lm",
         hidden_size=128,
         num_layers=1,
         num_heads=4,

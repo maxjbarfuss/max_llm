@@ -13,7 +13,7 @@ Hands-on LLM research lab for building, training, and evaluating modern architec
 
 **Experiment locally.** The project is optimized for consumer GPUs and fast iteration. The goal is to validate tradeoffs in throughput, memory, and quality without relying on cloud-scale infrastructure.
 
-**Progressive roadmap.** The 9 phases move from minimal tokenization and linear models to full transformers and hybrid architectures. The emphasis is on clear, verifiable improvements rather than paper-chasing.
+**Progressive roadmap.** The 8 phases move from minimal tokenization and linear models to full transformers and hybrid architectures. The emphasis is on clear, verifiable improvements rather than paper-chasing.
 
 **Data strategy with intent.** Data selection, preprocessing, and evaluation are treated as first-class engineering work.
 

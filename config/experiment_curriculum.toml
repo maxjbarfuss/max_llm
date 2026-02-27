@@ -11,6 +11,7 @@ name = "maxllm-curriculum-stories-wikitext"
 output_dir = "./outputs/curriculum-alternating"
 
 [model]
+model_type = "simple_lm"
 hidden_size = 256
 num_layers = 6
 num_heads = 8
@@ -22,7 +23,7 @@ intermediate_size = 1024      # 4 × hidden_size
 num_experts = 1
 experts_per_token = 1
 moe_frequency = 0
-gru_hidden_size = 256
+gru_hidden_size = 256     # placeholder — used from Phase 8
 dropout = 0.1                  # Regularization to prevent overfitting
 
 [training]
