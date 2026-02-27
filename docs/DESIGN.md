@@ -51,7 +51,7 @@ graph TD
 title: Phase 3 – Minimal Transformer + Tokenizer Upgrade
 ---
 graph TD
-    A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb + Learned Pos]:::p3 --> Block
+    A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb + Learned Pos]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
         D[LayerNorm]:::p3 --> E[Multi-Head Attn]:::p3 --> F[+ Residual]:::p3 --> G[LayerNorm]:::p3 --> H[GELU FFN]:::p3 --> I[+ Residual]:::p3
@@ -60,6 +60,7 @@ graph TD
     K -->|training| L[Cross-Entropy Loss]:::io
     K -->|inference| M[Sampler<br/>temp/top-k/top-p]:::p3 --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
 ```
 
