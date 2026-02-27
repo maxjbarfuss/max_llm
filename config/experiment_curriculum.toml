@@ -23,7 +23,7 @@ intermediate_size = 1024      # 4 × hidden_size
 num_experts = 1
 experts_per_token = 1
 moe_frequency = 0
-gru_hidden_size = 256     # placeholder — used from Phase 8
+gru_hidden_size = 256     # placeholder — used from Phase 7
 dropout = 0.1                  # Regularization to prevent overfitting
 
 [training]

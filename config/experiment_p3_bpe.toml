@@ -13,13 +13,13 @@ num_heads = 4
 # gpt2 = 50 257 tokens; rounded up to next multiple of 64 for alignment
 vocab_size = 50304
 max_seq_length = 256
-mla_latent_dim = 64       # placeholder — Phase 8
+mla_latent_dim = 64       # placeholder — Phase 6
 rope_base = 10000         # placeholder — Phase 5
 intermediate_size = 512   # 4 × hidden_size
 num_experts = 1
 experts_per_token = 1
 moe_frequency = 0
-gru_hidden_size = 128     # placeholder — Phase 8
+gru_hidden_size = 128     # placeholder — Phase 7
 dropout = 0.0
 
 [training]

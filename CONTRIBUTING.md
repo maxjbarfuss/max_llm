@@ -9,7 +9,7 @@ This guide is for both human contributors and AI agents.
 | Max Barfuss | [@maxjbarfuss](https://github.com/maxjbarfuss) | Owner, final approver, sole maintainer of `main` |
 
 AI agents may contribute only under direct instruction or explicit written approval from @maxjbarfuss. Agent requirements:
-- **Start here**: Read [.github/SKILLS.md](.github/SKILLS.md) for agent-specific instructions, working discipline, and project patterns
+- **Start here**: Read [.github/AGENTS.md](.github/AGENTS.md) (universal standard) and [.github/SKILLS.md](.github/SKILLS.md) (practical workflows) for agent-specific instructions, working discipline, and project patterns
 - Follow the workflow in this document (session setup, TDD, doc updates, session close)
 - Self-identify in commits and handoff notes (`AI agent: <name>` or similar)
 
@@ -31,7 +31,7 @@ This repo uses a lightweight feature-branch workflow with phase-based branches a
 
 ### Standard Workflow (Every Session)
 
-> **AI agents**: Read [.github/SKILLS.md](.github/SKILLS.md) and [.github/LESSONS.md](.github/LESSONS.md) before starting.
+> **AI agents**: Read [.github/AGENTS.md](.github/AGENTS.md) and [.github/LESSONS.md](.github/LESSONS.md) before starting.
 
 1. Read [docs/SESSION.md](docs/SESSION.md#next-steps-priority-order) and choose a scoped task.
 2. Skim [docs/PLAN.md](docs/PLAN.md) for the current phase and any relevant sections for your task.

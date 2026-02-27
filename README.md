@@ -9,15 +9,11 @@ Hands-on LLM research lab for building, training, and evaluating modern architec
 
 ## Why This Project?
 
-**Learn by building.** Max LLM is a hands-on lab for modern sequence modeling. Each phase adds one core capability so architecture and training decisions can be tested, measured, and explained.
+**Learn by building.** Hands-on lab for modern sequence modeling where architecture and training decisions are tested, measured, and explained through incremental implementation.
 
-**Experiment locally.** The project is optimized for consumer GPUs and fast iteration. The goal is to validate tradeoffs in throughput, memory, and quality without relying on cloud-scale infrastructure.
+**Experiment locally.** Optimized for consumer dual-GPU hardware and fast iteration. Validates tradeoffs in throughput, memory, and quality without cloud infrastructure.
 
-**Progressive roadmap.** The 8 phases move from minimal tokenization and linear models to full transformers and hybrid architectures. The emphasis is on clear, verifiable improvements rather than paper-chasing.
-
-**Data strategy with intent.** Data selection, preprocessing, and evaluation are treated as first-class engineering work.
-
-**Reproducibility by design.** Configs, seeds, and checkpoints are tracked so experiments can be re-run and compared reliably.
+**Reproducibility by design.** Configs, seeds, checkpoints, and data pipeline tracked for reliable re-runs. Test-driven development with measurable validation at each phase.
 
 ---
 
@@ -38,27 +34,36 @@ Docs and policies:
 - [docs/PLAN.md](docs/PLAN.md): phased execution roadmap and exit criteria (reference for current phase)
 - [docs/DESIGN.md](docs/DESIGN.md): architecture, engineering constraints, and data strategy
 - [CONTRIBUTING.md](CONTRIBUTING.md): repository workflow and contributor authorization
+- [.github/AGENTS.md](.github/AGENTS.md): AI agent standard — open, interoperable specification for any agent (Claude, o1, custom models)
 - [.github/SKILLS.md](.github/SKILLS.md): AI agent instructions and working discipline
 - [.github/LESSONS.md](.github/LESSONS.md): recorded agent mistake patterns (read before each session)
 - [.github/CODEOWNERS](.github/CODEOWNERS): code ownership and review responsibility
 
-## Architecture
+## Design
 
-Phase 8 combines GQA/MLA attention, MoE feedforward blocks, and a GRU output stage into a single local-first stack. The diagram below is a Phase 8 snapshot of the full text → output pipeline. Solid rectangles are current components in Phase 8. Rounded pills show predecessors replaced in earlier phases, colored by the phase they were introduced. For deeper design context, see [docs/DESIGN.md](docs/DESIGN.md).
+**7-phase progression** (100–500M params on dual-GPU hardware): minimal working model → incremental architectural upgrades → full pretraining → post-training alignment. Each phase produces a working text-in → text-out LLM with measurable validation.
+
+**Final architecture (Phase 7):** Transformer with modern optimizations (RMSNorm, RoPE, MLA, sparse MoE) + dual-stream reasoning (GRU reasoning + transformer streams → GRU combiner). Solid rectangles show Phase 7 components; rounded pills show replaced predecessors color-coded by introduction phase.
 
 ```mermaid
 graph TD
     In[Text Input]:::io --> Tok[BPE/Unigram Tokenizer]:::p3 --> Emb[Token Embedding]:::p2 --> N1
+    Emb --> RGRU[GRU Reasoning Stream]:::p7
 
-    subgraph Block[Transformer Block x N]
-        N1[RMSNorm]:::p4 --> ATT[MLA]:::p7 --> R1[+ Residual]:::p3
+    subgraph Block[Transformer Stream × N]
+        N1[RMSNorm]:::p4 --> ATT[MLA]:::p6 --> R1[+ Residual]:::p3
         RoPE[RoPE]:::p4 -.-> ATT
-        R1 --> N2[RMSNorm]:::p4 --> MOE[MoE Sparse SwiGLU]:::p7 --> R2[+ Residual]:::p3
+        R1 --> N2[RMSNorm]:::p4 --> MOE[MoE Sparse SwiGLU]:::p6 --> R2[+ Residual]:::p3
     end
 
-    R2 --> GRU[GRU Block]:::p8 --> Head[LM Head]:::p3 --> Logits[Logits]:::io
-    Logits -->|training| Loss[CE Loss + DPO]:::io
-    Logits -->|inference| Samp[Sampler + KV-cache]:::p56 --> GenOut[Generated Text]:::io
+    LoRA:::p5 -.-> Block
+    RewardModel:::p5 -.-> Block
+
+    R2 --> COMB[GRU Combiner]:::p7
+    RGRU --> COMB
+    COMB --> Head[LM Head]:::p3 --> Logits[Logits]:::io
+    Logits -->|training| Loss[CE Loss + DPO]:::p5
+    Logits -->|inference| Samp["Sampler<br/>(top-p/temp/top-k)<br/>+ KV-cache"]:::p5 --> GenOut[Generated Text]:::io
 
     subgraph Replaced[Replaced Predecessors]
         direction LR
@@ -85,9 +90,9 @@ graph TD
     classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
     classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
-    classDef p56 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
-    classDef p7 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
-    classDef p8 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
+    classDef p5 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
+    classDef p6 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
+    classDef p7 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
 ```
 
 | Color | Phase | Component |
@@ -96,10 +101,25 @@ graph TD
 | 🟢 Green | 2 | Token Embedding |
 | 🔵 Blue | 3 | Residual connections, LM Head, BPE / Unigram Tokenizer |
 | 🟠 Orange | 4 | RMSNorm, RoPE, GQA (Llama-Style Upgrades; GQA replaced in Phase 7) |
-| 🟣 Purple | 5–6 | Sampler + KV-cache (inference), LoRA (fine-tuning), DPO (alignment) |
-| 🔴 Red | 7 | MLA (replaces GQA), MoE Sparse SwiGLU (replaces dense) |
-| 🟡 Yellow | 8 | GRU hybrid blocks |
+| 🟣 Purple | 5 | **LoRA** adapters (parameter-efficient fine-tuning), **Reward model** (for DPO alignment), **Sampler** (top-p/temperature/top-k), **KV-cache** optimization, DPO/RLHF, SFT, grounding |
+| 🔴 Red | 6 | MLA (replaces GQA), MoE Sparse SwiGLU (replaces dense GQA FFN) |
+| 🟡 Yellow | 7 | GRU Reasoning Stream (parallel to transformer), GRU Combiner (gated fusion) |
 | Rounded pill | — | Replaced predecessors (colored by introducing phase) |
+
+### Data Strategy
+
+**1–500M token progression** across 7 phases: toy datasets (Phase 2–3) → unrestricted pretraining with curriculum learning (Phase 4: 75% neutral/technical, 20% adult/controversial, 5% harmful) → post-training alignment (Phase 5–7: SFT, grounding, preference data, reasoning traces). Safety guardrails applied via post-training after establishing comprehensive generalization.
+
+| Phase | Tokens | Data Sources & Purpose | Training Configuration |
+|-------|--------|------------------------|------------------------|
+| **2** | 1–10M | **TinyStories + WikiText-103** — establish reproducibility, overfit tests, seed hardening | Single-GPU, char tokenizer, learning loop validation |
+| **3** | 10–50M | **WikiText BPE (442K tokens, 4.54 chars/token)** — single-GPU training stability, baseline transformer | Single-GPU, BPE tokenizer, attention + FFN, LR scheduling |
+| **4** | 10–500M | **OpenWebText (10–50M) → FineWeb (50–100M) → Curriculum (100–500M)** — staged introduction: 75% neutral/technical, 20% adult/controversial, 5% harmful; curriculum learning based on validation loss | Multi-GPU (DDP/FSDP), distributed training, torch.compile, chunked token caching |
+| **5** | 1–5M SFT<br/>50K–500K grounding<br/>10K–100K preference | **SFT pairs** (OpenAssistant, ShareGPT) + **grounding** (GSM8K, MATH, ARC) + **preference data** (HH-RLHF, UltraFeedback) + 5–10% harmful for robustness | LoRA fine-tuning, KV-cache inference, DPO alignment, reward modeling |
+| **6** | 1–5M pairs | **Partitioned SFT + preference data by topic/domain** — drive expert specialization; curriculum scheduling for expert drift monitoring | MoE routing diagnostics, expert utilization entropy tracking |
+| **7** | 50K–500K triples | **Reasoning traces** (GSM8K, MATH, ARC-Challenge, OpenOrca/Orca-2) + **STaR self-generated** — 60% reasoned / 40% direct mix | Dual-stream training with teacher forcing, reasoning accuracy validation |
+
+**Full details:** Architecture decisions, component rationale, training efficiency (BF16/FP8), data sourcing principles, and engineering constraints in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## License
 

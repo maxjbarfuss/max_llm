@@ -18,7 +18,7 @@ intermediate_size = 512
 num_experts = 1
 experts_per_token = 1
 moe_frequency = 0
-gru_hidden_size = 128     # placeholder — used from Phase 8
+gru_hidden_size = 128     # placeholder — used from Phase 7
 dropout = 0.0
 
 [training]

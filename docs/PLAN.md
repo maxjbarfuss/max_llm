@@ -15,16 +15,16 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation & Tests | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, reproducible env notes |
 | **2** | ✅ Done | Skeleton | M | Low (scope clarity) | TinyStories + Wiki-103 subset (100K+) | Tokenizer modes, data pipeline, training loop, checkpointing, inference, seed hardening, overfit test (deterministic replay + overfitting verified)
-| **3** | 🔄 In Progress (~45%) | Decoder + Tokenizer + Scaling | L | High (training stability + distributed) | WikiText BPE (442K), OpenWebText (10M+), FineWeb (50M+) | BPE tokenizer (gpt2), embeddings, CausalMultiHeadAttention (15 tests), FeedForward, TransformerBlock, DecoderLM, AttentionLM/DecoderLM validation |
-| **4** | — | Llama-Style Architecture | XL | High (data complexity) | 100M+ tokens; staged curriculum | Architecture A/B report, curriculum manifest, stage-transition metrics |
-| **5** | — | Inference + Fine-tuning | L | Med (forgetting risk) | SFT instruction pairs; replay buffer | SFT runbook, LoRA adapters/merged weights, continual-learning eval report |
-| **6** | — | Alignment + Reward Modeling | XL | High (alignment instability) | Preference data + reward model | Alignment experiment report, reward-model card, safety evaluation summary |
-| **7** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + curriculum routing | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
-| **8** | — | GRU Hybrid | L | Med (benchmark variance) | Static + incremental evaluation | Hybrid comparison paper draft, NIAH results, forgetting analysis |
+| **3** | 🔄 In Progress (~45%) | Decoder + BPE + Stability | L | High (training stability) | WikiText BPE (442K), 10–50M tokens single-GPU | BPE tokenizer (gpt2), embeddings, CausalMultiHeadAttention (15 tests), FeedForward, TransformerBlock, DecoderLM, AttentionLM/DecoderLM validation, training stability primitives |
+| **4** | — | Llama Architecture + Distributed Training | XL | High (scale + stability) | OpenWebText/FineWeb 10–500M staged ramp (10–50M OWT, 50–100M FineWeb, 100–500M curriculum) | Architecture A/B report, curriculum manifest, distributed training logs, throughput benchmarks |
+| **5** | — | Post-Training: Inference + SFT + Grounding + Alignment | XL | High (forgetting + alignment) | SFT instruction pairs, grounding datasets, preference data | LoRA adapters, grounding benchmark, reward-model card, safety evaluation, continual-learning report |
+| **6** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + curriculum routing | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
+| **7** | — | Dual-Stream Reasoning | XL | High (training-inference mismatch) | Reasoning trace triples + STaR self-generated | Dual-stream comparison report, reasoning accuracy delta, GRU overhead benchmark |
 
 **Artifact naming convention**:
 - Use `p<phase>_<artifact>_<yyyymmdd>_<commit>_<seed>` for all outputs (reports, checkpoints, benchmark CSVs).
-- Examples: `p4_throughput_report_20260220_5aced98_s42`, `p7_reward_model_card_20260220_5aced98_s42`.
+- Examples: `p4_throughput_report_20260220_5aced98_s42`, `p5_reward_model_card_20260220_5aced98_s42`.
+- Note: Phase numbering updated Feb 2026 (8→7 phases); legacy p6/p7/p8 artifacts may exist in outputs/.
 
 For detailed execution: read below. For architectural context: see [DESIGN.md](DESIGN.md#architecture-overview).
 
@@ -132,14 +132,14 @@ Quality:
 
 ---
 
-### Phase 3: Decoder-Only Transformer + BPE Tokenizer + Training Stability & Scaling
+### Phase 3: Decoder-Only Transformer + BPE Tokenizer + Training Stability
 
-**Goal**: Working GPT-style model with BPE tokenizer, overfits small dataset, scales to 50–100M tokens with stable training and multi-GPU support.
+**Goal**: Working GPT-style model with BPE tokenizer, overfits small dataset, establishes stable single-GPU training on 10–50M tokens.
 
 **Dependencies**: Phase 2 reproducibility and checkpointing completed.
-**Artifacts**: Decoder baseline metrics, tokenizer benchmarking report, integration test log, throughput benchmark report, distributed training logs, stability diagnostics.
+**Artifacts**: Decoder baseline metrics, tokenizer benchmarking report, integration test log, training stability diagnostics.
 **Kill Criteria**: Stop if causal masking correctness fails OR if NaN/Inf recurs >2 times after stability mitigations.
-**Out of Scope**: Curriculum pretraining, RL alignment, architecture upgrades (RMSNorm/RoPE/SwiGLU/GQA).
+**Out of Scope**: Multi-GPU/distributed training (Phase 4), large corpus preparation (Phase 4), curriculum pretraining, RL alignment, architecture upgrades (RMSNorm/RoPE/SwiGLU/GQA).
 **Decision Log**: Record decisions as `P3-DEC-<n>` in Running Session Log.
 
 **Tasks**:
@@ -154,15 +154,10 @@ Tokenizer:
 - ✅ Update `scripts/data/` configs — BPE support added to pipeline; `wikitext-103_bpe_gpt2_small.yaml`
 
 Data:
-- ☐ Prepare OpenWebText subset (10–50M tokens); document deduplication rate
+- ☐ Prepare WikiText-103 BPE subset (10–50M tokens) for stable single-GPU training
 - ✅ Re-tokenize WikiText-103 with BPE (442K gpt2 tokens; 4.54 chars/token; `data/fast/wikitext_bpe_gpt2_*.npy`)
 - ☐ Re-tokenize TinyStories with BPE
-- ☐ `HuggingFaceDownloader`: `download(dataset_name, cache_dir)` + `discover_schema()` → discovery report; add `--discover` mode to data CLI
-- ☐ Formalize `DatasetProcessor` ABC and `WikiTextProcessor` wrapping `normalize_wikitext.py`
-- ☐ Intermediate Parquet schema for normalized docs: doc_id, text, split, char_count (replaces .txt cache; enables efficient doc-level queries)
-- ☐ Download and prepare FineWeb / FineWeb-Edu subset (~50–100M tokens) with BPE tokenizer
-- ☐ Implement heuristic data filters for length, language, and perplexity
-- ☐ Memory-mapped data reads and DataLoader shuffling at scale; verify I/O does not bottleneck training
+- ☐ Memory-mapped data reads for 10–50M token datasets
 
 Components:
 - ✅ Token embedding (vocab_size × d_model) — `src/models/embeddings/token_embedding.py`; N(0,0.02) init; 7 tests
@@ -173,8 +168,8 @@ Components:
 - ✅ Transformer block (repeat N times): pre-norm LayerNorm → multi-head causal attention → residual → FFN → residual
 - ✅ Feed-forward: Linear → GELU → Linear (d_model → 4×d_model → d_model)
 - ✅ DecoderLM: embeddings → N transformer blocks → LM head (weight-tied)
-- ☐ Weight initialization: Xavier uniform for linear layers, learned embeddings from N(0, 0.02)
-- ☐ Hyperparameters: 2–4 layers, 128–256 d_model, 4 heads, 128–512 context
+- ✅ Weight initialization: Xavier uniform for linear layers, learned embeddings from N(0, 0.02)
+- ✅ Hyperparameters: 2–4 layers, 128–256 d_model, 4 heads, 128–512 context
 
 Training infrastructure:
 - ✅ Cross-entropy loss (next-token prediction)
@@ -185,49 +180,51 @@ Training infrastructure:
 - ☐ Weight decay on all params except bias and LayerNorm
 - ☐ Mixed precision: `torch.cuda.amp` autocast + GradScaler (fallback to fp32)
 - ☐ Gradient accumulation over M micro-batches
-- ☐ `torch.compile(mode="max-autotune")` integration; measure gain vs eager mode and document graph breaks
-- ☐ Multi-GPU training: DDP for 100–300M params, FSDP for 300–500M
-- ☐ `ChunkedTokenCache(slow_dir, fast_dir, chunk_size_mb)`: slow→fast staging with LRU eviction and async background prefetch
-- ☐ `CachedTokenDataset`: lazy-load via `ChunkedTokenCache`; prefetch next chunk at 80% consumption
-- ☐ Upgrade token metadata to Parquet: chunk_id, token_count, byte_offset, split, sha256 hash
+- ☐ Basic logging: tokens/sec, GPU memory, eval every N steps
+- ☐ Loss curves to CSV or TensorBoard
 
 Evaluation and quality:
 - ☐ Shape/dtype assertions for all layers
 - ✅ Integration test: full pipeline (raw text → BPE tokenize → batch → forward → loss → generate)
 - ☐ Logging: tokens/sec, GPU memory, eval every N steps
 - ☐ Loss curves to CSV or TensorBoard
-- ☐ Multi-GPU consistency validation (same seed, same loss across ranks)
 
 **Exit Criteria**:
 - ☐ Model overfits 1K-token subset (train loss < 0.5 after 1000 steps; train perplexity < 2.0)
 - ☐ Generated 100-token samples contain coherent English phrases (manual inspection logged)
-- ✅ All shape/dtype tests pass; causal mask verified (no future token leakage) — 15 attention tests passing
-- ✅ Integration test: AttentionLM end-to-end training + inference validated (loss 10.82→6.66, ppl 50K→783)
+- ✅ All shape/dtype tests pass; causal mask verified (no future token leakage)
+- ✅ Integration test: AttentionLM end-to-end training + inference validated
 - ☐ Tokenizer benchmark complete: BPE vs Unigram decision documented with compression ratio, vocab size, and throughput
 - ✅ BPE tokenizer integrated and verified on Phase 2 datasets (WikiText-103 BPE: 442K tokens, gpt2 encoding)
-- ☐ OpenWebText subset (10–50M tokens) prepared, deduplicated, and deduplication rate documented
-- ☐ FineWeb subset (50–100M tokens) integrated, deduplicated, and memory-mapped; data loading does not bottleneck training
-- ☐ 50–100M token training for 10K+ steps, no NaN/Inf; gradient norm stays within 2× of moving average
+- ☐ 10–50M token training for 1K+ steps, no NaN/Inf; gradient norm stays within 2× of moving average
 - ☐ Loss curve smooth: no single-step spike > 3× running average over any 100-step window
-- ☐ Throughput baseline documented: tokens/sec on target hardware (single-GPU and multi-GPU, char vs BPE comparison)
-- ☐ `torch.compile` throughput gain measured and documented (target: ≥15% over eager mode)
-- ☐ Multi-GPU: DDP training produces identical loss to single-GPU at same seed for first 100 steps
+- ☐ Throughput baseline documented: tokens/sec on single-GPU, BPE tokenizer
 
 ---
 
-### Phase 4: Llama-Style Architecture Upgrades + Full Pretraining Corpus
+### Phase 4: Llama-Style Architecture Upgrades + Distributed Training + Full Pretraining Corpus
 
-**Goal**: Same param count, better perplexity, longer context handling; assemble full unrestricted world model with multi-phase curriculum.
+**Goal**: Same param count, better perplexity, longer context handling; scale to distributed training on 100–500M tokens with multi-phase curriculum.
 
-**Dependencies**: Phase 3 training stability established with BPE tokenizer.
-**Artifacts**: Architecture A/B report, curriculum manifest, per-stage training curves, memory/perf summary.
-**Kill Criteria**: Stop if causal masking correctness fails OR if NaN/Inf recurs >2 times after stability mitigations.
-**Out of Scope**: Curriculum pretraining, RL alignment, architecture upgrades (RMSNorm/RoPE/SwiGLU/GQA).
+**Dependencies**: Phase 3 single-GPU training stability established with BPE tokenizer.
+**Artifacts**: Architecture A/B report, curriculum manifest, per-stage training curves, memory/perf summary, distributed training logs, throughput benchmark report.
+**Kill Criteria**: Stop if Llama architecture degrades perplexity vs Phase 3 baseline OR if multi-GPU loss diverges from single-GPU by >5% at same seed after 100 steps.
+**Out of Scope**: Fine-tuning, RL alignment, MoE/MLA upgrades.
 **Decision Log**: Record decisions as `P4-DEC-<n>` in Running Session Log.
 
 **Tasks**:
 
 Data:
+- ☐ Prepare OpenWebText subset (10–50M tokens); document deduplication rate
+- ☐ Download and prepare FineWeb / FineWeb-Edu subset (~50–100M tokens) with BPE tokenizer
+- ☐ Implement heuristic data filters for length, language, and perplexity
+- ☐ `HuggingFaceDownloader`: `download(dataset_name, cache_dir)` + `discover_schema()` → discovery report; add `--discover` mode to data CLI
+- ☐ Formalize `DatasetProcessor` ABC and `WikiTextProcessor` wrapping `normalize_wikitext.py`
+- ☐ Intermediate Parquet schema for normalized docs: doc_id, text, split, char_count (replaces .txt cache; enables efficient doc-level queries)
+- ☐ Memory-mapped data reads and DataLoader shuffling at scale; verify I/O does not bottleneck training
+- ☐ `ChunkedTokenCache(slow_dir, fast_dir, chunk_size_mb)`: slow→fast staging with LRU eviction and async background prefetch
+- ☐ `CachedTokenDataset`: lazy-load via `ChunkedTokenCache`; prefetch next chunk at 80% consumption
+- ☐ Upgrade token metadata to Parquet: chunk_id, token_count, byte_offset, split, sha256 hash
 - ☐ Assemble 100–500M token corpus with staged curriculum: 75% FineWeb/Wikipedia/GitHub/UCI + curated data (Cosmopedia), 20% adult/controversial, 5% harmful
 - ☐ Create source manifest (URLs, licenses, curriculum stage assignments, deduplication stats)
 - ☐ Implement dynamic data mixing and sampling weights by curriculum stage
@@ -241,6 +238,11 @@ Components:
 - ☐ GQA with configurable KV head count (1 = MQA, N = MHA, between = GQA)
 - ☐ Flash Attention 2 integrated with GQA forward pass
 
+Training infrastructure:
+- ☐ Multi-GPU training: DDP for 100–300M params, FSDP for 300–500M
+- ☐ `torch.compile(mode="max-autotune")` integration; measure gain vs eager mode and document graph breaks
+- ☐ Multi-GPU consistency validation (same seed, same loss across ranks for first 100 steps)
+
 Evaluation and quality:
 - ☐ Per-component unit tests: RMSNorm, RoPE, SwiGLU, GQA
 - ☐ A/B comparison script: Phase 3 vs Phase 4 on same data/seed/param count
@@ -251,43 +253,71 @@ Evaluation and quality:
 - ☐ RoPE handles 2× training context length without perplexity degradation > 10%
 - ☐ A/B results logged per Reproducibility Contract; reproducible across runs
 - ☐ Flash Attention 2 active in GQA; memory reduction vs naive attention documented
+- ☐ OpenWebText subset (10–50M tokens) prepared, deduplicated, and deduplication rate documented
+- ☐ FineWeb subset (50–100M tokens) integrated, deduplicated, and memory-mapped; data loading does not bottleneck training
 - ☐ 100–500M token corpus assembled and partitioned across P4a/P4b/P4c; source manifest complete
 - ☐ Curriculum stage transitions trigger correctly; per-stage loss curves show continued improvement
+- ☐ Multi-GPU: DDP training produces identical loss to single-GPU at same seed for first 100 steps
+- ☐ `torch.compile` throughput gain measured and documented (target: ≥15% over eager mode)
+- ☐ 50–100M token training for 10K+ steps, no NaN/Inf with distributed training
 
 ---
 
-### Phase 5: Inference Optimization & Fine-Tuning + Continual Learning
+### Phase 5: Post-Training: Inference Optimization + Fine-Tuning + Grounding + Alignment
 
-**Goal**: 2× generation speedup, SFT-based adaptation, LoRA efficiency, continual learning for domain adaptation.
+**Goal**: Optimize inference (2× speedup via KV-cache), adapt via SFT with LoRA, ground in math/logic/world models, align via DPO/reward modeling — all behavior shaping without forward architecture changes.
 
 **Dependencies**: Phase 4 architecture frozen with reproducible checkpoints and selected eval baselines.
-**Artifacts**: SFT dataset manifest, LoRA adapter bundle, merged inference checkpoint, continual-learning evaluation report.
-**Kill Criteria**: Stop continual SFT if forgetting metric Δ worsens for 3 consecutive evaluations.
-**Out of Scope**: Preference-model training and PPO/GRPO rollout optimization.
+**Artifacts**: SFT dataset manifest, LoRA adapter bundle, grounding benchmark report, preference dataset card, reward-model calibration report, alignment training logs, safety evaluation summary, continual-learning evaluation report.
+**Kill Criteria**: Stop if forgetting metric Δ worsens for 3 consecutive evaluations OR if alignment causes >20% degradation on base capabilities.
+**Out of Scope**: Forward architecture changes (Phase 6: MoE/MLA), reasoning pipeline architecture (Phase 7).
 **Decision Log**: Record decisions as `P5-DEC-<n>` in Running Session Log.
 
 **Tasks**:
 
-Data:
+Data (instruction fine-tuning):
 - ☐ Curate/download 1–5M SFT instruction-response pairs (OpenAssistant, Self-Instruct, ShareGPT)
 - ☐ Prepare domain-specific subsets for continual-learning experiments
 
-Components:
+Data (grounding):
+- ☐ Curate/download 50K–500K grounding examples: math (GSM8K, MATH), logic (ARC-Challenge, BoolQ), world models, games (chess PGN, game-rule corpora), causal chains (Cosmopedia)
+- ☐ Build grounding dataset loader with structured input→explanation→answer format
+
+Data (alignment):
+- ☐ Assemble 10K–100K preference pairs (HH-RLHF, UltraFeedback) with 5–10% harmful examples
+- ☐ Label 5K–10K examples with multi-dimensional reward scores (quality, safety, factuality)
+- ☐ Evaluate optional synthetic preference generation via self-critique (experimental at 100–500M scale)
+
+Components (inference):
 - ☐ KV-cache for autoregressive decoding (process only new token per step)
 - ☐ Top-p (nucleus) sampling and repetition penalty
 - ☐ Sampling configurable via `InferenceConfig`
 - ☐ Prompt templates (ChatML or Alpaca-style)
 - ☐ `ChatFormatter` for multi-turn conversation inference
+
+Components (fine-tuning):
 - ☐ LoRA adapters on Q/K/V/output projections; freeze base model; merge adapters for deployment
+- ☐ Loss masking on assistant-response tokens only (SFT) and answer tokens only (grounding)
+
+Components (alignment):
+- ☐ Train reward model (linear probe or small MLP on last hidden state)
+- ☐ Calibrate reward model across domains (length-bias mitigation, domain balance)
+- ☐ Implement either DPO (frozen reference) or PPO/GRPO (reward-model-guided)
+- ☐ Expose β temperature and LR as alignment config knobs
 
 Training and evaluation:
 - ☐ Continual SFT with replay buffer (10% memory), online domain adaptation, and forgetting measurement
 - ☐ Replay buffer memory management (reservoir sampling or ring buffer)
-- ☐ Loss masking on assistant-response tokens only
+- ☐ Grounding fine-tuning via LoRA (reuse LoRA infrastructure from SFT phase)
+- ☐ Evaluate: perplexity on grounding benchmarks before/after; verify no catastrophic forgetting on base capabilities
+- ☐ Apply replay buffer (10% of preference data) during alignment to reduce forgetting
+- ☐ Collect RL trajectories (if PPO/GRPO): generate rollouts, score with reward model, compute gradients
 - ☐ Held-out evaluation set and side-by-side generation comparison
-- ☐ Select 2–3 standard benchmarks before Phase 6 (e.g., HellaSwag, MMLU subset)
+- ☐ Select 2–3 standard benchmarks (e.g., HellaSwag, MMLU subset)
 - ☐ Integrate `lm-eval-harness` or equivalent custom benchmark loop
 - ☐ Track continual-learning metric: Δ = max(0, perf_before - perf_after)
+- ☐ Track reward margin, preference accuracy, KL divergence, reward-model confidence, reward-signal correlation
+- ☐ Evaluate win rate vs base, adversarial safety behavior, reward-model MSE, and continual-learning degradation
 
 **Exit Criteria**:
 - ☐ KV-cache provides > 2× generation speedup at sequence length 512
@@ -296,40 +326,9 @@ Training and evaluation:
 - ☐ SFT dataset (1–5M pairs) successfully formatted and tokenized with ChatML/Alpaca templates
 - ☐ Continual learning replay buffer implemented and functional
 - ☐ Evaluation harness runs successfully on selected benchmarks (e.g., HellaSwag, MMLU)
-- ☐ Catastrophic forgetting metric (Δ) calculated and documented
-
----
-
-### Phase 6: Alignment with DPO/RL + Reward Modeling + Safety Testing
-
-**Goal**: Preference-based + RL-based alignment with learned reward model, >60% preference accuracy on held-out; robust rejection of harmful inputs; reward model calibration.
-
-**Dependencies**: Phase 5 SFT baseline and evaluation harness operational.
-**Artifacts**: Preference dataset card, reward-model calibration report, alignment training logs, safety evaluation summary.
-**Kill Criteria**: Stop if causal masking correctness fails OR if NaN/Inf recurs >2 times after stability mitigations.
-**Out of Scope**: Instruction tuning, preference optimization, post-training alignment.
-**Decision Log**: Record decisions as `P6-DEC-<n>` in Running Session Log.
-
-**Tasks**:
-
-Data:
-- ☐ Assemble 10K–100K preference pairs (HH-RLHF, UltraFeedback) with 5–10% harmful examples
-- ☐ Label 5K–10K examples with multi-dimensional reward scores (quality, safety, factuality)
-- ☐ Evaluate optional synthetic preference generation via self-critique (experimental at 100–500M scale)
-
-Components:
-- ☐ Train reward model (linear probe or small MLP on last hidden state)
-- ☐ Calibrate reward model across domains (length-bias mitigation, domain balance)
-- ☐ Implement either DPO (frozen reference) or PPO/GRPO (reward-model-guided)
-- ☐ Expose β temperature and LR as alignment config knobs
-
-Training and evaluation:
-- ☐ Apply replay buffer (10% of preference data) during alignment to reduce forgetting
-- ☐ Collect RL trajectories (if PPO/GRPO): generate rollouts, score with reward model, compute gradients
-- ☐ Track reward margin, preference accuracy, KL divergence, reward-model confidence, reward-signal correlation
-- ☐ Evaluate win rate vs SFT, adversarial safety behavior, reward-model MSE, and continual-learning degradation
-
-**Exit Criteria**:
+- ☐ Catastrophic forgetting metric (Δ) calculated and documented across all fine-tuning stages
+- ☐ Grounding fine-tuning complete: perplexity on held-out grounding examples improves vs pre-grounding baseline
+- ☐ 50K–500K grounding examples curated, tokenized, and validated
 - ☐ DPO model > 60% preference accuracy on held-out pairs
 - ☐ Generation quality better or safer than SFT baseline
 - ☐ Reward margin trend positive throughout training
@@ -339,15 +338,15 @@ Training and evaluation:
 
 ---
 
-### Phase 7: MoE + MLA (DeepSeek-Style) + Continual Expert Routing
+### Phase 6: MoE + MLA (DeepSeek-Style) + Continual Expert Routing
 
 **Goal**: Upgrade attention from GQA to MLA, add sparse MoE for capacity scaling, enable continual expert specialization.
 
-**Dependencies**: Phase 5 aligned baseline available for dense-vs-sparse comparison.
+**Dependencies**: Phase 5 post-training baseline available for dense-vs-sparse comparison.
 **Artifacts**: Expert-routing diagnostics, MLA KV-cache reduction report, MoE capacity/overflow analysis.
 **Kill Criteria**: Stop sparse rollout if token drop >5% or expert collapse persists beyond 3 mitigation attempts.
 **Out of Scope**: Hybrid recurrent architecture and long-context recurrent benchmarking.
-**Decision Log**: Record decisions as `P7-DEC-<n>` in Running Session Log.
+**Decision Log**: Record decisions as `P6-DEC-<n>` in Running Session Log.
 
 **Tasks**:
 
@@ -377,42 +376,44 @@ Training and evaluation:
 
 ---
 
-### Phase 8: GRU Hybrid Architecture + Continual Learning Evaluation
+### Phase 7: Dual-Stream Reasoning Pipeline
 
-**Goal**: Linear-complexity sequence modeling, memory scaling, tradeoff characterization; comprehensive continual learning benchmarking; catastrophic forgetting analysis.
+**Goal**: Dual-stream reasoning pipeline: GRU Reasoning Stream runs parallel to the Transformer Stream; both feed a GRU Combiner that conditions the LM Head. At inference, the model generates its own reasoning state without a provided trace — reasoning feeds back into prediction at each step. Graceful degradation when GRU stream is zeroed.
 
-**Dependencies**: Phase 7 sparse architecture stabilized with reproducible evaluation pipeline.
-**Artifacts**: Transformer-vs-GRU-vs-hybrid comparison report, NIAH benchmark outputs, catastrophic-forgetting analysis.
-**Kill Criteria**: Stop hybrid variants that underperform transformer baseline by >15% perplexity with no memory benefit.
-**Out of Scope**: New alignment objectives or additional data-curriculum redesign.
-**Decision Log**: Record decisions as `P8-DEC-<n>` in Running Session Log.
+**Dependencies**: Phase 6 sparse architecture stabilized with reproducible evaluation pipeline.
+**Artifacts**: Dual-stream vs transformer-only comparison report, reasoning accuracy delta on GSM8K/MATH/ARC, GRU overhead benchmark, STaR bootstrap trace corpus.
+**Kill Criteria**: Stop if reasoning-enabled model fails to exceed GRU-zeroed baseline on GSM8K after Phase 7a; stop if inference overhead exceeds 30% vs transformer-only at seq_len 512.
+**Out of Scope**: New alignment objectives, additional pretraining data curriculum.
+**Decision Log**: Record decisions as `P7-DEC-<n>` in Running Session Log.
 
 **Tasks**:
 
+Architecture (Phase 7a — Dual-stream foundation):
+- ☐ `src/models/rnn/reasoning_gru.py`: GRU cells on input embeddings → per-position reasoning hidden states
+- ☐ `src/models/rnn/gru_combiner.py`: gated fusion `z = σ(W_z·[h_transformer, h_gru])`; update gate learns per-token weighting
+- ☐ `ReasoningDecoderLM` in `src/models/learning_model/`: wires both streams; supports graceful degradation (zero GRU contribution)
+- ☐ Special tokens: `<|reasoning|>`, `<|answer|>` added to tokenizer vocab
+- ☐ Loss masking: answer tokens → main cross-entropy; reasoning tokens → GRU teacher forcing
+- ☐ Scheduled teacher forcing: 100% gold traces → 0% gold over Phase 7a (cosine or linear schedule)
+
 Data:
-- ☐ Finalize static benchmark suite (HellaSwag, MMLU, TruthfulQA)
-- ☐ Design incremental domain stream (5–10 domains, ~1K examples each)
+- ☐ Curate/download 50K–500K reasoning trace triples: GSM8K, MATH, ARC-Challenge, OpenOrca/Orca-2
+- ☐ `ReasoningDataset`: parse (input, reasoning_trace, answer) triples; emit with/without trace per batch ratio
+- ☐ Training mix: 60% reasoned (gold trace) / 40% direct (GRU zeroed)
 
-Components:
-- ☐ GRU-only baseline: embed → stacked GRU → LM head (hidden state aligned to d_model)
-- ☐ Hybrid transformer-GRU variants: interleaved and parallel options
-- ☐ Reset GRU states at document boundaries
-
-Evaluation:
-- ☐ Run continual-learning comparison across transformer, GRU, and hybrid on static + streaming domains
-- ☐ Run NIAH at 512/1024/2048 for all models; test extrapolation to 4096 for GRU/hybrid
-- ☐ Compare at same data, param count, and training steps
-- ☐ Track metrics: perplexity, train/infer tokens-sec, latency per token (ms), peak memory vs sequence length
-- ☐ Characterize tradeoff: attention O(n²) vs GRU O(n) vs hybrid
-- ☐ Run ablations: GRU/attention layer ratios, placement, RoPE on attention path
+Training (Phase 7b — Feedback loop + bootstrap):
+- ☐ Inference feedback: prediction tokens feed back as GRU next input at each generation step
+- ☐ STaR bootstrap: generate reasoning traces on problems model answers correctly; SFT on self-generated traces
+- ☐ Evaluate: reasoning-enabled accuracy vs GRU-zeroed accuracy on held-out GSM8K/MATH/ARC
+- ☐ Latency benchmark: GRU-enabled vs transformer-only (target: <20% overhead at seq_len 512)
 
 **Exit Criteria**:
-- ☐ Hybrid matches/beats pure-transformer perplexity with better memory scaling
-- ☐ Comparison tables (perplexity, throughput, memory)
-- ☐ Generated text samples from all three (transformer, GRU, hybrid)
-- ☐ Incremental domain task stream (5–10 domains) fully integrated into evaluation suite
-- ☐ Catastrophic forgetting rate formally compared between Transformer, GRU, and Hybrid architectures
-- ☐ NIAH retrieval accuracy ≥90% at 2048 tokens (all architectures); GRU/hybrid maintains ≥80% at 4096 tokens (extrapolation)
+- ☐ Reasoning-enabled model >10% accuracy improvement over Phase 6 baseline on GSM8K
+- ☐ GRU-zeroed model matches Phase 6 baseline (graceful degradation verified)
+- ☐ GRU inference overhead <20% vs transformer-only at seq_len 512
+- ☐ 50K–500K reasoning trace triples curated and validated
+- ☐ STaR bootstrap corpus generated and SFT training completed
+- ☐ Scheduled teacher forcing convergence documented (reasoning quality vs gold-trace ratio curve)
 
 ---
 
