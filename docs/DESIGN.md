@@ -35,14 +35,14 @@
 title: Phase 2 – Skeleton
 ---
 graph TD
-    A[Text]:::io --> B[Char Tokenizer]:::p2 --> C[Token Emb + Learned Pos]:::p2 --> D[GELU MLP]:::p2 --> E[LM Head]:::p2 --> F[Logits]:::io
+    A[Text]:::io --> B[Char Tokenizer]:::p2 --> C[Token Emb]:::p2 --> D[GELU MLP]:::p2 --> E[LM Head]:::p2 --> F[Logits]:::io
     F -->|training| G[Cross-Entropy Loss]:::io
     F -->|inference| H[Greedy Sampling]:::p2 --> I[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
     classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
 ```
 
-- **Phase 2**: Text → Char Tokenizer → Token Emb + Learned Pos → GELU MLP → LM Head → Logits → Cross-Entropy Loss (training) / Greedy Sampling (inference) → Text
+- **Phase 2**: Text → Char Tokenizer → Token Emb (+ learned positional) → GELU MLP → LM Head → Logits → Cross-Entropy Loss (training) / Greedy Sampling (inference) → Text
 
 ---
 
@@ -51,7 +51,7 @@ graph TD
 title: Phase 3 – Minimal Transformer + Tokenizer Upgrade
 ---
 graph TD
-    A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb + Learned Pos]:::p2 --> Block
+    A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
         D[LayerNorm]:::p3 --> E[Multi-Head Attn]:::p3 --> F[+ Residual]:::p3 --> G[LayerNorm]:::p3 --> H[GELU FFN]:::p3 --> I[+ Residual]:::p3
@@ -64,7 +64,7 @@ graph TD
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
 ```
 
-- **Phase 3**: Text → **BPE Tokenizer** → Token Emb + Learned Pos → [**LayerNorm** → **Multi-Head Attn** → **GELU FFN**] × N → **LM Head** → Logits → **Sampler (temp/top-k/top-p)** → Text
+- **Phase 3**: Text → **BPE Tokenizer** → Token Emb (+ learned positional) → [**LayerNorm** → **Multi-Head Attn** → **GELU FFN**] × N → **LM Head** → Logits → **Sampler (temp/top-k/top-p)** → Text
 
 ---
 
