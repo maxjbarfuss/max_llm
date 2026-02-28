@@ -149,6 +149,34 @@ class TestLoadCheckpointIntoModel:
 class TestCreateTokenizerFromDataConfig:
     """Test tokenizer creation from data config."""
 
+    @patch("src.inference.utils.TokenizerFactory.create")
+    def test_create_bpe_tokenizer_uses_encoding(self, mock_create):
+        """Test BPE tokenizer creation uses encoding kwarg."""
+        data_config = Mock(spec=DataConfig)
+        data_config.tokenizer_name = "bpe"
+        data_config.tokenizer_mode = "utf8"
+        data_config.tokenizer_vocab_size = 256
+        data_config.tokenizer_backend = "gpt2_bpe"
+        data_config.unigram_model_path = None
+
+        create_tokenizer_from_data_config(data_config)
+
+        mock_create.assert_called_once_with("bpe", encoding="gpt2")
+
+    @patch("src.inference.utils.TokenizerFactory.create")
+    def test_create_unigram_tokenizer_uses_model_path(self, mock_create):
+        """Test unigram tokenizer creation forwards model_path."""
+        data_config = Mock(spec=DataConfig)
+        data_config.tokenizer_name = "unigram"
+        data_config.tokenizer_mode = "utf8"
+        data_config.tokenizer_vocab_size = 256
+        data_config.tokenizer_backend = "unigram"
+        data_config.unigram_model_path = "models/unigram.model"
+
+        create_tokenizer_from_data_config(data_config)
+
+        mock_create.assert_called_once_with("unigram", model_path="models/unigram.model")
+
     def test_create_utf8_tokenizer(self):
         """Test creating UTF-8 tokenizer."""
         config = ExperimentConfig.from_toml("config/experiment.toml")

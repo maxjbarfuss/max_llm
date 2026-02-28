@@ -172,7 +172,7 @@ class TestCreateSimpleLoaders:
         seq_len = 8
         tokens = self._tokens(100)
         total_samples = len(tokens) // (seq_len + 1)  # 11
-        train_loader, val_loader = create_simple_loaders(tokens, seq_len, batch_size=4)
+        train_loader, val_loader, _ = create_simple_loaders(tokens, seq_len, batch_size=4)
         assert len(train_loader.dataset) + len(val_loader.dataset) == total_samples  # type: ignore[arg-type]
 
     def test_validation_split_respected(self):
@@ -180,7 +180,9 @@ class TestCreateSimpleLoaders:
         seq_len = 4
         tokens = self._tokens(100)
         total_samples = len(tokens) // (seq_len + 1)  # 20
-        _, val_loader = create_simple_loaders(tokens, seq_len, batch_size=2, validation_split=0.2)
+        _, val_loader, _ = create_simple_loaders(
+            tokens, seq_len, batch_size=2, validation_split=0.2
+        )
         expected_val = int(total_samples * 0.2)
         assert len(val_loader.dataset) == expected_val  # type: ignore[arg-type]
 
@@ -188,7 +190,7 @@ class TestCreateSimpleLoaders:
         """Each input token sequence is shifted by one to produce the target."""
         seq_len = 4
         tokens = torch.arange(20, dtype=torch.long)
-        train_loader, _ = create_simple_loaders(
+        train_loader, _, _ = create_simple_loaders(
             tokens, seq_len, batch_size=20, validation_split=0.0
         )
         for x, y in train_loader:
@@ -201,7 +203,7 @@ class TestCreateSimpleLoaders:
         seq_len = 3
         # 12 tokens → 3 samples of length 4 (seq_len+1), non-overlapping
         tokens = torch.arange(12, dtype=torch.long)
-        train_loader, _ = create_simple_loaders(
+        train_loader, _, _ = create_simple_loaders(
             tokens, seq_len, batch_size=10, validation_split=0.0
         )
         x_batch, _ = next(iter(train_loader))
@@ -216,13 +218,13 @@ class TestCreateSimpleLoaders:
         """Raises ValueError when token count < seq_len + 1."""
         tokens = torch.arange(5, dtype=torch.long)
         with pytest.raises(ValueError, match="Not enough tokens"):
-            create_simple_loaders(tokens, seq_len=10, batch_size=1)
+            create_simple_loaders(tokens, seq_len=10, batch_size=1)  # Returns 3 values now
 
     def test_batch_shape_is_correct(self):
         """Each batch has shape (batch_size, seq_len)."""
         seq_len = 8
         tokens = self._tokens(200)
-        train_loader, _ = create_simple_loaders(tokens, seq_len, batch_size=4)
+        train_loader, _, _ = create_simple_loaders(tokens, seq_len, batch_size=4)
         x, y = next(iter(train_loader))
         assert x.shape == (4, seq_len)
         assert y.shape == (4, seq_len)

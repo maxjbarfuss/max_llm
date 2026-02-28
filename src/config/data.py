@@ -26,7 +26,9 @@ class DataConfig:
     cache_dir: str
     num_shards: int
     validation_split: float | int
-    seed: int
+    validation_dataset_path: str | None = None
+    test_dataset_path: str | None = None
+    seed: int = 42
 
     def _validate_split(self) -> None:
         if isinstance(self.validation_split, float):
@@ -60,4 +62,8 @@ class DataConfig:
         # TOML has no null; coerce empty string to None
         if not str(data.get("unigram_model_path", "")).strip():
             data["unigram_model_path"] = None
+        if not str(data.get("validation_dataset_path", "")).strip():
+            data["validation_dataset_path"] = None
+        if not str(data.get("test_dataset_path", "")).strip():
+            data["test_dataset_path"] = None
         return cls(**data)

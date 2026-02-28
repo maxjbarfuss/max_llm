@@ -7,7 +7,7 @@ from typing import Any
 import torch
 
 from src.config.experiment import DataConfig
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import BaseLearningModel
 from src.tokenizer import Tokenizer, TokenizerFactory
 
 
@@ -30,7 +30,7 @@ def resolve_device(device_spec: str) -> torch.device:
 
 
 def load_checkpoint_into_model(
-    model: SimpleLM,
+    model: BaseLearningModel,
     checkpoint_path: str,
     device: torch.device,
 ) -> None:
@@ -87,7 +87,15 @@ def create_tokenizer_from_data_config(data_config: DataConfig) -> Tokenizer:
         >>> config = ExperimentConfig.from_toml("config/experiment.toml")
         >>> tokenizer = create_tokenizer_from_data_config(config.data)
     """
-    tokenizer_kwargs: dict[str, Any] = {"mode": data_config.tokenizer_mode}
-    if data_config.tokenizer_mode == "codepoint":
-        tokenizer_kwargs["vocab_size"] = data_config.tokenizer_vocab_size
+    tokenizer_kwargs: dict[str, Any]
+    if data_config.tokenizer_name == "bpe":
+        tokenizer_kwargs = {"encoding": "gpt2"}
+    elif data_config.tokenizer_name == "unigram":
+        if not data_config.unigram_model_path:
+            raise ValueError("unigram_model_path is required for unigram tokenizer")
+        tokenizer_kwargs = {"model_path": data_config.unigram_model_path}
+    else:
+        tokenizer_kwargs = {"mode": data_config.tokenizer_mode}
+        if data_config.tokenizer_mode == "codepoint":
+            tokenizer_kwargs["vocab_size"] = data_config.tokenizer_vocab_size
     return TokenizerFactory.create(data_config.tokenizer_name, **tokenizer_kwargs)

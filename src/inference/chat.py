@@ -24,7 +24,7 @@ from src.inference.utils import (
     load_checkpoint_into_model,
     resolve_device,
 )
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import AttentionLM, BaseLearningModel, DecoderLM, SimpleLM
 from src.tokenizer import Tokenizer
 
 
@@ -32,7 +32,7 @@ def load_checkpoint_model(
     config_path: str,
     checkpoint_path: str | None = None,
     device: str = "auto",
-) -> tuple[SimpleLM, Tokenizer, ExperimentConfig, torch.device]:
+) -> tuple[BaseLearningModel, Tokenizer, ExperimentConfig, torch.device]:
     """Load model from checkpoint.
 
     Args:
@@ -50,8 +50,19 @@ def load_checkpoint_model(
     device_obj = resolve_device(device)
     print(f"📍 Device: {device_obj}")
 
-    # Create model
-    model = SimpleLM.from_config(config.model).to(device_obj)
+    # Create model based on model_type
+    model: BaseLearningModel
+    if config.model.model_type == "simple_lm":
+        model = SimpleLM.from_config(config.model).to(device_obj)
+    elif config.model.model_type == "attention_lm":
+        model = AttentionLM.from_config(config.model).to(device_obj)
+    elif config.model.model_type == "decoder_lm":
+        model = DecoderLM.from_config(config.model).to(device_obj)
+    else:
+        raise ValueError(
+            f"Unknown model_type: {config.model.model_type}. "
+            "Supported types: simple_lm, attention_lm, decoder_lm"
+        )
 
     # Load checkpoint if provided
     if checkpoint_path:
@@ -76,7 +87,7 @@ def load_checkpoint_model(
 
 
 def chat_mode(
-    model: SimpleLM,
+    model: BaseLearningModel,
     tokenizer: Tokenizer,
     config: ExperimentConfig,
     device: torch.device,

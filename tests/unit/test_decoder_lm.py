@@ -16,6 +16,7 @@ class TestDecoderLM:
             d_model=64,
             num_layers=2,
             num_heads=4,
+            attention_backend="standard",
         )
         x = torch.randint(0, 256, (2, 8))  # (batch, seq_len) of token IDs
         out = model(x)
@@ -28,6 +29,7 @@ class TestDecoderLM:
             d_model=128,
             num_layers=2,
             num_heads=8,
+            attention_backend="standard",
         )
         x = torch.randint(0, 256, (1, 16))
         out = model(x)
@@ -35,31 +37,41 @@ class TestDecoderLM:
 
     def test_has_embeddings(self) -> None:
         """Must have token and position embeddings."""
-        model = DecoderLM(vocab_size=256, d_model=64, num_layers=2, num_heads=4)
+        model = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         assert hasattr(model, "token_embedding")
         assert hasattr(model, "position_embedding")
 
     def test_has_transformer_blocks(self) -> None:
         """Must have transformer blocks."""
-        model = DecoderLM(vocab_size=256, d_model=64, num_layers=3, num_heads=4)
+        model = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=3, num_heads=4, attention_backend="standard"
+        )
         assert hasattr(model, "blocks")
         assert len(model.blocks) == 3
 
     def test_has_lm_head(self) -> None:
         """Must have an LM head for output projection."""
-        model = DecoderLM(vocab_size=256, d_model=64, num_layers=2, num_heads=4)
+        model = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         assert hasattr(model, "lm_head")
         assert isinstance(model.lm_head, torch.nn.Linear)
 
     def test_weight_tied_embeddings(self) -> None:
         """LM head should share weights with token embedding (weight tying)."""
-        model = DecoderLM(vocab_size=256, d_model=64, num_layers=2, num_heads=4)
+        model = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         # Check that LM head weight is tied (same data pointer)
         assert torch.equal(model.lm_head.weight, model.token_embedding.embedding.weight)
 
     def test_single_token(self) -> None:
         """Should handle single token input."""
-        model = DecoderLM(vocab_size=256, d_model=64, num_layers=2, num_heads=4)
+        model = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         x = torch.tensor([[42]])  # Single token
         out = model(x)
         assert out.shape == (1, 1, 256)
@@ -72,6 +84,7 @@ class TestDecoderLM:
             num_layers=2,
             num_heads=4,
             max_seq_len=512,
+            attention_backend="standard",
         )
         x = torch.randint(0, 256, (2, 256))  # Longer sequence
         out = model(x)
@@ -85,6 +98,7 @@ class TestDecoderLM:
                 d_model=64,
                 num_layers=2,
                 num_heads=4,
+                attention_backend="standard",
             )
             x = torch.randint(0, vocab_size, (1, 8))
             out = model(x)
@@ -98,6 +112,7 @@ class TestDecoderLM:
                 d_model=64,
                 num_layers=num_layers,
                 num_heads=4,
+                attention_backend="standard",
             )
             x = torch.randint(0, 256, (1, 8))
             out = model(x)
@@ -106,7 +121,9 @@ class TestDecoderLM:
 
     def test_gradient_flow(self) -> None:
         """Gradients should flow through the entire model."""
-        model = DecoderLM(vocab_size=256, d_model=32, num_layers=2, num_heads=4)
+        model = DecoderLM(
+            vocab_size=256, d_model=32, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         x = torch.randint(0, 256, (1, 4))
         out = model(x)
         loss = out.sum()
@@ -120,7 +137,9 @@ class TestDecoderLM:
 
     def test_output_changes_with_different_inputs(self) -> None:
         """Different inputs should produce different outputs."""
-        model = DecoderLM(vocab_size=256, d_model=64, num_layers=2, num_heads=4)
+        model = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         x1 = torch.randint(0, 256, (1, 8))
         x2 = torch.randint(0, 256, (1, 8))
         out1 = model(x1)
@@ -130,14 +149,22 @@ class TestDecoderLM:
     def test_token_in_valid_range(self) -> None:
         """Should handle all valid token IDs."""
         vocab_size = 100
-        model = DecoderLM(vocab_size=vocab_size, d_model=32, num_layers=2, num_heads=4)
+        model = DecoderLM(
+            vocab_size=vocab_size,
+            d_model=32,
+            num_layers=2,
+            num_heads=4,
+            attention_backend="standard",
+        )
         x = torch.randint(0, vocab_size, (1, 16))
         out = model(x)
         assert out.shape == (1, 16, vocab_size)
 
     def test_batch_size_variation(self) -> None:
         """Should work with different batch sizes."""
-        model = DecoderLM(vocab_size=256, d_model=64, num_layers=2, num_heads=4)
+        model = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         for batch_size in [1, 2, 4, 8]:
             x = torch.randint(0, 256, (batch_size, 8))
             out = model(x)
@@ -145,7 +172,9 @@ class TestDecoderLM:
 
     def test_final_layer_norm(self) -> None:
         """Should have final layer norm before LM head."""
-        model = DecoderLM(vocab_size=256, d_model=64, num_layers=2, num_heads=4)
+        model = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         assert hasattr(model, "final_norm")
         assert isinstance(model.final_norm, torch.nn.LayerNorm)
 
@@ -157,11 +186,14 @@ class TestDecoderLM:
                 d_model=63,
                 num_layers=2,
                 num_heads=4,
+                attention_backend="standard",
             )
 
     def test_logits_can_be_sampled(self) -> None:
         """Output logits should be suitable for sampling (finite values)."""
-        model = DecoderLM(vocab_size=256, d_model=64, num_layers=2, num_heads=4)
+        model = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         model.eval()
         x = torch.randint(0, 256, (1, 8))
         with torch.no_grad():
@@ -177,12 +209,16 @@ class TestDecoderLM:
         x = torch.randint(0, 256, (1, 4))
 
         torch.manual_seed(42)
-        model1 = DecoderLM(vocab_size=256, d_model=64, num_layers=2, num_heads=4)
+        model1 = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         model1.eval()
         out1 = model1(x)
 
         torch.manual_seed(42)
-        model2 = DecoderLM(vocab_size=256, d_model=64, num_layers=2, num_heads=4)
+        model2 = DecoderLM(
+            vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
+        )
         model2.eval()
         model2.load_state_dict(model1.state_dict())
         out2 = model2(x)

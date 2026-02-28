@@ -28,6 +28,8 @@ class AttentionLM(BaseLearningModel):
         num_heads: Number of attention heads.
         max_seq_len: Maximum sequence length for positional embeddings.
         dropout: Dropout probability (default: 0.0).
+        attention_backend: Attention backend to use (default: "flash").
+            Options: "flash", "sage", "xformers", "standard"
     """
 
     def __init__(
@@ -37,6 +39,7 @@ class AttentionLM(BaseLearningModel):
         num_heads: int,
         max_seq_len: int,
         dropout: float = 0.0,
+        attention_backend: str = "flash",
     ) -> None:
         super().__init__()
         self.vocab_size = vocab_size
@@ -53,7 +56,10 @@ class AttentionLM(BaseLearningModel):
 
         # Attention
         self.attention = CausalMultiHeadAttention(
-            d_model=d_model, num_heads=num_heads, dropout=dropout
+            d_model=d_model,
+            num_heads=num_heads,
+            dropout=dropout,
+            attention_backend=attention_backend,
         )
 
         # LM head (weight-tied to token embedding)
@@ -97,12 +103,22 @@ class AttentionLM(BaseLearningModel):
         return result
 
     @classmethod
-    def from_config(cls, config: ModelConfig) -> Self:
-        """Construct an AttentionLM from a ModelConfig."""
+    def from_config(cls, config: ModelConfig, attention_backend: str = "flash") -> Self:
+        """Construct an AttentionLM from a ModelConfig.
+
+        Args:
+            config: ModelConfig instance.
+            attention_backend: Attention backend to use (default: "flash").
+                Options: "flash", "sage", "xformers", "standard"
+
+        Returns:
+            AttentionLM instance.
+        """
         return cls(
             vocab_size=config.vocab_size,
             d_model=config.hidden_size,
             num_heads=config.num_heads,
             max_seq_len=config.max_seq_length,
             dropout=config.dropout,
+            attention_backend=attention_backend,
         )

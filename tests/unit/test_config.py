@@ -50,7 +50,7 @@ def make_training_config(**overrides):
         "log_interval": 100,
         "keep_last_n_checkpoints": 3,
         "use_torch_compile": True,
-        "use_flash_attention": True,
+        "attention_backend": "flash",
         "selective_checkpointing": True,
     }
     values.update(overrides)
@@ -389,7 +389,7 @@ eval_interval = 50
 log_interval = 10
 keep_last_n_checkpoints = 3
 use_torch_compile = true
-use_flash_attention = true
+attention_backend = "flash"
 selective_checkpointing = true
 
 [inference]
@@ -482,7 +482,7 @@ seed = 42
                     "log_interval = 10",
                     "keep_last_n_checkpoints = 3",
                     "use_torch_compile = true",
-                    "use_flash_attention = true",
+                    'attention_backend = "flash"',
                     "selective_checkpointing = true",
                 ]
             ),
@@ -559,7 +559,7 @@ class TestP2ExperimentToml:
         config = ExperimentConfig.from_toml(config_path)
         assert config.training.max_steps == 500
         assert config.training.use_torch_compile is False
-        assert config.training.use_flash_attention is False
+        assert config.training.attention_backend == "standard"
 
     def test_p2_toml_data_seq_length(self):
         """P2 data max_length is within model max_seq_length."""

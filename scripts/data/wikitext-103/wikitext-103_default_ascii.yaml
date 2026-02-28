@@ -1,15 +1,20 @@
 paths:
   source: /mnt/d/dev/data/wikitext-103-raw/train.txt
   output_dir: data/fast
-  normalized_path: /mnt/d/dev/data/wikitext-103-raw/train_normalized.txt
-  token_cache_path: /mnt/d/dev/data/wikitext-103-raw/train_normalized_tokens__cp128.npy
   subset_tokens_path: data/fast/wikitext_5m_tokens__cp128.npy
   metadata_path: data/fast/wikitext_5m_tokens__cp128.meta.json
+
+storage:
+  fast_output_dir: data/fast
+  slow_cache_dir: /mnt/d/dev/data/wikitext-103-raw/max_llm_cache
 
 workflow:
   normalize: false
   tokenize: true
   force: false
+  normalized_cache_policy: cache
+  token_cache_policy: cache
+  cleanup_intermediate: true
 
 cutoff:
   mode: none

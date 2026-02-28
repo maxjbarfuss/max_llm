@@ -50,6 +50,7 @@ class TestDecoderLMIntegration:
             d_model=64,
             num_layers=2,
             num_heads=4,
+            attention_backend="standard",
         )
 
         # Create optimizer
@@ -99,6 +100,7 @@ class TestDecoderLMIntegration:
             d_model=32,
             num_layers=1,
             num_heads=4,
+            attention_backend="standard",
         )
 
         # Create optimizer
@@ -152,6 +154,7 @@ class TestDecoderLMIntegration:
             d_model=64,
             num_layers=2,
             num_heads=4,
+            attention_backend="standard",
         )
 
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -198,6 +201,7 @@ class TestDecoderLMIntegration:
             d_model=16,
             num_layers=1,
             num_heads=2,
+            attention_backend="standard",
         )
 
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)

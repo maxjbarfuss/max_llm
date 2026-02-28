@@ -27,6 +27,49 @@ from src.tokenizer import TokenizerFactory
 console = Console()
 
 
+def _print_tokenizer_config(
+    tokenizer_name: str,
+    tokenizer_mode: str,
+    vocab_size: int,
+    encoding: str,
+    model_path: str | None,
+) -> None:
+    """Print tokenizer configuration to console."""
+    console.print(f"  Tokenizer: {tokenizer_name}")
+    if tokenizer_name == "bpe":
+        console.print(f"  Encoding: {encoding}")
+    elif tokenizer_name == "unigram":
+        console.print(f"  Model: {model_path}")
+    else:
+        console.print(f"  Mode: {tokenizer_mode}")
+        if tokenizer_mode == "codepoint":
+            console.print(f"  Vocab size: {vocab_size}")
+
+
+def _create_tokenizer(
+    tokenizer_name: str,
+    tokenizer_mode: str,
+    vocab_size: int,
+    encoding: str,
+    model_path: str | None,
+):
+    """Create tokenizer based on configuration."""
+    if tokenizer_name == "bpe":
+        return TokenizerFactory.create(tokenizer_name, encoding=encoding)
+    elif tokenizer_name == "unigram":
+        if not model_path:
+            raise ValueError("--model-path is required when --tokenizer unigram")
+        return TokenizerFactory.create(tokenizer_name, model_path=model_path)
+    elif tokenizer_mode == "codepoint":
+        return TokenizerFactory.create(
+            tokenizer_name,
+            mode=tokenizer_mode,
+            vocab_size=vocab_size,
+        )
+    else:
+        return TokenizerFactory.create(tokenizer_name, mode=tokenizer_mode)
+
+
 def tokenize_dataset(
     input_path: Path,
     output_path: Path,
@@ -34,6 +77,7 @@ def tokenize_dataset(
     tokenizer_mode: str = "codepoint",
     vocab_size: int = 128,
     encoding: str = "gpt2",
+    model_path: str | None = None,
     chunk_size: int = 100_000,  # Process in chunks to show progress
 ) -> None:
     """Tokenize text dataset and save as numpy array.
@@ -45,18 +89,13 @@ def tokenize_dataset(
         tokenizer_mode: Tokenizer mode for char tokenizer (codepoint, utf8, utf16, utf32)
         vocab_size: Vocabulary size for codepoint mode (default: 128)
         encoding: tiktoken encoding name for BPE tokenizer (default: 'gpt2')
+        model_path: sentencepiece model path for Unigram tokenizer
         chunk_size: Characters to process per chunk for progress display
     """
     console.print("[bold blue]Tokenizing dataset[/bold blue]")
     console.print(f"  Input: {input_path}")
     console.print(f"  Output: {output_path}")
-    console.print(f"  Tokenizer: {tokenizer_name}")
-    if tokenizer_name == "bpe":
-        console.print(f"  Encoding: {encoding}")
-    else:
-        console.print(f"  Mode: {tokenizer_mode}")
-        if tokenizer_mode == "codepoint":
-            console.print(f"  Vocab size: {vocab_size}")
+    _print_tokenizer_config(tokenizer_name, tokenizer_mode, vocab_size, encoding, model_path)
 
     if not input_path.exists():
         console.print(f"[bold red]Error:[/bold red] Input file not found: {input_path}")
@@ -67,16 +106,9 @@ def tokenize_dataset(
 
     # Load tokenizer
     try:
-        if tokenizer_name == "bpe":
-            tokenizer = TokenizerFactory.create(tokenizer_name, encoding=encoding)
-        elif tokenizer_mode == "codepoint":
-            tokenizer = TokenizerFactory.create(
-                tokenizer_name,
-                mode=tokenizer_mode,
-                vocab_size=vocab_size,
-            )
-        else:
-            tokenizer = TokenizerFactory.create(tokenizer_name, mode=tokenizer_mode)
+        tokenizer = _create_tokenizer(
+            tokenizer_name, tokenizer_mode, vocab_size, encoding, model_path
+        )
     except Exception as e:
         console.print(f"[bold red]Error loading tokenizer:[/bold red] {e}")
         sys.exit(1)
@@ -182,6 +214,11 @@ Examples:
         default="gpt2",
         help="tiktoken encoding for BPE tokenizer (default: gpt2)",
     )
+    parser.add_argument(
+        "--model-path",
+        default=None,
+        help="SentencePiece .model path for Unigram tokenizer",
+    )
 
     args = parser.parse_args()
 
@@ -192,6 +229,7 @@ Examples:
         tokenizer_mode=args.mode,
         vocab_size=args.vocab_size,
         encoding=args.encoding,
+        model_path=args.model_path,
     )
 
 

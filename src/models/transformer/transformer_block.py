@@ -21,6 +21,8 @@ class TransformerBlock(nn.Module):
         num_heads: Number of attention heads.
         dropout: Dropout probability (default: 0.0).
         ff_expansion_ratio: Expansion ratio for hidden dimension in FFN (default: 4).
+        attention_backend: Attention backend to use (default: "flash").
+            Options: "flash", "sage", "xformers", "standard"
 
     Attributes:
         norm1: Pre-norm for attention.
@@ -35,6 +37,7 @@ class TransformerBlock(nn.Module):
         num_heads: int,
         dropout: float = 0.0,
         ff_expansion_ratio: int = 4,
+        attention_backend: str = "flash",
     ) -> None:
         super().__init__()
         assert (
@@ -49,7 +52,7 @@ class TransformerBlock(nn.Module):
         self.norm2 = nn.LayerNorm(d_model)
 
         # Attention and feedforward
-        self.attention = CausalMultiHeadAttention(d_model, num_heads, dropout)
+        self.attention = CausalMultiHeadAttention(d_model, num_heads, dropout, attention_backend)
         self.feedforward = FeedForward(d_model, ff_expansion_ratio, dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

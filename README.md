@@ -1,6 +1,6 @@
 # Max LLM
 
-Hands-on LLM research lab for building, training, and evaluating modern architectures on local hardware.
+LLM research lab for building, training, and evaluating modern architectures on local hardware.
 
 **Status:** Current phase and progress live in [docs/SESSION.md](docs/SESSION.md) and [docs/PLAN.md](docs/PLAN.md).
 
@@ -9,41 +9,41 @@ Hands-on LLM research lab for building, training, and evaluating modern architec
 
 ## Why This Project?
 
-**Learn by building.** Hands-on lab for modern sequence modeling where architecture and training decisions are tested, measured, and explained through incremental implementation.
+**Learn by building.** Modern sequence modeling lab where architecture and training decisions are tested, measured, and explained through incremental implementation.
 
-**Experiment locally.** Optimized for consumer dual-GPU hardware and fast iteration. Validates tradeoffs in throughput, memory, and quality without cloud infrastructure.
+**Experiment locally.** Optimized for dual-GPU hardware and fast iteration. Validates throughput, memory, and quality tradeoffs without cloud infrastructure.
 
-**Reproducibility by design.** Configs, seeds, checkpoints, and data pipeline tracked for reliable re-runs. Test-driven development with measurable validation at each phase.
+**Reproducible.** Configs, seeds, checkpoints, and data tracked for reliable re-runs. TDD with measurable validation at each phase.
 
 ---
 
 ## Quick Start
 
-Start with setup, then pick the entrypoint you need:
+Setup, then pick your entrypoint:
 
-- [scripts/setup/README.md](scripts/setup/README.md): full environment setup steps and platform requirements
-- [scripts/build/README.md](scripts/build/README.md): C++ build wrapper and common build modes
-- [scripts/data/README.md](scripts/data/README.md): end-to-end data prep workflow with various configurations and datasets
-- [src/training/README.md](src/training/README.md): how to run training with various configurations
-- [src/inference/README.md](src/inference/README.md): how to run inference on multiple configurations
-- [tests/README.md](tests/README.md): how to run tests from the repo root or the tests/ folder
+- [scripts/setup/README.md](scripts/setup/README.md): environment setup and platform requirements
+- [scripts/build/README.md](scripts/build/README.md): C++ build wrapper and modes
+- [scripts/data/README.md](scripts/data/README.md): data prep workflow
+- [src/training/README.md](src/training/README.md): training configurations
+- [src/inference/README.md](src/inference/README.md): inference configurations
+- [tests/README.md](tests/README.md): test execution
 
-Docs and policies:
+Docs:
 
-- [docs/SESSION.md](docs/SESSION.md): current focus, next steps, and session log (start here for status)
-- [docs/PLAN.md](docs/PLAN.md): phased execution roadmap and exit criteria (reference for current phase)
-- [docs/DESIGN.md](docs/DESIGN.md): architecture, engineering constraints, and data strategy
-- [CONTRIBUTING.md](CONTRIBUTING.md): repository workflow and contributor authorization
-- [.github/AGENTS.md](.github/AGENTS.md): AI agent standard — open, interoperable specification for any agent (Claude, o1, custom models)
-- [.github/SKILLS.md](.github/SKILLS.md): AI agent instructions and working discipline
-- [.github/LESSONS.md](.github/LESSONS.md): recorded agent mistake patterns (read before each session)
-- [.github/CODEOWNERS](.github/CODEOWNERS): code ownership and review responsibility
+- [docs/SESSION.md](docs/SESSION.md): current focus, next steps, session log
+- [docs/PLAN.md](docs/PLAN.md): phased roadmap and exit criteria
+- [docs/DESIGN.md](docs/DESIGN.md): architecture, engineering constraints, data strategy
+- [CONTRIBUTING.md](CONTRIBUTING.md): workflow and contributor authorization
+- [.github/AGENTS.md](.github/AGENTS.md): AI agent standard (Claude, o1, custom models)
+- [.github/SKILLS.md](.github/SKILLS.md): AI agent instructions
+- [.github/LESSONS.md](.github/LESSONS.md): agent mistake patterns
+- [.github/CODEOWNERS](.github/CODEOWNERS): code ownership
 
 ## Design
 
-**7-phase progression** (100–500M params on dual-GPU hardware): minimal working model → incremental architectural upgrades → full pretraining → post-training alignment. Each phase produces a working text-in → text-out LLM with measurable validation.
+**7-phase progression** (100–500M params on dual-GPU): minimal model → architectural upgrades → pretraining → post-training alignment. Each phase produces working text-in → text-out LLM with measurable validation.
 
-**Final architecture (Phase 7):** Transformer with modern optimizations (RMSNorm, RoPE, MLA, sparse MoE) + dual-stream reasoning (GRU reasoning + transformer streams → GRU combiner). Solid rectangles show Phase 7 components; rounded pills show replaced predecessors color-coded by introduction phase.
+**Final architecture (Phase 7):** Transformer with modern optimizations (RMSNorm, RoPE, MLA, sparse MoE) + dual-stream reasoning (GRU streams → GRU combiner). Solid rectangles show Phase 7 components; rounded pills show replaced predecessors.
 
 ```mermaid
 graph TD
@@ -97,29 +97,29 @@ graph TD
 
 | Color | Phase | Component |
 |-------|-------|-----------|
-| ⬛ Black | — | I/O: Text Input, Logits, Loss, Generated Text |
+| ⬛ Black | — | I/O (Text Input, Logits, Loss, Generated Text) |
 | 🟢 Green | 2 | Token Embedding |
-| 🔵 Blue | 3 | Residual connections, LM Head, BPE / Unigram Tokenizer |
-| 🟠 Orange | 4 | RMSNorm, RoPE, GQA (Llama-Style Upgrades; GQA replaced in Phase 7) |
-| 🟣 Purple | 5 | **LoRA** adapters (parameter-efficient fine-tuning), **Reward model** (for DPO alignment), **Sampler** (top-p/temperature/top-k), **KV-cache** optimization, DPO/RLHF, SFT, grounding |
-| 🔴 Red | 6 | MLA (replaces GQA), MoE Sparse SwiGLU (replaces dense GQA FFN) |
-| 🟡 Yellow | 7 | GRU Reasoning Stream (parallel to transformer), GRU Combiner (gated fusion) |
-| Rounded pill | — | Replaced predecessors (colored by introducing phase) |
+| 🔵 Blue | 3 | Residual, LM Head, BPE/Unigram Tokenizer |
+| 🟠 Orange | 4 | RMSNorm, RoPE, GQA (replaced by MLA in P6) |
+| 🟣 Purple | 5 | LoRA, Reward model, Sampler (top-p/temp/top-k), KV-cache, DPO/RLHF, SFT, grounding |
+| 🔴 Red | 6 | MLA (replaces GQA), MoE Sparse SwiGLU |
+| 🟡 Yellow | 7 | GRU Reasoning Stream, GRU Combiner |
+| Rounded pill | — | Replaced predecessors |
 
 ### Data Strategy
 
-**1–500M token progression** across 7 phases: toy datasets (Phase 2–3) → unrestricted pretraining with curriculum learning (Phase 4: 75% neutral/technical, 20% adult/controversial, 5% harmful) → post-training alignment (Phase 5–7: SFT, grounding, preference data, reasoning traces). Safety guardrails applied via post-training after establishing comprehensive generalization.
+**1–500M tokens** across 7 phases: toy datasets (P2–3) → unrestricted pretraining with curriculum (P4: 75% neutral, 20% controversial, 5% harmful) → post-training alignment (P5–7: SFT, grounding, preference, reasoning traces). Safety applied post-training.
 
 | Phase | Tokens | Data Sources & Purpose | Training Configuration |
 |-------|--------|------------------------|------------------------|
-| **2** | 1–10M | **TinyStories + WikiText-103** — establish reproducibility, overfit tests, seed hardening | Single-GPU, char tokenizer, learning loop validation |
-| **3** | 10–50M | **WikiText BPE (442K tokens, 4.54 chars/token)** — single-GPU training stability, baseline transformer | Single-GPU, BPE tokenizer, attention + FFN, LR scheduling |
-| **4** | 10–500M | **OpenWebText (10–50M) → FineWeb (50–100M) → Curriculum (100–500M)** — staged introduction: 75% neutral/technical, 20% adult/controversial, 5% harmful; curriculum learning based on validation loss | Multi-GPU (DDP/FSDP), distributed training, torch.compile, chunked token caching |
-| **5** | 1–5M SFT<br/>50K–500K grounding<br/>10K–100K preference | **SFT pairs** (OpenAssistant, ShareGPT) + **grounding** (GSM8K, MATH, ARC) + **preference data** (HH-RLHF, UltraFeedback) + 5–10% harmful for robustness | LoRA fine-tuning, KV-cache inference, DPO alignment, reward modeling |
-| **6** | 1–5M pairs | **Partitioned SFT + preference data by topic/domain** — drive expert specialization; curriculum scheduling for expert drift monitoring | MoE routing diagnostics, expert utilization entropy tracking |
-| **7** | 50K–500K triples | **Reasoning traces** (GSM8K, MATH, ARC-Challenge, OpenOrca/Orca-2) + **STaR self-generated** — 60% reasoned / 40% direct mix | Dual-stream training with teacher forcing, reasoning accuracy validation |
+| **2** | 1–10M | **TinyStories + WikiText-103** — reproducibility, overfit tests, seed hardening | Single-GPU, char tokenizer, learning loop validation |
+| **3** | 10–50M | **WikiText BPE (442K tokens, 4.54 chars/token)** — decoder architecture, training stability, optimizations (multi-backend attention, DataLoader, torch.compile, DDP) | Multi-backend attention (Flash/Sage/xFormers), DataLoader optimization, torch.compile, DDP (2 GPUs) |
+| **4** | 10–500M | **OpenWebText (10–50M) → FineWeb (50–100M) → Curriculum (100–500M)** — Llama architecture (RMSNorm, RoPE, SwiGLU, GQA); staged curriculum: 75% neutral, 20% controversial, 5% harmful | FSDP for 300M+ params, chunked token caching |
+| **5** | 1–5M SFT<br/>50K–500K grounding<br/>10K–100K preference | **SFT** (OpenAssistant, ShareGPT) + **grounding** (GSM8K, MATH, ARC) + **preference** (HH-RLHF, UltraFeedback) + 5–10% harmful | LoRA, KV-cache, DPO, reward modeling |
+| **6** | 1–5M pairs | **Partitioned SFT + preference** by topic/domain — expert specialization; curriculum for expert drift monitoring | MoE routing diagnostics, expert utilization tracking |
+| **7** | 50K–500K triples | **Reasoning traces** (GSM8K, MATH, ARC-Challenge, OpenOrca) + **STaR self-generated** — 60% reasoned / 40% direct | Dual-stream training, teacher forcing, reasoning accuracy validation |
 
-**Full details:** Architecture decisions, component rationale, training efficiency (BF16/FP8), data sourcing principles, and engineering constraints in [docs/DESIGN.md](docs/DESIGN.md).
+**Details:** [docs/DESIGN.md](docs/DESIGN.md) for architecture, training efficiency (BF16/FP8), data sourcing, engineering constraints.
 
 ## License
 

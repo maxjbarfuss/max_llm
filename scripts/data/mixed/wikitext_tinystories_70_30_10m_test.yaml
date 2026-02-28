@@ -1,0 +1,28 @@
+paths:
+  source: data/fast/wikitext_tinystories_70_30_10m_test.txt
+  output_dir: data/fast
+  subset_tokens_path: data/fast/wikitext_tinystories_70_30_10m_test_tokens__bpe.npy
+  metadata_path: data/fast/wikitext_tinystories_70_30_10m_test_tokens__bpe.meta.json
+
+storage:
+  fast_output_dir: data/fast
+  slow_cache_dir: /mnt/d/dev/data/wikitext_tinystories_mixed_cache
+
+workflow:
+  normalize: false
+  tokenize: true
+  force: false
+  normalized_cache_policy: cache
+  token_cache_policy: cache
+  cleanup_intermediate: true
+
+cutoff:
+  mode: none
+
+subset:
+  size: 1M
+
+tokenizer:
+  name: bpe
+  encoding: gpt2
+  vocab_size: 50257

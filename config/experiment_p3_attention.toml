@@ -40,7 +40,7 @@ eval_interval = 100
 log_interval = 50
 keep_last_n_checkpoints = 3
 use_torch_compile = false
-use_flash_attention = false
+attention_backend = "standard"
 selective_checkpointing = false
 
 [inference]

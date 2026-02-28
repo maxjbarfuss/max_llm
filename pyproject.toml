@@ -55,6 +55,10 @@ warn_unused_ignores = true
 warn_no_return = true
 strict_optional = true
 
+[[tool.mypy.overrides]]
+module = ["flash_attn", "flash_attn.*", "xformers.*", "sageattention", "sageattention.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

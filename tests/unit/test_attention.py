@@ -11,14 +11,14 @@ from src.models.attention.causal_mha import CausalMultiHeadAttention
 class TestCausalMultiHeadAttention:
     def test_output_shape(self) -> None:
         """Output should be (batch, seq_len, d_model)."""
-        mha = CausalMultiHeadAttention(d_model=64, num_heads=4)
+        mha = CausalMultiHeadAttention(d_model=64, num_heads=4, attention_backend="standard")
         x = torch.randn(2, 8, 64)
         out = mha(x)
         assert out.shape == (2, 8, 64)
 
     def test_output_dtype_float32(self) -> None:
         """Output should be float32 by default."""
-        mha = CausalMultiHeadAttention(d_model=128, num_heads=8)
+        mha = CausalMultiHeadAttention(d_model=128, num_heads=8, attention_backend="standard")
         x = torch.randn(1, 16, 128)
         out = mha(x)
         assert out.dtype == torch.float32
@@ -33,7 +33,7 @@ class TestCausalMultiHeadAttention:
         4. Checking that the earlier token's output is unchanged
         """
         torch.manual_seed(42)
-        mha = CausalMultiHeadAttention(d_model=32, num_heads=2)
+        mha = CausalMultiHeadAttention(d_model=32, num_heads=2, attention_backend="standard")
         mha.eval()
 
         # Original sequence
@@ -56,7 +56,7 @@ class TestCausalMultiHeadAttention:
 
     def test_attention_output_changes_with_different_inputs(self) -> None:
         """Different inputs should produce different outputs."""
-        mha = CausalMultiHeadAttention(d_model=64, num_heads=4)
+        mha = CausalMultiHeadAttention(d_model=64, num_heads=4, attention_backend="standard")
         x1 = torch.randn(1, 8, 64)
         x2 = torch.randn(1, 8, 64)
         out1 = mha(x1)
@@ -66,18 +66,18 @@ class TestCausalMultiHeadAttention:
     def test_d_model_divisible_by_num_heads(self) -> None:
         """d_model must be divisible by num_heads."""
         with pytest.raises(AssertionError):
-            CausalMultiHeadAttention(d_model=63, num_heads=4)
+            CausalMultiHeadAttention(d_model=63, num_heads=4, attention_backend="standard")
 
     def test_single_token_sequence(self) -> None:
         """Should handle single-token sequences (T=1)."""
-        mha = CausalMultiHeadAttention(d_model=32, num_heads=2)
+        mha = CausalMultiHeadAttention(d_model=32, num_heads=2, attention_backend="standard")
         x = torch.randn(1, 1, 32)
         out = mha(x)
         assert out.shape == (1, 1, 32)
 
     def test_single_head_attention(self) -> None:
         """Should work with a single attention head."""
-        mha = CausalMultiHeadAttention(d_model=64, num_heads=1)
+        mha = CausalMultiHeadAttention(d_model=64, num_heads=1, attention_backend="standard")
         x = torch.randn(2, 10, 64)
         out = mha(x)
         assert out.shape == (2, 10, 64)
@@ -92,26 +92,26 @@ class TestCausalMultiHeadAttention:
 
     def test_large_batch_size(self) -> None:
         """Should handle large batch sizes."""
-        mha = CausalMultiHeadAttention(d_model=32, num_heads=4)
+        mha = CausalMultiHeadAttention(d_model=32, num_heads=4, attention_backend="standard")
         x = torch.randn(16, 8, 32)
         out = mha(x)
         assert out.shape == (16, 8, 32)
 
     def test_projection_layer_exists(self) -> None:
         """Should have Q, K, V projection layers."""
-        mha = CausalMultiHeadAttention(d_model=64, num_heads=4)
+        mha = CausalMultiHeadAttention(d_model=64, num_heads=4, attention_backend="standard")
         assert hasattr(mha, "q_proj")
         assert hasattr(mha, "k_proj")
         assert hasattr(mha, "v_proj")
 
     def test_output_projection_exists(self) -> None:
         """Should have an output projection layer."""
-        mha = CausalMultiHeadAttention(d_model=64, num_heads=4)
+        mha = CausalMultiHeadAttention(d_model=64, num_heads=4, attention_backend="standard")
         assert hasattr(mha, "out_proj")
 
     def test_deterministic_with_same_seed(self) -> None:
         """Same seed should produce identical outputs."""
-        mha = CausalMultiHeadAttention(d_model=32, num_heads=2)
+        mha = CausalMultiHeadAttention(d_model=32, num_heads=2, attention_backend="standard")
         x = torch.randn(1, 4, 32)
 
         torch.manual_seed(0)
@@ -131,7 +131,7 @@ class TestCausalMultiHeadAttention:
         This tests the correctness of the softmax normalization.
         """
         torch.manual_seed(42)
-        mha = CausalMultiHeadAttention(d_model=32, num_heads=2)
+        mha = CausalMultiHeadAttention(d_model=32, num_heads=2, attention_backend="standard")
         mha.eval()
 
         x = torch.randn(1, 4, 32)
@@ -166,7 +166,7 @@ class TestCausalMultiHeadAttention:
 
     def test_gradient_flows_backward(self) -> None:
         """Gradients should flow through the attention mechanism."""
-        mha = CausalMultiHeadAttention(d_model=32, num_heads=2)
+        mha = CausalMultiHeadAttention(d_model=32, num_heads=2, attention_backend="standard")
         x = torch.randn(1, 4, 32, requires_grad=True)
         out = mha(x)
         loss = out.sum()
@@ -176,8 +176,8 @@ class TestCausalMultiHeadAttention:
 
     def test_head_dim_computation(self) -> None:
         """head_dim should be d_model // num_heads."""
-        mha = CausalMultiHeadAttention(d_model=128, num_heads=8)
+        mha = CausalMultiHeadAttention(d_model=128, num_heads=8, attention_backend="standard")
         assert mha.head_dim == 16
 
-        mha2 = CausalMultiHeadAttention(d_model=64, num_heads=4)
+        mha2 = CausalMultiHeadAttention(d_model=64, num_heads=4, attention_backend="standard")
         assert mha2.head_dim == 16

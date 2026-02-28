@@ -15,5 +15,5 @@ eval_interval = 1000
 log_interval = 100
 keep_last_n_checkpoints = 3
 use_torch_compile = true
-use_flash_attention = true
+attention_backend = "flash"
 selective_checkpointing = true

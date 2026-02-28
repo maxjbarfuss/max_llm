@@ -28,7 +28,7 @@ class TrainingConfig:
     log_interval: int
     keep_last_n_checkpoints: int
     use_torch_compile: bool
-    use_flash_attention: bool
+    attention_backend: str
     selective_checkpointing: bool
 
     def __post_init__(self) -> None:

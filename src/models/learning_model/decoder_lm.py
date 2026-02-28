@@ -37,6 +37,8 @@ class DecoderLM(BaseLearningModel):
         dropout: Dropout probability (default: 0.0).
         ff_expansion_ratio: Expansion ratio for FFN hidden dimension (default: 4).
         max_seq_len: Maximum sequence length (default: 2048).
+        attention_backend: Attention backend to use (default: "flash").
+            Options: "flash", "sage", "xformers", "standard"
     """
 
     def __init__(
@@ -48,6 +50,7 @@ class DecoderLM(BaseLearningModel):
         dropout: float = 0.0,
         ff_expansion_ratio: int = 4,
         max_seq_len: int = 2048,
+        attention_backend: str = "flash",
     ) -> None:
         super().__init__()
         assert (
@@ -71,6 +74,7 @@ class DecoderLM(BaseLearningModel):
                     num_heads=num_heads,
                     dropout=dropout,
                     ff_expansion_ratio=ff_expansion_ratio,
+                    attention_backend=attention_backend,
                 )
                 for _ in range(num_layers)
             ]
@@ -122,8 +126,17 @@ class DecoderLM(BaseLearningModel):
         return result
 
     @classmethod
-    def from_config(cls, config: ModelConfig) -> Self:
-        """Construct a DecoderLM from a ModelConfig."""
+    def from_config(cls, config: ModelConfig, attention_backend: str = "flash") -> Self:
+        """Construct a DecoderLM from a ModelConfig.
+
+        Args:
+            config: ModelConfig instance.
+            attention_backend: Attention backend to use (default: "flash").
+                Options: "flash", "sage", "xformers", "standard"
+
+        Returns:
+            DecoderLM instance.
+        """
         return cls(
             vocab_size=config.vocab_size,
             d_model=config.hidden_size,
@@ -132,4 +145,5 @@ class DecoderLM(BaseLearningModel):
             dropout=config.dropout,
             ff_expansion_ratio=4,
             max_seq_len=config.max_seq_length,
+            attention_backend=attention_backend,
         )

@@ -9,7 +9,7 @@
 
 **Phase 3 — In Progress 🔄**
 
-Phase 3 continued. Completed end-to-end validation of the upgraded training loop on a combined WikiText+TinyStories UTF-8 corpus (3000 steps) with CUDA, AMP, warmup+cosine scheduling, gradient clipping, selective weight decay, gradient accumulation, and throughput/memory logging. Added a simple interactive stdin/stdout chat session for checkpoint validation. Next objective is explicit data scaling beyond this baseline corpus to improve learned capability on broader text.
+Completed xFormers bug fix (LowerTriangularMask for causal masking) and comprehensive documentation consolidation. Consolidated 6 scattered optimization docs into single OPTIMIZATION.md. Applied KISS/DRY principles across DESIGN.md (17% reduction), PLAN.md, and README.md. All phase documentation synchronized and concise. Multi-backend attention (Flash/Sage/xFormers/Standard) working. Next: Data scale-up (10M→50M→100M+ tokens), extended validation runs.
 
 ## Phase 3 Status
 
@@ -17,6 +17,17 @@ Phase 3 continued. Completed end-to-end validation of the upgraded training loop
 
 **Completed (all sessions):**
 - ✅ `src/tokenizer/bpe_tokenizer.py`: BPETokenizer wrapping tiktoken (gpt2/cl100k_base/o200k_base); `encode`/`decode`/`count_tokens`/`vocab_size`; accepts `**_kwargs` for config compat
+- ✅ `src/tokenizer/unigram_tokenizer.py`: UnigramTokenizer wrapping SentencePiece (`model_path` load + `train_model()` helper) integrated into TokenizerFactory as `"unigram"`
+- ✅ `src/tokenizer/benchmark.py` + `scripts/benchmark_tokenizers.py`: BPE vs Unigram benchmark utilities and CLI (compression + vocab diversity + encode throughput)
+- ✅ Data/inference/training tokenizer wiring updated for unigram (`model_path`) and bpe (`encoding`) paths: `src/data/pipeline/tokenize.py`, `scripts/data/run_data_prep.py`, `src/inference/utils.py`, `src/training/train.py`
+- ✅ Benchmark artifact generated on identical WikiText slice: `outputs/p3_tokenizer_benchmark_20260227_local.json` (BPE chars/token=4.608, ~7.28M toks/s; Unigram chars/token=4.018, ~4.84M toks/s)
+- ✅ **10M interleaved data-ramp pass executed (TinyStories BPE + WikiText BPE)**:
+  - Boundary-aware source extracts: `data/fast/wikitext_70m_docs.txt`, `data/fast/tinystories_70m_docs.txt`
+  - Randomized interleaved pages corpus: `data/fast/interleaved_wikitext_tinystories_50m_pages.txt` (+ metadata)
+  - BPE token cache: `data/fast/interleaved_wikitext_tinystories_50m_pages_bpe_gpt2.npy` (11,508,251 tokens)
+  - Ramp subset artifact: `data/fast/interleaved_wikitext_tinystories_10m_tokens_bpe_gpt2.npy` (10,000,000 tokens)
+  - Training run: `config/experiment_p3_interleaved_10m_bpe.toml` → `outputs/p3-interleaved-10m-bpe/checkpoint.pt`
+  - Metrics (1000 steps, CUDA): loss 10.83→6.08, ppl 50,307→435, throughput ~216k–239k tokens/s, memory ~704MB
 - ✅ `src/tokenizer/__init__.py`: BPETokenizer registered as `"bpe"` in TokenizerFactory
 - ✅ `src/models/embeddings/token_embedding.py`: TokenEmbedding (`vocab_size × d_model`), N(0, 0.02) init
 - ✅ `src/models/position/learned_position.py`: LearnedPositionEmbedding (`max_seq_len × d_model`), N(0, 0.02) init, returns `(1, T, d_model)` for broadcast
@@ -66,18 +77,43 @@ Phase 3 continued. Completed end-to-end validation of the upgraded training loop
     - `weight_decay=0.01` (small regularization)
     - `log_interval=25` (more frequent logging)
   - ✅ All features validated: scheduler monotonicity, parameter group separation, AMP fallback, gradient accumulation, throughput tracking
+- ✅ **NEW: Training optimizations (Phase 3.2)**:
+  - ✅ **Flash Attention 2 integration**: Added optional Flash Attention 2 support to `CausalMultiHeadAttention`; passes through `TransformerBlock`, `DecoderLM`, `AttentionLM`; controlled via `use_flash_attention` in config `[training]` section; gracefully falls back to standard attention if unavailable
+  - ✅ **DataLoader workers & prefetching**: Added `num_workers`, `prefetch_factor`, `pin_memory`, `persistent_workers` parameters to `create_simple_loaders()`; wired from `[data]` config section; eliminates data loading bottleneck that caused training hangs
+  - ✅ **torch.compile support**: Added optional `torch.compile(mode="max-autotune")` call after model creation; controlled via `use_torch_compile` in config; graceful fallback on failure; **note: incompatible with Flash Attention** (choose one)
+  - ✅ Created optimization documentation: `docs/OPTIMIZATION_PLAN.md` (detailed strategy), `docs/OPTIMIZATION_QUICKREF.md` (quick reference for config)
+  - ✅ Created optimized test config: `config/experiment_p3_optimized_test.toml` (num_workers=4, flash_attn=true, compile=false)
+  - ✅ Validated optimizations: 200-step test run successful (loss 10.83→7.62, ppl 50K→2028, throughput ~159-228k tokens/sec)
+- ✅ **NEW: Multi-GPU DDP + Profiling (Phase 3.3)**:
+  - ✅ **Distributed training module**: `src/training/distributed.py` with utilities for DDP initialization, rank management, model wrapping, sampler creation, and distributed synchronization
+  - ✅ **Profiling module**: `src/training/profiling.py` with Timer, GPUMemoryMonitor, ThroughputMonitor, PyTorch profiler integration, and model size logging
+  - ✅ **DDP integration into train.py**: Updated imports, added `--distributed` flag, distributed initialization, model wrapping, DDP-aware checkpoint saving, distributed cleanup
+  - ✅ **Launcher script**: `scripts/train_ddp.sh` for easy torchrun-based multi-GPU training
+  - ✅ **DDP test config**: `config/experiment_p3_ddp_test.toml` for validated multi-GPU runs
+  - ✅ **Comprehensive DDP guide**: `docs/DDP_GUIDE.md` with quick start, troubleshooting, best practices
+  - ✅ **Validated DDP**: 200-step test with 2 GPUs successful (identical loss across processes, gradient sync working, throughput ~50-57k per GPU)
+  - ✅ **All print statements updated**: Using `print_once()` for distributed training (only rank 0 prints)
+- ✅ **NEW: Multi-backend attention support (Phase 3.4)**:
+  - ✅ **Comprehensive backend integration**: Extended `CausalMultiHeadAttention` with Flash Attention 2, Sage Attention, xFormers, and Standard PyTorch backends
+  - ✅ **Automatic fallback**: Graceful degradation if preferred backend unavailable; config-selectable via `attention_backend` parameter
+  - ✅ **xFormers bug fix**: Fixed critical memory bug (materialized `[B, num_heads, T, T]` bias tensor) → replaced with `LowerTriangularMask()` for efficient causal masking
+  - ✅ **Validated all backends**: Flash, Sage, xFormers, Standard tested on training runs (200-1700+ steps)
+  - ✅ **Consolidated documentation**: Created `docs/OPTIMIZATION.md` from 6 scattered optimization docs (ATTENTION_BACKENDS.md, OPTIMIZATION_PLAN.md, OPTIMIZATION_QUICKREF.md, DDP_GUIDE.md, ATTENTION_BACKENDS_INTEGRATION.md, TRAINING_OPTIMIZATIONS.md)
+  - ✅ **Documentation cleanup**: Applied KISS/DRY across DESIGN.md (414→343 lines, 17% reduction), PLAN.md synchronized with DESIGN goals, README.md updated
 
 **Remaining Phase 3 work (next sessions):**
-- ☐ Tokenizer benchmark: BPE vs Unigram on identical corpus slices (compression + throughput)
-- ☐ Data strategy ramp (priority): scale from current baseline to larger corpora (10M → 50M → 100M+ token stages)
+- ☐ Tokenizer decision and migration note: document whether to keep BPE default vs promote Unigram on any axis without regressions
+- ☐ Data strategy ramp (priority): continue scaling beyond completed 10M stage to 50M → 100M+ token stages
 - ☐ TinyStories BPE retokenization (not yet present in `data/fast`; add BPE YAML + artifacts)
 - ☐ OpenWebText/FineWeb pipeline tasks: downloader + schema discovery + dedup + Parquet intermediate + chunked token cache
 - ☐ Data scale-up execution: prepare larger BPE training corpus and memory-mapped loader path
 - ☐ Loss-curve export pipeline (CSV/TensorBoard) for reproducible analysis artifacts
+- ☐ Extended DDP testing: longer runs (1000+ steps), multi-node setup validation
+- ☐ FSDP exploration (Phase 4 prep): ZeRO-style optimizer sharding for larger models
 
 ## Next Steps (Priority Order)
 
-⏭️ **Phase 3 continues**: data strategy ramp (10M → 50M → 100M+), tokenizer benchmark, larger BPE corpus prep, and training artifact export (CSV/TensorBoard)
+⏭️ **Phase 3 continues**: data strategy ramp (10M → 50M → 100M+), finalize tokenizer decision doc (BPE vs Unigram), larger BPE corpus prep, and training artifact export (CSV/TensorBoard)
 
 **Config-driven execution**: All data-prep driven by YAML configs in `scripts/data/<dataset>/`. Single runner:
 ```bash
@@ -91,7 +127,7 @@ See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) f
 
 > Ephemeral — clear this section at commit time. Use for in-progress notes only.
 
-Cleared at commit time.
+**xFormers bug fix + documentation consolidation (2026-02-28)**: Fixed critical `src/models/attention/causal_mha.py` xFormers bug—replaced massive materialized `[B, num_heads, T, T]` bias tensor with `LowerTriangularMask()` for efficient causal masking. Validated with 1700+ step training run (loss 7.99→6.43, ~175k tokens/s, stable 1567MB memory). Consolidated 6 scattered optimization docs (ATTENTION_BACKENDS.md, OPTIMIZATION_PLAN.md, OPTIMIZATION_QUICKREF.md, DDP_GUIDE.md, ATTENTION_BACKENDS_INTEGRATION.md, TRAINING_OPTIMIZATIONS.md) → `docs/OPTIMIZATION.md`. Applied comprehensive KISS/DRY pass: DESIGN.md (414→343 lines, 17% reduction), PLAN.md synchronized with DESIGN goals, README.md updated (Phase 3 shows optimizations completed, Phase 4 focuses on FSDP/Llama). All phase documentation concise and synchronized.
 
 ---
 
@@ -101,6 +137,10 @@ Cleared at commit time.
 
 | Date | Commit | Summary |
 |---|---|---|
+| 2026-02-28 | phase3 branch | **Phase 3 — xFormers fix + documentation consolidation**: Fixed xFormers causal attention bug (replaced materialized bias tensor with `LowerTriangularMask()`); validated 1700+ steps. Consolidated 6 scattered optimization docs → `docs/OPTIMIZATION.md` (backends matrix, DDP setup, torch.compile constraints, DataLoader tuning). Applied comprehensive KISS/DRY cleanup: `DESIGN.md` (414→343 lines, 17% reduction), `PLAN.md` synchronized with DESIGN goals (Phase 3 includes optimizations, Phase 4 cleaned of completed items), `README.md` updated (Phase 3 shows multi-backend attention/DDP/torch.compile completed). Deleted obsolete files: ATTENTION_BACKENDS.md, OPTIMIZATION_PLAN.md, OPTIMIZATION_QUICKREF.md, TRAINING_OPTIMIZATIONS.md, ATTENTION_BACKENDS_INTEGRATION.md, DDP_GUIDE.md. |
+| 2026-02-27 | phase3 branch | **Phase 3 — training optimizations to fix hangs**: Analyzed training hang issues on dual-GPU hardware (RTX 4090 + RTX 3090 Ti). Created `docs/OPTIMIZATION_PLAN.md` with comprehensive optimization strategy. Implemented: (1) Flash Attention 2 integration in `CausalMultiHeadAttention` with config flag `use_flash_attention` (2-4x attention speedup), (2) DataLoader workers/prefetching (`num_workers`, `prefetch_factor`, `pin_memory`, `persistent_workers`) to eliminate data loading bottleneck, (3) torch.compile support with `use_torch_compile` flag (30-40% speedup, incompatible with Flash Attention). Created `config/experiment_p3_optimized_test.toml` and validated (200 steps: loss 10.83→7.62). Created `docs/OPTIMIZATION_QUICKREF.md` for config reference. Multi-GPU (DDP) and memory-mapped datasets marked for Phase 4. |
+| 2026-02-27 | phase3 branch | **Phase 3 — 10M interleaved BPE ramp run (requested)**: Built boundary-aware extracts from full corpora (`/mnt/d/.../wikitext-103-raw/train.txt`, `/mnt/d/.../tinystories-gpt4-clean/train.txt`), created randomized interleaved page mix (`scripts/data/mix_interleaved_pages.py`, seed=42), tokenized with GPT-2 BPE (11.5M tokens), and extracted a 10M-token artifact (`data/fast/interleaved_wikitext_tinystories_10m_tokens_bpe_gpt2.npy`). Ran training pass with new config `config/experiment_p3_interleaved_10m_bpe.toml` for 1000 steps on CUDA; final loss 6.0763, final ppl 435.42; checkpoint at `outputs/p3-interleaved-10m-bpe/checkpoint.pt`. |
+| 2026-02-27 | phase3 branch | **Phase 3 — tokenizer benchmark kickoff + unigram path**: Added `UnigramTokenizer` (SentencePiece) and registered it in `TokenizerFactory`; wired unigram/bpe kwargs through data pipeline, inference, and training paths. Added benchmark utility (`src/tokenizer/benchmark.py`) and CLI (`scripts/benchmark_tokenizers.py`) for identical-slice BPE vs Unigram comparisons. Ran benchmark on `data/fast/wikitext_2mb_normalized.txt` (200k chars) and wrote `outputs/p3_tokenizer_benchmark_20260227_local.json`: BPE 4.608 chars/token at ~7.28M toks/s vs Unigram 4.018 chars/token at ~4.84M toks/s. Added/updated tokenizer unit tests; targeted test set passing. |
 | 2026-02-27 | phase3 branch | **Phase 3 — quality validation + interactive chat + workflow hardening**: Ran 3000-step combined-corpus training (`combined_wikitext_tinystories_10m_utf8.npy`) on CUDA with full training-stack upgrades enabled (warmup+cosine LR, selective weight decay, AMP bf16, gradient accumulation, clipping, throughput/memory logging). Final metrics: loss 5.7530→2.3846, perplexity 315.14→10.85, throughput ~128–137k tokens/sec, stable ~2132MB GPU memory, no NaN/Inf. Added interactive stdin/stdout chat loop at `src/inference/chat.py` (default temp/top-p/max_tokens, sliding context window, token counting, structured output). Updated `.github/SKILLS.md`, `.github/AGENTS.md`, and `CONTRIBUTING.md` to enforce single-source commit workflow requiring plan + session updates per commit. |
 | 2026-02-27 | phase3 branch | **Phase 3 — Decoder stack + diagrams**: Implemented FeedForward (14 tests), TransformerBlock (18 tests), and DecoderLM full GPT-style decoder (18 unit + 4 integration tests). Added DecoderLM model factory support and `experiment_p3_decoder_lm.toml` validation config. Validated training on WikiText BPE 442K tokens (loss 10.86→6.72, ppl 52K→831). Updated README/DESIGN mermaid diagrams (KV-cache + DPO flow, layout standardization). 373 tests passing; lint/mypy/black clean. |
 | 2026-02-26 | phase3 branch | **Phase 3 — BPE + embeddings + attention + model factory**: Implemented `BPETokenizer` (tiktoken gpt2/cl100k/o200k), `TokenEmbedding`, `LearnedPositionEmbedding`, `CausalMultiHeadAttention` (Q/K/V proj, causal mask, scaled dot-product, Xavier init), and `AttentionLM` test model (tok+pos+prenorm+attn+head). Added `model_type` field to ModelConfig with factory in train.py. Updated all experiment configs with model_type. Created `experiment_p3_attention.toml` and ran validation: 500 steps, 442K tokens, loss 10.82→6.66, ppl 50K→783; inference chat working. Added LESSONS.md L007: activate venv. 325 tests passing, lint/mypy/black clean. |
