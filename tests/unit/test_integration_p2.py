@@ -141,8 +141,8 @@ class TestPhase2Integration:
         tokens = torch.randint(0, 128, (1000,), dtype=torch.long)
 
         # Create loaders
-        train_loader, val_loader = create_simple_loaders(
-            tokens=tokens,
+        train_loader, val_loader, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=32,
             batch_size=4,
             validation_split=0.2,

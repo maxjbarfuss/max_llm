@@ -43,8 +43,8 @@ class TestOverfit:
         assert len(tokens) >= 10000
 
         # Create loaders with no validation split (all train)
-        train_loader, _ = create_simple_loaders(
-            tokens=tokens,
+        train_loader, _, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=128,
             batch_size=4,
             validation_split=0.0,  # All data is training
@@ -89,8 +89,8 @@ class TestOverfit:
         Verifies that training is making progress and not diverging.
         """
         tokens = torch.arange(256, dtype=torch.long).repeat(40)  # 10240 tokens
-        train_loader, _ = create_simple_loaders(
-            tokens=tokens,
+        train_loader, _, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=128,
             batch_size=4,
             validation_split=0.0,
@@ -133,8 +133,8 @@ class TestOverfit:
     def test_overfit_within_500_steps(self):
         """Target loss < 0.1 is achieved within the 500-step limit."""
         tokens = torch.arange(256, dtype=torch.long).repeat(40)  # 10240 tokens
-        train_loader, _ = create_simple_loaders(
-            tokens=tokens,
+        train_loader, _, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=128,
             batch_size=4,
             validation_split=0.0,

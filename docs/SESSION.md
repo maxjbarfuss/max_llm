@@ -127,7 +127,7 @@ See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) f
 
 > Ephemeral — clear this section at commit time. Use for in-progress notes only.
 
-**xFormers bug fix + documentation consolidation (2026-02-28)**: Fixed critical `src/models/attention/causal_mha.py` xFormers bug—replaced massive materialized `[B, num_heads, T, T]` bias tensor with `LowerTriangularMask()` for efficient causal masking. Validated with 1700+ step training run (loss 7.99→6.43, ~175k tokens/s, stable 1567MB memory). Consolidated 6 scattered optimization docs (ATTENTION_BACKENDS.md, OPTIMIZATION_PLAN.md, OPTIMIZATION_QUICKREF.md, DDP_GUIDE.md, ATTENTION_BACKENDS_INTEGRATION.md, TRAINING_OPTIMIZATIONS.md) → `docs/OPTIMIZATION.md`. Applied comprehensive KISS/DRY pass: DESIGN.md (414→343 lines, 17% reduction), PLAN.md synchronized with DESIGN goals, README.md updated (Phase 3 shows optimizations completed, Phase 4 focuses on FSDP/Llama). All phase documentation concise and synchronized.
+**Integration test fixes (2026-03-02)**: Fixed create_simple_loaders() calls in 4 integration test files. Issue: function signature changed to return (train_loader, val_loader, test_loader) tuple and parameter renamed from `tokens=` to `train_tokens=`. Updated test_integration_p2.py, test_overfit.py (3 test methods), and test_seed.py (4 test methods). All 20 integration tests now passing. Quality gate: 408 passed (1 pre-existing flash_attn CPU issue unrelated to changes).
 
 ---
 
