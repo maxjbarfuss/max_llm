@@ -6,53 +6,13 @@
 
 ## Current Work
 
-- **Task**: Config topology cleanup (milestones/tests/templates + git-ignored ephemeral) with hard cutover of references.
-- **Agent**: GitHub Copilot (GPT-5.3-Codex)
-- **Scope in progress**:
-	- Reorganized `config/` tree and pruned stale P3 configs.
-	- Completed runtime/test/doc reference cutover from legacy `config/experiment*.toml` paths.
-	- Completed final genericization pass to remove hardcoded experiment details from executable helper scripts.
-	- Completed strict code-only sweep for remaining hardcoded machine/experiment paths and refactored data tooling hotspots.
-	- Consolidated weird/legacy P3 variants into canonical milestone baselines for important Phase 2/3 experiments.
-	- Validation complete (targeted tests + quick suite passing).
-- **Checkpoint**:
-	- Milestones now focus on important reproducible experiments: `p2_baseline.toml`, `p2_tinystories_baseline.toml`, `p2_curriculum.toml`, `p3_baseline.toml`, `p3_data_ramp_10m_bpe.toml`.
-	- P3 tests reduced to essential validation config: `config/tests/p3/p3_ddp.toml`.
-	- Path rewrites completed across scripts/tests/docs; legacy references remain only in historical logs and migration notes.
+(No active work — session completed and committed. See SESSION_LOG.md for results.)
 
 ---
 
 ## Thinking Notes
 
-**UPDATE CONSTANTLY during work.** This section answers: *If we crash RIGHT NOW, what's essential to resume?*
-
-
-- Completed edits across scripts/tests/docs:
-	- Runtime/examples: `src/inference/run.py`, `src/inference/chat.py`, `src/inference/utils.py`, `scripts/evaluate_p2.py`, `scripts/train_ddp.sh`, `scripts/test_inference.py`, `scripts/train_curriculum.py`.
-	- Tests: `tests/unit/test_config.py`, `tests/unit/test_inference_utils.py`.
-	- Docs/READMEs: `src/*/README.md`, `scripts/data/*README*`, `docs/OPTIMIZATION.md`, `docs/PLAN.md`, and `.gitignore`.
-	- Final pass (generic code):
-	  - `scripts/train_curriculum.py`: removed hardcoded TinyStories/WikiText dataset paths; now round-robin schedule from `--datasets` (or config fallback) and launches training via subprocess.
-	  - `scripts/test_inference.py`: removed hardcoded config/checkpoint; now fully CLI-driven (`--config`, `--checkpoint`, prompts via args/JSON).
-	  - `scripts/train_ddp.sh`: removed experiment-specific default config; now requires explicit config path.
-	  - `train.py`, `src/training/train.py`, `src/inference/run.py`, `src/inference/chat.py`, `src/inference/utils.py`: generalized usage examples to placeholder patterns.
-	  - `scripts/data/mix_interleaved_pages.py`: removed machine-specific absolute dataset paths; added overrideable dataset registry via env (`MAXLLM_DATASET_<NAME>_SOURCE`) and CLI (`--dataset-source`).
-	  - `scripts/data/prepare_training_data.py`: generalized examples and next-step config guidance; added optional `--config-hint` for explicit experiment path output.
-	  - `scripts/data/run_data_prep.py`: made slow-storage detection configurable with `MAXLLM_SLOW_STORAGE_PREFIXES`.
-	  - `src/data/pipeline/{tokenize,extract_tokens,extract_text}.py`: generalized executable usage examples (removed machine-specific `/mnt` paths).
-- Target path mapping:
-	- `config/experiment.toml` → `config/milestones/p2_baseline.toml`
-	- `config/experiment_tinystories.toml` → `config/milestones/p2_tinystories_baseline.toml`
-	- `config/experiment_curriculum.toml` → `config/milestones/p2_curriculum.toml`
-	- `config/experiment_p3_interleaved_10m_bpe.toml` → `config/milestones/p3_data_ramp_10m_bpe.toml`
-	- `config/experiment_p3_optimized_2k.toml` → `config/milestones/p3_baseline.toml`
-	- `config/experiment_p3_ddp_test.toml` → `config/tests/p3/p3_ddp.toml`
-- Validation results:
-	1) Legacy-path grep now returns only `SESSION_LOG.md` and migration notes in `MEMORY.md`.
-	2) `runTests` on `tests/unit/test_config.py` + `tests/unit/test_inference_utils.py`: pass (48/48).
-	3) `source /home/max/dev/max_llm/.venv/bin/activate && make test-quick`: pass (Python + C++ quick checks).
-	4) Specificity re-scan: no hardcoded dataset/output logic remains in active refactored helper scripts.
-	5) Strict grep sweep over `src/**/*.py` and `scripts/**/*.py` confirms previous machine-specific hardcoded paths were removed from executable workflow tools.
+(Cleared — session completed. Code generic, configs specific, docs consistent, tests passing.)
 
 ---
 
