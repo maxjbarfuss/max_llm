@@ -127,7 +127,10 @@ See [DESIGN.md — Data Pipeline Reference](DESIGN.md#data-pipeline-reference) f
 
 > Ephemeral — clear this section at commit time. Use for in-progress notes only.
 
-**Integration test fixes (2026-03-02)**: Fixed create_simple_loaders() calls in 4 integration test files. Issue: function signature changed to return (train_loader, val_loader, test_loader) tuple and parameter renamed from `tokens=` to `train_tokens=`. Updated test_integration_p2.py, test_overfit.py (3 test methods), and test_seed.py (4 test methods). All 20 integration tests now passing. Quality gate: 408 passed (1 pre-existing flash_attn CPU issue unrelated to changes).
+**Integration test fixes + attention backend CPU fix (2026-03-02)**: 
+1. Fixed create_simple_loaders() calls in 4 test files (integration tests failing due to renamed parameter `tokens→train_tokens` and 3-tuple return value unpacking).
+2. Fixed test_attention.py test_multiple_heads() which was trying to use Flash Attention on CPU (doesn't support CPU). Added `attention_backend="standard"` to match other tests.
+All 409 tests now passing.
 
 ---
 

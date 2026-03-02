@@ -85,7 +85,9 @@ class TestCausalMultiHeadAttention:
     def test_multiple_heads(self) -> None:
         """Should work with different head counts."""
         for num_heads in [1, 2, 4, 8]:
-            mha = CausalMultiHeadAttention(d_model=64, num_heads=num_heads)
+            mha = CausalMultiHeadAttention(
+                d_model=64, num_heads=num_heads, attention_backend="standard"
+            )
             x = torch.randn(1, 8, 64)
             out = mha(x)
             assert out.shape == (1, 8, 64)
