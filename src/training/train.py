@@ -552,6 +552,7 @@ def main() -> None:  # noqa: C901
         )
 
     # Train
+    csv_log_path = Path(config.output_dir) / "loss_curve.csv"
     metrics = train(
         model=model,
         train_loader=train_loader,
@@ -564,7 +565,10 @@ def main() -> None:  # noqa: C901
         lr_scheduler=lr_scheduler,
         log_tokens_per_sec=True,
         log_gpu_memory=True,
+        csv_log_path=csv_log_path if is_main_process() else None,
     )
+    if is_main_process():
+        print_once(f"Loss curve : {csv_log_path}")
 
     print_once(
         f"Data       : train_tokens={len(train_tokens)}, "

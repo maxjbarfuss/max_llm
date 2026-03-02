@@ -74,6 +74,14 @@
 
 ---
 
+## L009 — Use `config/ephemeral/` for Scratch Training Runs (No Config Bleed)
+
+**Observed behavior**: Agent created or modified configs in `config/milestones/` or `config/templates/` to run a quick convergence experiment, polluting canonical configs with temporary hyperparameter tweaks.
+
+**Correct approach**: All scratch/experimental/temporary training runs must use `config/ephemeral/` (gitignored). Never place temporary configs in `config/milestones/` (milestone artifacts), `config/tests/` (unit-test fixtures), or `config/templates/` (reusable templates). The workflow is: copy the closest canonical config to `config/ephemeral/<name>.toml`, tweak freely, then throw it away. The `config/ephemeral/` directory is the only place for "I'm just trying this" configs. If a run produces publishable results, promote the config to `config/milestones/` with a proper name.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:

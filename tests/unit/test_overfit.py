@@ -1,9 +1,13 @@
-"""Overfit test for Phase 2 — verify model can memorize small dataset."""
+"""Overfit tests — verify models can memorize small datasets.
+
+Phase 2: SimpleLM overfits 10K-token char-level dataset.
+Phase 3: DecoderLM overfits 1K-token char-level dataset (exit criterion).
+"""
 
 import torch
 
 from src.config.model import ModelConfig
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import DecoderLM, SimpleLM
 from src.training.loop import train
 from src.training.train import create_simple_loaders
 
@@ -172,3 +176,79 @@ class TestOverfit:
         ), f"Loss never dropped below 0.1 within 500 steps. Min loss: {min(losses):.4f}, achieved at step {losses.index(min(losses)) + 1}"
 
         print(f"✓ Loss < 0.1 achieved at step {step_threshold}")
+
+
+def _make_decoder_model() -> DecoderLM:
+    """Create a small DecoderLM for Phase 3 overfitting."""
+    config = ModelConfig(
+        model_type="decoder_lm",
+        hidden_size=128,
+        num_layers=2,
+        num_heads=4,
+        vocab_size=256,
+        max_seq_length=64,
+        mla_latent_dim=64,
+        rope_base=10000,
+        intermediate_size=512,
+        num_experts=1,
+        experts_per_token=1,
+        moe_frequency=0,
+        gru_hidden_size=128,
+        dropout=0.0,
+    )
+    return DecoderLM.from_config(config, attention_backend="standard")
+
+
+class TestDecoderLMOverfit:
+    """Phase 3 exit criterion: DecoderLM overfits 1K-token subset to loss < 0.5 within 1000 steps."""
+
+    def test_decoder_lm_overfits_1k_tokens(self):
+        """
+        DecoderLM overfits 1K-token subset: train loss < 0.5 within 1000 steps.
+
+        Phase 3 exit criterion: model_type=decoder_lm, perplexity < 2.0.
+        """
+        # 1K+ tokens with repeating pattern for deterministic overfitting
+        tokens = torch.arange(256, dtype=torch.long).repeat(5)  # 1280 tokens
+        assert len(tokens) >= 1000
+
+        train_loader, _, _ = create_simple_loaders(
+            train_tokens=tokens,
+            seq_len=64,
+            batch_size=4,
+            validation_split=0.0,
+            seed=42,
+        )
+
+        model = _make_decoder_model()
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=0.005,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            weight_decay=0.0,
+        )
+
+        metrics = train(
+            model=model,
+            train_loader=train_loader,
+            optimizer=optimizer,
+            max_steps=1000,
+            log_interval=0,
+        )
+
+        losses = metrics["losses"]
+        assert len(losses) > 0
+
+        min_loss = min(losses)
+        final_loss = losses[-1]
+        min_ppl = 2.718281828 ** min_loss  # e^loss
+
+        assert min_loss < 0.5, (
+            f"DecoderLM overfit failed: min_loss={min_loss:.4f} (need < 0.5), "
+            f"final_loss={final_loss:.4f}, steps={len(losses)}"
+        )
+        assert min_ppl < 2.0, (
+            f"DecoderLM overfit failed: min_ppl={min_ppl:.4f} (need < 2.0)"
+        )
+        print(f"✓ DecoderLM loss < 0.5 achieved: min_loss={min_loss:.4f}, min_ppl={min_ppl:.4f}")

@@ -30,4 +30,10 @@ class TokenEmbedding(nn.Module):
         Returns:
             Embeddings of shape (batch, seq_len, d_model).
         """
-        return self.embedding(x)
+        assert x.ndim == 2, f"TokenEmbedding expects 2-D input (batch, seq_len), got shape {x.shape}"
+        assert x.dtype == torch.long, f"TokenEmbedding expects dtype=torch.long, got {x.dtype}"
+        out = self.embedding(x)
+        assert out.shape == (*x.shape, self.embedding.embedding_dim), (
+            f"TokenEmbedding output shape mismatch: expected {(*x.shape, self.embedding.embedding_dim)}, got {out.shape}"
+        )
+        return out

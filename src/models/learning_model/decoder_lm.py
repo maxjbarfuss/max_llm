@@ -97,6 +97,10 @@ class DecoderLM(BaseLearningModel):
         Returns:
             Logits of shape (batch_size, seq_len, vocab_size).
         """
+        assert x.ndim == 2, f"DecoderLM expects 2-D input (batch, seq_len), got shape {x.shape}"
+        assert x.dtype == torch.long, f"DecoderLM expects dtype=torch.long, got {x.dtype}"
+        B, T = x.shape
+
         # Token and position embeddings
         tok_emb = self.token_embedding(x)  # (B, T, d_model)
         pos_emb = self.position_embedding(x)  # (1, T, d_model)
@@ -112,6 +116,9 @@ class DecoderLM(BaseLearningModel):
         # LM head
         logits = self.lm_head(h)
 
+        assert logits.shape == (B, T, self.vocab_size), (
+            f"DecoderLM output shape mismatch: expected {(B, T, self.vocab_size)}, got {logits.shape}"
+        )
         return logits
 
     def load_state_dict(

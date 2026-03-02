@@ -10,8 +10,10 @@ Supports:
 
 from __future__ import annotations
 
+import csv
 import math
 import time
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -130,6 +132,7 @@ def train(  # noqa: C901
     lr_scheduler: Any | None = None,
     log_tokens_per_sec: bool = False,
     log_gpu_memory: bool = False,
+    csv_log_path: str | Path | None = None,
 ) -> dict[str, list[float]]:
     """Train for exactly max_steps gradient steps with modern training features.
 
@@ -153,6 +156,8 @@ def train(  # noqa: C901
         lr_scheduler: Learning rate scheduler to step after each optimizer step.
         log_tokens_per_sec: Log throughput in tokens/sec.
         log_gpu_memory: Log GPU memory usage.
+        csv_log_path: If set, write per-step metrics to this CSV file.
+            Columns: step, loss, perplexity, lr, tokens_per_sec (if available).
 
     Returns:
         Dict with keys:
@@ -176,6 +181,17 @@ def train(  # noqa: C901
     perplexities: list[float] = []
     tokens_per_sec_list: list[float] = []
     gpu_memory_list: list[float] = []
+
+    # Open CSV log file if requested
+    csv_file = None
+    csv_writer = None
+    if csv_log_path is not None:
+        csv_path = Path(csv_log_path)
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        csv_file = open(csv_path, "w", newline="")  # noqa: SIM115
+        fieldnames = ["step", "loss", "perplexity", "lr", "tokens_per_sec", "gpu_memory_mb"]
+        csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        csv_writer.writeheader()
 
     step = 0
     micro_step = 0
@@ -241,6 +257,20 @@ def train(  # noqa: C901
                     memory_mb = torch.cuda.max_memory_allocated(device) / 1024 / 1024
                     gpu_memory_list.append(memory_mb)
 
+                # Write to CSV (every step)
+                if csv_writer is not None:
+                    current_lr = optimizer.param_groups[0]["lr"]
+                    row: dict[str, Any] = {
+                        "step": step + 1,
+                        "loss": f"{avg_loss:.6f}",
+                        "perplexity": f"{perplexity:.4f}",
+                        "lr": f"{current_lr:.6e}",
+                        "tokens_per_sec": f"{tokens_per_sec:.0f}" if log_tokens_per_sec else "",
+                        "gpu_memory_mb": f"{memory_mb:.1f}" if (log_gpu_memory and device.type == "cuda") else "",
+                    }
+                    csv_writer.writerow(row)
+                    csv_file.flush()  # type: ignore[union-attr]
+
                 # Logging
                 if log_interval > 0 and (step + 1) % log_interval == 0:
                     current_lr = optimizer.param_groups[0]["lr"]
@@ -260,6 +290,9 @@ def train(  # noqa: C901
                 tokens_in_step = 0
                 step_start_time = time.time()
                 step += 1
+
+    if csv_file is not None:
+        csv_file.close()
 
     result = {"losses": losses, "perplexities": perplexities}
     if log_tokens_per_sec:

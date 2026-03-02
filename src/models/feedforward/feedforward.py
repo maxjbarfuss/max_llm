@@ -56,8 +56,15 @@ class FeedForward(nn.Module):
         Returns:
             Output tensor of shape (batch, seq_len, d_model).
         """
+        assert x.ndim == 3, f"FeedForward expects 3-D input (batch, seq_len, d_model), got shape {x.shape}"
+        assert x.is_floating_point(), f"FeedForward expects floating-point input, got {x.dtype}"
+        assert x.shape[-1] == self.d_model, (
+            f"FeedForward input last dim {x.shape[-1]} != d_model {self.d_model}"
+        )
+        in_shape = x.shape
         x = self.linear1(x)
         x = self.activation(x)
         x = self.dropout(x)
         x = self.linear2(x)
+        assert x.shape == in_shape, f"FeedForward output shape {x.shape} != input shape {in_shape}"
         return x
