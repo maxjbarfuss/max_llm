@@ -14,7 +14,11 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
+from src.config.data import DataConfig
 from src.config.experiment import ExperimentConfig
+from src.config.inference import InferenceConfig
+from src.config.model import ModelConfig
+from src.config.training import TrainingConfig
 from src.inference.utils import resolve_device
 from src.models.learning_model import AttentionLM, BaseLearningModel, DecoderLM, SimpleLM
 from src.tokenizer import TokenizerFactory
@@ -105,10 +109,81 @@ def save_checkpoint(
             "model_state": model.state_dict(),
             "optimizer_state": optimizer.state_dict(),
             "step": step,
+            "config_versions": {
+                "model": ModelConfig.__version__,
+                "training": TrainingConfig.__version__,
+                "data": DataConfig.__version__,
+                "inference": InferenceConfig.__version__,
+            },
         },
         path,
     )
     return path
+
+
+def load_checkpoint(
+    checkpoint_path: str | Path,
+    model: BaseLearningModel,
+    optimizer: torch.optim.Optimizer | None = None,
+    strict_version_check: bool = True,
+) -> int:
+    """Load model and optimizer state from checkpoint.
+
+    Args:
+        checkpoint_path: Path to checkpoint file.
+        model: Model to load state into.
+        optimizer: Optional optimizer to load state into.
+        strict_version_check: If True, raises error on config version mismatch.
+
+    Returns:
+        Training step from checkpoint.
+
+    Raises:
+        ValueError: If strict_version_check=True and config versions don't match.
+    """
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+    # Check config version compatibility
+    if "config_versions" in checkpoint:
+        saved_versions = checkpoint["config_versions"]
+        current_versions = {
+            "model": ModelConfig.__version__,
+            "training": TrainingConfig.__version__,
+            "data": DataConfig.__version__,
+            "inference": InferenceConfig.__version__,
+        }
+
+        mismatches = []
+        for config_name, current_version in current_versions.items():
+            saved_version = saved_versions.get(config_name)
+            if saved_version is not None and saved_version != current_version:
+                mismatches.append(
+                    f"  {config_name}: checkpoint v{saved_version} != current v{current_version}"
+                )
+
+        if mismatches and strict_version_check:
+            raise ValueError(
+                "Config version mismatch detected:\n"
+                + "\n".join(mismatches)
+                + "\n\nCheckpoint was saved with different config versions. "
+                "To load this checkpoint, either:\n"
+                "  1. Use matching config versions (git checkout to commit matching checkpoint)\n"
+                "  2. Re-train from scratch with current config\n"
+                "  3. Set strict_version_check=False (not recommended for reproducibility)"
+            )
+        elif mismatches:
+            import warnings
+
+            warnings.warn(
+                "Config version mismatch (strict_version_check=False):\n" + "\n".join(mismatches),
+                stacklevel=2,
+            )
+
+    model.load_state_dict(checkpoint["model_state"])
+    if optimizer is not None and "optimizer_state" in checkpoint:
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+
+    return checkpoint.get("step", 0)
 
 
 def create_simple_loaders(

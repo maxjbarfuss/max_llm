@@ -266,7 +266,36 @@ Attention/MoE/embeddings always BF16. Rollback on divergence.
 
 ---
 
+## Config System: Version-Aware Evolution
+
+All config classes (`ModelConfig`, `TrainingConfig`, `DataConfig`, `InferenceConfig`) have `__version__: ClassVar[int]` to track config evolution without brittleness.
+
+**When to increment version**:
+- Required new fields (no default) → increment
+- Breaking validation changes → increment
+- Optional fields with defaults → no increment
+
+**Non-breaking additions**: Add field with default → old TOML files work, old checkpoints recognized.
+
+**Checkpoint versioning**: `save_checkpoint()` includes `config_versions` dict. `load_checkpoint()` validates version match; raises `ConfigVersionMismatchError` if mismatch. Use `strict_version_check=False` to load anyway (breaks reproducibility guarantee).
+
+**Test fixture resilience**: Use schema-aware builders from `tests/conftest.py`:
+```python
+from tests.conftest import build_model_config
+
+# Bad (brittle): hardcode all 15 fields
+config = ModelConfig(hidden_size=64, num_layers=1, ...)  # Breaks when fields added
+
+# Good (resilient): override only what you test
+config = build_model_config(hidden_size=64, num_layers=1)  # Auto-fills defaults
+```
+
+New fields automatically get sensible test defaults; no test refactoring on config changes.
+
+---
+
 ## Reproducibility
+
 
 **Artifact naming**: `p<phase>_<artifact>_<yyyymmdd>_<commit>_<seed>` — includes seed, config snapshot, dataset fingerprint, environment.
 
@@ -275,6 +304,7 @@ Attention/MoE/embeddings always BF16. Rollback on divergence.
 ## See Also
 
 - [PLAN.md](PLAN.md) — Phase execution with exit criteria
+- [CONFIG_API.md](CONFIG_API.md) — Config system API reference
 - [.github/AGENTS.md](../.github/AGENTS.md) — Development standard (principles, discipline, workflow for all contributors)
 - [.github/SKILLS.md](../.github/SKILLS.md) — Detailed workflows (tool use, session bootstrap, commit procedure)
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — Contributor entry point

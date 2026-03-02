@@ -8,43 +8,42 @@ from pathlib import Path
 import pytest
 
 from src.config import DataConfig, ExperimentConfig, InferenceConfig, ModelConfig, TrainingConfig
+from tests.conftest import (
+    build_data_config,
+    build_inference_config,
+    build_model_config,
+    build_training_config,
+)
 
 
+# Legacy fixtures with original test defaults for backward compatibility
 def make_model_config(**overrides):
-    values = {
-        "model_type": "simple_lm",
+    """Legacy test fixture with original defaults."""
+    defaults = {
         "hidden_size": 768,
         "num_layers": 12,
         "num_heads": 12,
         "vocab_size": 50304,
         "max_seq_length": 2048,
         "mla_latent_dim": 768,
-        "rope_base": 10000,
-        "intermediate_size": None,
+        "moe_frequency": 2,
         "num_experts": 16,
         "experts_per_token": 2,
-        "moe_frequency": 2,
-        "gru_hidden_size": None,
         "dropout": 0.1,
     }
-    values.update(overrides)
-    return ModelConfig(**values)
+    defaults.update(overrides)
+    return build_model_config(**defaults)
 
 
 def make_training_config(**overrides):
-    values = {
+    """Legacy test fixture with original defaults."""
+    defaults = {
         "batch_size": 32,
-        "gradient_accumulation_steps": 1,
         "max_steps": 100000,
         "warmup_steps": 2000,
         "learning_rate": 3e-4,
         "weight_decay": 0.1,
-        "betas": (0.9, 0.95),
-        "epsilon": 1e-8,
-        "gradient_clip_norm": 1.0,
         "precision_schedule": [(0, 30000, "fp4"), (30000, 80000, "fp8"), (80000, -1, "mixed")],
-        "moe_balance_loss_weight": 0.01,
-        "distributed_backend": "ddp",
         "checkpoint_interval": 5000,
         "eval_interval": 1000,
         "log_interval": 100,
@@ -53,12 +52,13 @@ def make_training_config(**overrides):
         "attention_backend": "flash",
         "selective_checkpointing": True,
     }
-    values.update(overrides)
-    return TrainingConfig(**values)
+    defaults.update(overrides)
+    return build_training_config(**defaults)
 
 
 def make_inference_config(**overrides):
-    values = {
+    """Legacy test fixture with original defaults."""
+    defaults = {
         "device": "auto",
         "max_new_tokens": 256,
         "temperature": 0.8,
@@ -67,31 +67,26 @@ def make_inference_config(**overrides):
         "use_kv_cache": True,
         "kv_cache_dtype": "fp8",
     }
-    values.update(overrides)
-    return InferenceConfig(**values)
+    defaults.update(overrides)
+    return build_inference_config(**defaults)
 
 
 def make_data_config(**overrides):
-    values = {
+    """Legacy test fixture with original defaults."""
+    defaults = {
         "dataset_path": "openwebtext",
         "tokenizer_name": "gpt2",
-        "tokenizer_mode": "codepoint",
-        "tokenizer_vocab_size": 128,
-        "tokenizer_backend": "gpt2_bpe",
-        "unigram_model_path": None,
         "max_length": 2048,
         "num_workers": 6,
-        "prefetch_factor": 2,
         "pin_memory": True,
         "persistent_workers": True,
         "streaming": True,
         "cache_dir": "./data/cache",
         "num_shards": 64,
         "validation_split": 0.01,
-        "seed": 42,
     }
-    values.update(overrides)
-    return DataConfig(**values)
+    defaults.update(overrides)
+    return build_data_config(**defaults)
 
 
 class TestModelConfig:

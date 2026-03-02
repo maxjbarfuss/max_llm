@@ -10,24 +10,18 @@ from src.models.learning_model import SimpleLM
 from src.training.loop import train
 from src.training.train import create_simple_loaders
 from src.utils import seed_everything
+from tests.conftest import build_model_config
 
 
 def _make_model_config() -> ModelConfig:
     """Create a minimal model config for testing."""
-    return ModelConfig(
-        model_type="simple_lm",
-        hidden_size=64,  # Must be multiple of 64
+    return build_model_config(
+        hidden_size=64,
         num_layers=1,
         num_heads=4,
         vocab_size=64,
         max_seq_length=32,
         mla_latent_dim=32,
-        rope_base=10000,
-        intermediate_size=None,
-        num_experts=1,
-        experts_per_token=1,
-        moe_frequency=0,
-        gru_hidden_size=None,
         dropout=0.0,
     )
 

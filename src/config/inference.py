@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from .toml_utils import load_toml, section_or_root
 
@@ -10,6 +10,8 @@ from .toml_utils import load_toml, section_or_root
 @dataclass
 class InferenceConfig:
     """Inference-time configuration."""
+
+    __version__: ClassVar[int] = 1
 
     device: Literal["auto", "cpu", "cuda"]
     max_new_tokens: int

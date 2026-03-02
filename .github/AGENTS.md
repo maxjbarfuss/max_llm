@@ -39,6 +39,8 @@ Key requirements:
 - Before commit: Run `make test-quick`, update PLAN.md progress, log to SESSION_LOG.md
 - Commit rule: Follow [Commit Workflow in SKILLS.md](SKILLS.md#commit-workflow-required)
 
+**Important**: See [MEMORY vs SESSION_LOG Pattern in MEMORY.md](MEMORY.md#memory-vs-session_log-pattern-must-understand) to understand how to manage working memory correctly across sessions.
+
 ## Project Patterns
 
 - **Config-driven execution**: Training uses TOML (`config/`), data prep uses YAML (`scripts/data/<dataset>/`). Don't hardcode paths or hyperparameters.

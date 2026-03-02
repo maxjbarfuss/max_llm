@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from .toml_utils import load_toml, section_or_root
 
@@ -9,6 +10,8 @@ from .toml_utils import load_toml, section_or_root
 @dataclass(frozen=True)
 class ModelConfig:
     """Model architecture configuration."""
+
+    __version__: ClassVar[int] = 1
 
     model_type: str  # "simple_lm", "attention_lm", "decoder_lm", etc.
     hidden_size: int

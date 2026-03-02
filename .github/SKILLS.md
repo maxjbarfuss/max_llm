@@ -98,10 +98,12 @@ Practical workflows and tool use patterns for working efficiently on max_llm. Th
 ### Session Bootstrap
 **Do this at the start of every session:**
 1. Read [LESSONS.md](LESSONS.md) — past agent mistakes to avoid
-2. Read [MEMORY.md](MEMORY.md) — working session context
+2. Read [MEMORY.md](MEMORY.md) — working session context (see [MEMORY vs SESSION_LOG Pattern](MEMORY.md#memory-vs-session_log-pattern-must-understand) to understand the distinction)
 3. Check [SESSION_LOG.md](SESSION_LOG.md) for historical context if needed
 4. Read [docs/PLAN.md](../docs/PLAN.md) — pick task from current phase
 5. Activate environment: `git status && source .venv/bin/activate`
+
+**Context Compaction Detection**: If you see a `conversation-summary` block or references to work not in visible messages, context was compacted. RE-READ [MEMORY.md](MEMORY.md) and update "Thinking Notes" to synchronize with current state before proceeding.
 
 ### During Work
 - **Update checkpoint frequently**: Add to [MEMORY.md](MEMORY.md) every 30-60 minutes with: current task, checkpoint location, recent completions
@@ -110,7 +112,7 @@ Practical workflows and tool use patterns for working efficiently on max_llm. Th
 - **Git tool restriction**: Use local `git` CLI only; never use MCP git servers or wrapper tools (e.g., GitKraken, GitLens)
 
 ### File Purposes
-- **MEMORY.md** = working/thinking state (what you're doing now)
+- **MEMORY.md** = working/thinking state (what you're doing now) — see [MEMORY vs SESSION_LOG Pattern](MEMORY.md#memory-vs-session_log-pattern-must-understand) for detailed rules
 - **PLAN.md** = project progress (phase items, roadmap)
 - **SESSION_LOG.md** = history (append-only log)
 
