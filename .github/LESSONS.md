@@ -62,6 +62,14 @@
 
 ---
 
+## L008 — Activate Venv Before Running Make Commands
+
+**Observed behavior**: Agent ran `make test-quick` without first sourcing the venv, got a permission error, then re-ran it with `source .venv/bin/activate && make test-quick`. Wasted context and time on a predictable failure.
+
+**Correct approach**: Before running ANY `make` command (`make test-quick`, `make check`, `make format`, etc.), always activate the venv first in the same command line: `source .venv/bin/activate && make test-quick`. Do not trial-and-error this — activate proactively on every new terminal session or command sequence.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:

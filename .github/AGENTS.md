@@ -11,9 +11,9 @@ version: "1.0"
 updated: "2026-02-27"
 ---
 
-# AI Agent Standard for max_llm
+# Development Standard for max_llm
 
-This document defines how **any AI coding agent** should interact with the max_llm codebase. It is an open, interoperable standard designed for consistency across multiple agent platforms and models.
+This document defines how **all contributors**—whether AI agents or humans—should interact with the max_llm codebase. It is an open, interoperable standard designed for consistency across multiple agent platforms, models, and teams.
 
 > **Before starting any session**: Read [LESSONS.md](LESSONS.md) — recorded patterns of past agent mistakes to avoid repeating.
 
@@ -31,14 +31,13 @@ Any agent working on this codebase should operate as simultaneously a **10x Seni
 
 ## Workflow
 
-Follow the [Standard Workflow in CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow-every-session). Project-specific requirements:
+**Every session must follow**: [Session Workflow in SKILLS.md](SKILLS.md#session-workflow-required)
 
-> **Commit rule**: Follow the required commit workflow in [SKILLS.md](SKILLS.md#commit-workflow-required) for every commit.
-
-- **Start**: Read [LESSONS.md](LESSONS.md). Check existing tests and interfaces before coding.
-- **During**: Must implement TDD for every feature — write failing test first, implement, verify. Use local `git` CLI only; never use MCP git servers or wrapper tools (e.g., GitKraken, GitLens).
-- **End**: Clear SESSION.md Scratch Pad; add entry to Running Session Log. Update PLAN.md Phase Progress. Do NOT end with outdated or missing PLAN/SESSION metadata.
-- **Done**: Must follow the [Change Checklist in CONTRIBUTING.md](../CONTRIBUTING.md#change-checklist). Document remaining risks or follow-up in SESSION.md. See [CONTRIBUTING.md](../CONTRIBUTING.md#review-and-approval) for push and review policy.
+Key requirements:
+- Bootstrap: Read LESSONS → MEMORY → PLAN, activate environment
+- During work: Update MEMORY.md frequently, follow TDD, use local git CLI only
+- Before commit: Run `make test-quick`, update PLAN.md progress, log to SESSION_LOG.md
+- Commit rule: Follow [Commit Workflow in SKILLS.md](SKILLS.md#commit-workflow-required)
 
 ## Project Patterns
 
@@ -46,7 +45,6 @@ Follow the [Standard Workflow in CONTRIBUTING.md](../CONTRIBUTING.md#standard-wo
 - **Phase-gated development**: Check [PLAN.md](../docs/PLAN.md) phase boundaries before starting cross-phase work. Each phase builds on validated prior work.
 - **Vertical slicing**: A complete feature touches model + data + training + test. Don't land partial slices.
 - **Test-then-commit**: `make test-quick` must pass before any commit. See [tests/README.md](../tests/README.md) for commands and expectations.
-- **Protected files**: Do not modify governance or instruction files unless explicitly requested. Respect source-of-truth docs ([PLAN.md](../docs/PLAN.md), [CONTRIBUTING.md](../CONTRIBUTING.md), [DESIGN.md](../docs/DESIGN.md)).
 
 ## Technical Skills Required
 
@@ -67,4 +65,4 @@ Follow the [Standard Workflow in CONTRIBUTING.md](../CONTRIBUTING.md#standard-wo
 
 ---
 
-**Note for agent implementers**: This standard is designed to be format-agnostic and tool-agnostic. Whether implemented as a system prompt, config file, or skill-based capability, the core principles remain: clarity, consistency, quality, and testability. Agents should read this document at the start of each session.
+**Note**: This standard is format-agnostic and tool-agnostic. Whether implemented as a system prompt, team handbook, or skill-based capability, the core principles remain: clarity, consistency, quality, and testability. All contributors—agents and humans—should read this document at the start of work.

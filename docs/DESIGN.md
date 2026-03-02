@@ -266,78 +266,15 @@ Attention/MoE/embeddings always BF16. Rollback on divergence.
 
 ---
 
-## Engineering Principles
-
-**Patterns**: SOLID, DRY, KISS, YAGNI (see [.github/AGENTS.md](../.github/AGENTS.md)).
-
-**Constraints**:
-- TDD-first (red → green → refactor)
-- Reproducibility (deterministic seeds, explicit configs)
-- Type-driven (mypy + Pydantic)
-- Fail fast (early validation, clear errors)
-- Measure first (profile before optimizing)
-
----
-
-## Code Structure
-
-**Layout**:
-- `src/config/`: Config system
-- `src/models/{feature}/`: Python + optional `kernels/` (C++/CUDA)
-- `src/core/`: Shared C++ infrastructure
-- `src/training/`: Training pipeline
-- `tests/unit/`: Per-module tests
-
-**Adding features**: TDD (test first), then implementation, optional CUDA kernels.
-
----
-
-## Testing
-
-**Workflow**: TDD (red → green → refactor). Test before implementation.
-
-**Layers**: Unit (per-module), integration (multi-component), contract (shape/dtype), validation (overfit/convergence).
-
-**Targets**: `make test-quick` (<3 min), `make test-py`, `make test-cpp`, `make test`, `make test-cov`.
-
-**Coverage by phase**: P2 (config), P3+ (model layers, training), P4+ (A/B, multi-GPU), P5+ (SFT, LoRA, KV-cache, DPO, safety), P6 (MoE, MLA), P7 (reasoning, STaR).
-
-**Standards**: Python (pytest, parametrize CPU/GPU), C++ (GTest).
-
----
-
-## Coding Standards
-
-**Enforcement**: `make check` (lint + format + type + quick tests). See [CONTRIBUTING.md](../CONTRIBUTING.md).
-
-**Python**: 3.10+, mypy strict, black + isort + ruff. No global state.
-
-**C++**: C++20, clang-format + clang-tidy, smart pointers only, CUDA error checking. CPU fallback required.
-
-**Build**: CMake 3.20+, Ninja. Release: `-O3 -march=native` + LTO. `-Werror` on all.
-
----
-
-## Quality Gates
-
-**Pre-commit**: `make check` (see [CONTRIBUTING.md](../CONTRIBUTING.md)).
-
-**Validation**: P2–3 (overfit, convergence), P4+ (multi-GPU consistency, <10% regression), P5+ (backend equivalence, KV-cache, safety), P6 (MoE balance, MLA equivalence), P7 (reasoning accuracy delta, STaR).
-
-**Component contract**: Typed interface, Pydantic config, TDD tests, performance budget, documented failure modes.
-
----
-
 ## Reproducibility
 
-**Required**: Seed, config snapshot, dataset fingerprint, environment.
-
-**Artifact naming**: `p<phase>_<artifact>_<yyyymmdd>_<commit>_<seed>`
+**Artifact naming**: `p<phase>_<artifact>_<yyyymmdd>_<commit>_<seed>` — includes seed, config snapshot, dataset fingerprint, environment.
 
 ---
 
-## Related Documentation
+## See Also
 
-- [PLAN.md](PLAN.md): Phase execution plan with exit criteria
-- [SESSION.md](SESSION.md): Current focus and session log
-- [CONTRIBUTING.md](../CONTRIBUTING.md): Contributor workflow and CI
+- [PLAN.md](PLAN.md) — Phase execution with exit criteria
+- [.github/AGENTS.md](../.github/AGENTS.md) — Development standard (principles, discipline, workflow for all contributors)
+- [.github/SKILLS.md](../.github/SKILLS.md) — Detailed workflows (tool use, session bootstrap, commit procedure)
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — Contributor entry point

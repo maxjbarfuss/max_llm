@@ -39,7 +39,7 @@ Practical workflows and tool use patterns for working efficiently on max_llm. Th
 ### 4. Documentation & Code Sync
 - After multi-phase implementation, use `get_changed_files` to scan what changed
 - Use `multi_replace_string_in_file` for >1 related edits (more efficient than sequential calls)
-- Always validate documentation is current before committing (SESSION.md, PLAN.md status)
+- Always validate documentation is current before committing (MEMORY.md, PLAN.md status)
 - For complex diagrams, use `mermaid-diagram-validator` + `mermaid-diagram-preview` before merge
 
 ### 5. Testing & Validation
@@ -93,14 +93,41 @@ Practical workflows and tool use patterns for working efficiently on max_llm. Th
 - Prepare comprehensive commit with `run_in_terminal` (single command: `git add -A && git commit -m "..."`)`
 - For atomic commits across multiple files, stage them together (avoid multiple commits per message)
 
+## Session Workflow (Required)
+
+### Session Bootstrap
+**Do this at the start of every session:**
+1. Read [LESSONS.md](LESSONS.md) — past agent mistakes to avoid
+2. Read [MEMORY.md](MEMORY.md) — working session context
+3. Check [SESSION_LOG.md](SESSION_LOG.md) for historical context if needed
+4. Read [docs/PLAN.md](../docs/PLAN.md) — pick task from current phase
+5. Activate environment: `git status && source .venv/bin/activate`
+
+### During Work
+- **Update checkpoint frequently**: Add to [MEMORY.md](MEMORY.md) every 30-60 minutes with: current task, checkpoint location, recent completions
+- **Track phase progress**: Mark items ✅ in [docs/PLAN.md](../docs/PLAN.md) when completing phase deliverables, update progress percentages
+- **Follow TDD discipline**: Write failing test first → implement → verify test passes
+- **Git tool restriction**: Use local `git` CLI only; never use MCP git servers or wrapper tools (e.g., GitKraken, GitLens)
+
+### File Purposes
+- **MEMORY.md** = working/thinking state (what you're doing now)
+- **PLAN.md** = project progress (phase items, roadmap)
+- **SESSION_LOG.md** = history (append-only log)
+
+### If Crash/Hang
+Read [MEMORY.md](MEMORY.md) checkpoint → resume from there
+
 ## Commit Workflow (Required)
 
-Before each commit:
+Before every commit:
 
-1. Run applicable verification (tests, lint, format).
-2. Update plan/progress artifact and the active session file.
-3. Stage and review the final diff to confirm those updates are included.
-4. Commit with a conventional message; if plan/session updates are not applicable, state why in the handoff.
+1. **Run verification**: `make test-quick` — verify nothing broke
+2. **Update phase progress**: If applicable, mark ✅ in [docs/PLAN.md](../docs/PLAN.md) and update progress %
+3. **Log session summary**: Add one row to [SESSION_LOG.md](SESSION_LOG.md) with detailed summary of work completed
+4. **Stage and review**: `git status && git diff --staged` to confirm changes
+5. **Commit atomically**: `git add . && git commit -m "Phase X.Y: clear message"`
+
+**Commit message format**: `Phase X.Y: <imperative verb> <what changed>` (e.g., "Phase 3.2: add xformers attention implementation")
 
 ## Tool Preferences
 
@@ -122,4 +149,4 @@ Before each commit:
 
 - **Context usage**: Each `read_file` call costs context (proportional to file range); tool results and reasoning also consume budget
 - **When context is tight**: Switch to `semantic_search` for conciseness, use `search_subagent` to batch searches, or reduce log verbosity
-- **Multi-session work**: Always summarize progress in SESSION.md before ending session; start fresh with clear checkpoint if continuing Phase work
+- **Multi-session work**: Always summarize progress in MEMORY.md before ending session; start fresh with clear checkpoint if continuing Phase work
