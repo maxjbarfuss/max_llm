@@ -3,7 +3,7 @@
 Purpose: phased execution roadmap for human contributors and AI agents.
 
 **How to use:**
-1. Read [SESSION.md](SESSION.md) first — current focus, immediate next steps, scratch pad, log
+1. Read [MEMORY.md](../.github/MEMORY.md) first — current focus and agent working state; read [SESSION_LOG.md](../.github/SESSION_LOG.md) for completed-session history
 2. Check Phase Progress table and the current phase's task list for execution detail
 3. For architecture and design decisions: [DESIGN.md](DESIGN.md)
 
@@ -425,7 +425,7 @@ Training (Phase 7b — Feedback loop + bootstrap):
 
 ## Canonical References
 
-- [SESSION.md](SESSION.md) (current focus, immediate next steps, scratch pad, running log)
+- [MEMORY.md](../.github/MEMORY.md) (current agent working state and focus) + [SESSION_LOG.md](../.github/SESSION_LOG.md) (completed-session history, append-only)
 - [DESIGN.md](DESIGN.md) (architecture, engineering standards, testing strategy, agent workflow)
 - [PLAN.md](PLAN.md) (this file — phased execution roadmap)
 - [CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow) (workflow and validation gates)

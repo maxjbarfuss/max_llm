@@ -18,11 +18,11 @@
 
 ---
 
-## L002 — Always Update SESSION.md at Session End
+## L002 — Always Clear MEMORY and Update SESSION_LOG at Session End
 
-**Observed behavior**: Agent completed work and committed without updating `docs/SESSION.md` (clearing scratch pad, adding log entry).
+**Observed behavior**: Agent committed without (a) appending a summary row to [SESSION_LOG.md](SESSION_LOG.md), or (b) clearing the "Current Work" and "Thinking Notes" sections of [MEMORY.md](MEMORY.md). This leaves stale state that confuses the next agent session. Note: the old `docs/SESSION.md` was consolidated into MEMORY.md + SESSION_LOG.md — any reference to SESSION.md is outdated.
 
-**Correct approach**: Before every commit, add a row to [SESSION_LOG.md](SESSION_LOG.md) with the date, commit marker, and a one-line summary of completed work. Then clear the relevant sections of [MEMORY.md](MEMORY.md). Omitting this breaks continuity for the next session.
+**Correct approach**: Before every commit: (1) append one row to SESSION_LOG.md with date | branch | detailed summary, (2) delete the contents of "Current Work" and "Thinking Notes" in MEMORY.md (but keep the headers), (3) then commit. The next agent sees empty MEMORY and reads SESSION_LOG to understand context.
 
 ---
 
