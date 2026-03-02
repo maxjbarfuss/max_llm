@@ -154,10 +154,11 @@ Tokenizer:
 - ✅ Update `scripts/data/` configs — BPE support added to pipeline; `wikitext-103_bpe_gpt2_small.yaml`
 
 Data:
-- 🔄 Execute Phase 3 data ramp beyond baseline: 10M → 50M → 100M+ tokens, with checkpoints at each stage (10M stage complete: interleaved TinyStories+WikiText BPE run with checkpoint in `outputs/p3-interleaved-10m-bpe/`)
+- ✅ Phase 3 convergence milestone run: 5000 steps on interleaved TinyStories+WikiText BPE dataset (70/30 mix, 2.15M train / 0.38M val tokens); loss 10.89→4.31, best ppl 67.9; checkpoint `outputs/p3-bpe-convergence/`; config `config/milestones/p3_bpe_convergence.toml`; throughput ~140–160K tokens/sec
+- ✅ Memory-mapped data reads: `load_tokens()` returns `np.memmap` for .npy files; `TokenDataset` yields (x,y) pairs lazily — O(1) RAM regardless of dataset size; backward-compatible with TensorDataset tests
+- 🔄 Execute Phase 3 data ramp beyond baseline: 10M → 50M → 100M+ tokens (10M canonical run at `data/fast/interleaved_wikitext_tinystories_10m_tokens_bpe_gpt2.npy` needs more steps for full convergence; deferred to Phase 4 data ramp)
 - ☐ Scale WikiText-103 BPE subset to 10–50M tokens for stable single-GPU training (current verified BPE artifacts: 442K gpt2 tokens; 4.54 chars/token; `data/fast/wikitext_bpe_gpt2_*.npy`)
 - ☐ Re-tokenize TinyStories with BPE
-- ☐ Memory-mapped data reads for 10–50M token datasets
 
 Components:
 - ✅ Token embedding (vocab_size × d_model) — `src/models/embeddings/token_embedding.py`; N(0,0.02) init; 7 tests
@@ -181,7 +182,7 @@ Training infrastructure:
 - ✅ Mixed precision: `torch.cuda.amp` autocast + GradScaler (fallback to fp32)
 - ✅ Gradient accumulation over M micro-batches
 - ✅ Basic logging: tokens/sec, GPU memory, eval every N steps
-- ☐ Loss curves to CSV or TensorBoard
+- ✅ Loss curves to CSV: `{output_dir}/loss_curve.csv` (step, loss, perplexity, lr, tokens_per_sec, gpu_memory_mb)
 
 Training optimizations (advanced from Phase 4 to accelerate experimentation):
 - ✅ Multi-backend attention support: Flash Attention 2, Sage Attention, xFormers, Standard PyTorch (automatic fallback; config-selectable via `attention_backend`)
@@ -206,6 +207,7 @@ Evaluation and quality:
 - ✅ BPE tokenizer integrated and verified on Phase 2 datasets (WikiText-103 BPE: 442K tokens, gpt2 encoding)
 - ✅ Long-run stability check: 3000-step quality run (~24M token-steps) with no NaN/Inf; gradients remained stable under clipping
 - ✅ Loss curve smooth: 5000-step BPE convergence run — 0 spike violations of 3× running-avg criterion; CSV at `outputs/ephemeral/p3-bpe-convergence/loss_curve.csv` (ephemeral/gitignored)
+- ✅ **Convergence proof (committed)**: 5000-step interleaved TinyStories+WikiText BPE milestone run — loss 10.89→4.31, best ppl **67.9**; CSV + checkpoint at `outputs/p3-bpe-convergence/`; config `config/milestones/p3_bpe_convergence.toml`; Flash Attention + bf16 AMP; stable training (0 NaN/Inf)
 - ✅ Throughput baseline documented: ~128–137k tokens/sec (single-GPU baseline); ~175k tokens/sec with Flash Attention + DataLoader optimization on RTX 4090
 - ✅ Multi-GPU validated: DDP tested with 2 GPUs, identical loss across processes at same seed
 

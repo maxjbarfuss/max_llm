@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from src.config.data import DataConfig
 from src.config.experiment import ExperimentConfig
@@ -36,6 +36,45 @@ from src.training.scheduler import get_cosine_schedule_with_warmup
 from src.utils import seed_everything, seed_worker
 
 
+class TokenDataset(Dataset):
+    """PyTorch Dataset backed by a flat token array (numpy or torch).
+
+    Yields non-overlapping (input, target) sequence pairs without materialising
+    the full set of pairs in memory upfront.  When ``tokens`` is a memory-mapped
+    numpy array (opened with ``np.load(..., mmap_mode='r')``), only the pages
+    that are actually accessed are loaded from disk, keeping RAM usage minimal
+    even for large files.
+
+    Args:
+        tokens: Flat 1-D array of token IDs (np.ndarray or torch.Tensor).
+        seq_len: Length of each input sequence.  Each sample covers
+            ``seq_len + 1`` consecutive tokens: ``tokens[i:i+seq_len]`` as
+            input and ``tokens[i+1:i+seq_len+1]`` as target.
+    """
+
+    def __init__(self, tokens: np.ndarray | torch.Tensor, seq_len: int) -> None:
+        self.tokens = tokens
+        self.seq_len = seq_len
+        self.num_samples = len(tokens) // (seq_len + 1)
+        if self.num_samples == 0:
+            raise ValueError(
+                f"Not enough tokens ({len(tokens)}) for one sample (need {seq_len + 1})"
+            )
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        start = idx * (self.seq_len + 1)
+        end = start + self.seq_len + 1
+        sample = self.tokens[start:end]
+        if isinstance(sample, np.ndarray):
+            sample = torch.from_numpy(sample.astype(np.int64))
+        x = sample[:-1].long()
+        y = sample[1:].long()
+        return x, y
+
+
 def load_tokens(
     dataset_path: str | Path,
     tokenizer_name: str,
@@ -43,8 +82,13 @@ def load_tokens(
     tokenizer_mode: str | None = None,
     tokenizer_vocab_size: int | None = None,
     unigram_model_path: str | None = None,
-) -> torch.Tensor:
+    use_mmap: bool = True,
+) -> np.ndarray | torch.Tensor:
     """Load tokens from a dataset path (either .npy or .txt).
+
+    For ``.npy`` files, returns a memory-mapped numpy array by default
+    (``use_mmap=True``).  Callers that need a plain torch.Tensor can pass
+    ``use_mmap=False``, which loads the whole file into RAM.
 
     Args:
         dataset_path: Path to .npy token file or .txt text file
@@ -53,14 +97,21 @@ def load_tokens(
         tokenizer_mode: Mode for char tokenizer (utf8, utf16, utf32, codepoint)
         tokenizer_vocab_size: Vocab size for char tokenizer
         unigram_model_path: Path to unigram model file
+        use_mmap: If True (default), memory-map .npy files so only accessed
+            pages are loaded into RAM.  Ignored for text files.
 
     Returns:
-        Tensor of token IDs (dtype=torch.long)
+        Memory-mapped np.ndarray for .npy files (when use_mmap=True),
+        torch.Tensor for .npy files (when use_mmap=False),
+        or torch.Tensor for text files (after tokenisation).
     """
     dataset_path = Path(dataset_path)
 
     if dataset_path.suffix == ".npy":
-        # Load pre-tokenized data (fast path)
+        if use_mmap:
+            # Memory-mapped: OS loads only the pages we access; no full RAM copy
+            return np.load(dataset_path, mmap_mode="r")
+        # Fallback: load entire file into RAM
         token_array = np.load(dataset_path)
         return torch.tensor(token_array, dtype=torch.long)
     else:
@@ -187,11 +238,11 @@ def load_checkpoint(
 
 
 def create_simple_loaders(
-    train_tokens: torch.Tensor,
+    train_tokens: np.ndarray | torch.Tensor,
     seq_len: int,
     batch_size: int,
-    val_tokens: torch.Tensor | None = None,
-    test_tokens: torch.Tensor | None = None,
+    val_tokens: np.ndarray | torch.Tensor | None = None,
+    test_tokens: np.ndarray | torch.Tensor | None = None,
     validation_split: float = 0.1,
     seed: int = 42,
     device: torch.device | None = None,
@@ -201,22 +252,29 @@ def create_simple_loaders(
 ) -> tuple[DataLoader, DataLoader, DataLoader | None]:
     """Create train, validation, and optional test data loaders.
 
+    Accepts both numpy arrays (including memory-mapped ones from
+    ``np.load(..., mmap_mode='r')``) and torch.Tensors.  When a numpy array is
+    provided, a :class:`TokenDataset` is used so that pairs are generated lazily
+    in ``__getitem__`` rather than materialised all at once.  For torch.Tensor
+    inputs the legacy ``TensorDataset`` path is preserved for backward
+    compatibility.
+
     If val_tokens is provided, uses it directly for validation.
     Otherwise, splits train_tokens using validation_split ratio.
     If test_tokens is provided, creates a test loader.
 
     Args:
-        train_tokens: Flat sequence of training token IDs
-        seq_len: Sequence length for each training sample
-        batch_size: Batch size for loaders
-        val_tokens: Optional separate validation tokens (overrides split if provided)
-        test_tokens: Optional separate test tokens (creates test loader if provided)
-        validation_split: Fraction of train_tokens to use for validation (ignored if val_tokens provided)
-        seed: Random seed for reproducibility
-        device: Device for pin_memory setting (pinned if CUDA)
-        num_workers: Number of data loading workers (default: 0)
-        prefetch_factor: Number of batches to prefetch per worker (default: 2)
-        persistent_workers: Keep workers alive between epochs (default: False)
+        train_tokens: Flat sequence of training token IDs (numpy or torch).
+        seq_len: Sequence length for each training sample.
+        batch_size: Batch size for loaders.
+        val_tokens: Optional separate validation tokens (overrides split if provided).
+        test_tokens: Optional separate test tokens (creates test loader if provided).
+        validation_split: Fraction of train_tokens to use for validation (ignored if val_tokens provided).
+        seed: Random seed for reproducibility.
+        device: Device for pin_memory setting (pinned if CUDA).
+        num_workers: Number of data loading workers (default: 0).
+        prefetch_factor: Number of batches to prefetch per worker (default: 2).
+        persistent_workers: Keep workers alive between epochs (default: False).
 
     Returns:
         Tuple of (train_loader, val_loader, test_loader_or_none)
@@ -228,32 +286,38 @@ def create_simple_loaders(
     # Determine pin_memory setting based on device
     pin_memory = device is not None and device.type == "cuda"
 
-    def _create_loader_from_tokens(
-        tokens: torch.Tensor, shuffle: bool = False
-    ) -> tuple[DataLoader, int]:
-        """Create a DataLoader from tokens and return (loader, num_samples)."""
-        # Create non-overlapping sequences
-        num_samples = len(tokens) // (seq_len + 1)
-        if num_samples == 0:
-            raise ValueError(
-                f"Not enough tokens ({len(tokens)}) for at least one sample (need {seq_len + 1})"
-            )
+    total_samples = len(train_tokens) // (seq_len + 1)
+    if total_samples == 0:
+        raise ValueError(
+            f"Not enough tokens ({len(train_tokens)}) for at least one sample (need {seq_len + 1})"
+        )
 
-        # Prepare input/target pairs
+    def _make_dataset(tokens: np.ndarray | torch.Tensor, start: int = 0, end: int | None = None) -> Dataset:
+        """Return a Dataset for sample indices [start, end)."""
+        if isinstance(tokens, np.ndarray):
+            tok_start = start * (seq_len + 1)
+            tok_end = end * (seq_len + 1) if end is not None else None
+            sliced = tokens[tok_start:tok_end]
+            return TokenDataset(sliced, seq_len)
+        # torch.Tensor legacy path: pre-build all pairs (backward-compatible with tests)
+        if end is None:
+            end = len(tokens) // (seq_len + 1)
+        num = end - start
+        if num == 0:
+            # Empty split (e.g. validation_split=0.0): return empty TensorDataset
+            empty = torch.zeros((0, seq_len), dtype=torch.long)
+            return TensorDataset(empty, empty)
         inputs: list[torch.Tensor] = []
         targets: list[torch.Tensor] = []
-        for i in range(num_samples):
-            start = i * (seq_len + 1)
-            end = start + seq_len + 1
-            sample = tokens[start:end]
+        for i in range(start, end):
+            s = i * (seq_len + 1)
+            sample = tokens[s : s + seq_len + 1]
             inputs.append(sample[:-1])
             targets.append(sample[1:])
+        return TensorDataset(torch.stack(inputs), torch.stack(targets))
 
-        inputs_tensor = torch.stack(inputs)
-        targets_tensor = torch.stack(targets)
-        dataset = TensorDataset(inputs_tensor, targets_tensor)
-
-        loader = DataLoader(
+    def _create_loader(dataset: Dataset, shuffle: bool) -> DataLoader:
+        return DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=shuffle,
@@ -264,61 +328,21 @@ def create_simple_loaders(
             prefetch_factor=prefetch_factor if num_workers > 0 else None,
             persistent_workers=persistent_workers if num_workers > 0 else False,
         )
-        return loader, num_samples
 
-    # Create train loader
-    train_loader, train_num_samples = _create_loader_from_tokens(train_tokens, shuffle=True)
-
-    # Create validation loader
+    # Build loaders
     if val_tokens is not None:
-        # Use separate validation dataset
-        val_loader, val_num_samples = _create_loader_from_tokens(val_tokens, shuffle=False)
+        train_loader = _create_loader(_make_dataset(train_tokens), shuffle=True)
+        val_loader = _create_loader(_make_dataset(val_tokens), shuffle=False)
     else:
-        # Split train_tokens for validation
-        num_samples = len(train_tokens) // (seq_len + 1)
-        split_idx = int(num_samples * (1 - validation_split))
-
-        # Re-create train/val from split
-        inputs: list[torch.Tensor] = []
-        targets: list[torch.Tensor] = []
-        for i in range(num_samples):
-            start = i * (seq_len + 1)
-            end = start + seq_len + 1
-            sample = train_tokens[start:end]
-            inputs.append(sample[:-1])
-            targets.append(sample[1:])
-
-        inputs_tensor = torch.stack(inputs)
-        targets_tensor = torch.stack(targets)
-
-        train_dataset = TensorDataset(inputs_tensor[:split_idx], targets_tensor[:split_idx])
-        val_dataset = TensorDataset(inputs_tensor[split_idx:], targets_tensor[split_idx:])
-
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=batch_size,
-            shuffle=True,
-            generator=generator,
-            worker_init_fn=seed_worker,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            prefetch_factor=prefetch_factor if num_workers > 0 else None,
-            persistent_workers=persistent_workers if num_workers > 0 else False,
-        )
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            prefetch_factor=prefetch_factor if num_workers > 0 else None,
-            persistent_workers=persistent_workers if num_workers > 0 else False,
-        )
+        # Split train_tokens into train/val by sample index
+        split_idx = int(total_samples * (1 - validation_split))
+        train_loader = _create_loader(_make_dataset(train_tokens, 0, split_idx), shuffle=True)
+        val_loader = _create_loader(_make_dataset(train_tokens, split_idx, total_samples), shuffle=False)
 
     # Create optional test loader
     test_loader = None
     if test_tokens is not None:
-        test_loader, _test_num_samples = _create_loader_from_tokens(test_tokens, shuffle=False)
+        test_loader = _create_loader(_make_dataset(test_tokens), shuffle=False)
 
     return train_loader, val_loader, test_loader
 
