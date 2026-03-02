@@ -3,10 +3,10 @@
 
 Usage:
     source .venv/bin/activate && python scripts/benchmark_tokenizers.py \
-        --input data/fast/combined_wikitext_tinystories_10m_utf8.txt \
+    --input data/fast/<corpus_sample>.txt \
         --sample-chars 500000 \
         --unigram-vocab-size 16000 \
-        --output outputs/p3_tokenizer_benchmark_20260227.json
+    --output outputs/<benchmark_run>.json
 """
 
 from __future__ import annotations

@@ -59,8 +59,10 @@ def default_slow_cache_dir(source: Path) -> Path:
 
 
 def is_on_slow_storage(path: Path) -> bool:
-    text = str(path)
-    return text.startswith("/mnt/")
+    text = str(path.resolve())
+    prefixes_env = os.getenv("MAXLLM_SLOW_STORAGE_PREFIXES", "/mnt,/media")
+    prefixes = [prefix.strip() for prefix in prefixes_env.split(",") if prefix.strip()]
+    return any(text.startswith(prefix) for prefix in prefixes)
 
 
 def resolve_cache_policy(policy: str, source: Path) -> str:

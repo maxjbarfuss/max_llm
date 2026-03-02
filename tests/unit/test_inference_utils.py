@@ -50,7 +50,7 @@ class TestLoadCheckpointIntoModel:
     @pytest.fixture
     def model(self):
         """Create a simple model for testing."""
-        config = ExperimentConfig.from_toml("config/experiment.toml")
+        config = ExperimentConfig.from_toml("config/milestones/p2_baseline.toml")
         return SimpleLM.from_config(config.model)
 
     def test_load_checkpoint_with_model_state_key(self, model):
@@ -179,7 +179,7 @@ class TestCreateTokenizerFromDataConfig:
 
     def test_create_utf8_tokenizer(self):
         """Test creating UTF-8 tokenizer."""
-        config = ExperimentConfig.from_toml("config/experiment.toml")
+        config = ExperimentConfig.from_toml("config/milestones/p2_baseline.toml")
         tokenizer = create_tokenizer_from_data_config(config.data)
 
         # Should be able to encode/decode

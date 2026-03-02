@@ -1,7 +1,7 @@
 """Training entrypoint for max-llm.
 
 Usage:
-    python -m src.training.train --config config/experiment.toml
+    python -m src.training.train --config config/milestones/<experiment>.toml
 """
 
 from __future__ import annotations

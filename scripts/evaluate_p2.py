@@ -2,8 +2,8 @@
 """Evaluate Phase 2 model: loss, perplexity, generation samples.
 
 Usage:
-    python scripts/evaluate_p2.py --config config/experiment.toml \\
-        --checkpoint outputs/p2-baseline/checkpoint.pt \\
+    python scripts/evaluate_p2.py --config config/milestones/<experiment>.toml \\
+        --checkpoint outputs/<run>/checkpoint.pt \\
         --prompt "Hello world" \\
         --num-samples 3
 """

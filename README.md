@@ -2,7 +2,7 @@
 
 LLM research lab for building, training, and evaluating modern architectures on local hardware.
 
-**Status:** Current phase and progress live in [docs/SESSION.md](docs/SESSION.md) and [docs/PLAN.md](docs/PLAN.md).
+**Status:** Current phase and progress live in [.github/MEMORY.md](.github/MEMORY.md) (working session), [.github/SESSION_LOG.md](.github/SESSION_LOG.md) (history), and [docs/PLAN.md](docs/PLAN.md).
 
 **Repository:**
 [github.com/maxjbarfuss/max_llm](https://github.com/maxjbarfuss/max_llm)
@@ -30,7 +30,9 @@ Setup, then pick your entrypoint:
 
 Docs:
 
-- [docs/SESSION.md](docs/SESSION.md): current focus, next steps, session log
+- [.github/MEMORY.md](.github/MEMORY.md): current session working state
+- [.github/SESSION_LOG.md](.github/SESSION_LOG.md): append-only history of completed work
+- [docs/PLAN.md](docs/PLAN.md): phased roadmap and task checklists
 - [docs/PLAN.md](docs/PLAN.md): phased roadmap and exit criteria
 - [docs/DESIGN.md](docs/DESIGN.md): architecture, engineering constraints, data strategy
 - [CONTRIBUTING.md](CONTRIBUTING.md): workflow and contributor authorization

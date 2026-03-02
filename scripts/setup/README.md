@@ -84,7 +84,7 @@ Verify your environment works:
 make test       # Python + C++ tests
 ```
 
-Then read [CONTRIBUTING.md](../../CONTRIBUTING.md) and [docs/SESSION.md](../../docs/SESSION.md) to begin.
+Then read [CONTRIBUTING.md](../../CONTRIBUTING.md), [.github/AGENTS.md](../../.github/AGENTS.md), and check [.github/MEMORY.md](../../.github/MEMORY.md) for current session state to begin.
 
 ---
 
@@ -116,4 +116,5 @@ Read: [NVIDIA WSL User Guide](https://docs.nvidia.com/cuda/wsl-user-guide/)
 
 - [README.md](../../README.md): Project overview and status
 - [CONTRIBUTING.md](../../CONTRIBUTING.md): Workflow and contribution rules
-- [docs/SESSION.md](../../docs/SESSION.md): Current focus and immediate next steps
+- [.github/MEMORY.md](../../.github/MEMORY.md): Current session working state
+- [.github/SESSION_LOG.md](../../.github/SESSION_LOG.md): History of completed work

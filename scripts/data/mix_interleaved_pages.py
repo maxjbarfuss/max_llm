@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import sys
 from pathlib import Path
@@ -23,18 +24,50 @@ sys.path.insert(0, str(project_root))
 from src.data.datasets.boundary import get_boundary_detector
 
 # Dataset registry: Maps dataset name to (default_input_path, boundary_dataset, description)
-DATASET_REGISTRY: dict[str, tuple[str, str, str]] = {
+DEFAULT_DATASET_REGISTRY: dict[str, tuple[str, str, str]] = {
     "wikitext-103": (
-        "/mnt/d/dev/data/wikitext-103-raw/train.txt",
+        "data/raw/wikitext-103/train.txt",
         "wikitext",
         "WikiText-103 raw corpus (article-level boundaries)",
     ),
     "tinystories": (
-        "/mnt/d/dev/data/tinystories-gpt4-clean/train.txt",
+        "data/raw/tinystories/train.txt",
         "tinystories",
         "TinyStories GPT-4 clean corpus (story-level boundaries)",
     ),
 }
+
+
+def build_dataset_registry(
+    cli_overrides: list[list[str]],
+) -> dict[str, tuple[str, str, str]]:
+    """Build dataset registry from defaults + env + CLI overrides.
+
+    Override precedence (highest to lowest):
+      1) CLI: --dataset-source <dataset> <path>
+      2) Env: MAXLLM_DATASET_<DATASET_KEY>_SOURCE
+      3) Built-in defaults
+    """
+    registry = dict(DEFAULT_DATASET_REGISTRY)
+
+    for name, (default_path, boundary_dataset, description) in DEFAULT_DATASET_REGISTRY.items():
+        env_key = f"MAXLLM_DATASET_{name.upper().replace('-', '_')}_SOURCE"
+        env_path = os.getenv(env_key)
+        if env_path:
+            registry[name] = (env_path, boundary_dataset, description)
+        else:
+            registry[name] = (default_path, boundary_dataset, description)
+
+    for dataset_name, dataset_path in cli_overrides:
+        if dataset_name not in registry:
+            known = ", ".join(sorted(registry))
+            raise ValueError(
+                f"Unknown dataset '{dataset_name}' in --dataset-source. Known: {known}"
+            )
+        _default, boundary_dataset, description = registry[dataset_name]
+        registry[dataset_name] = (dataset_path, boundary_dataset, description)
+
+    return registry
 
 
 def parse_size(size_str: str) -> int:
@@ -46,7 +79,10 @@ def parse_size(size_str: str) -> int:
     return int(size)
 
 
-def parse_corpus_mix(corpus_mix_args: list[str]) -> list[dict[str, Any]]:
+def parse_corpus_mix(
+    corpus_mix_args: list[str],
+    dataset_registry: dict[str, tuple[str, str, str]],
+) -> list[dict[str, Any]]:
     """Parse --corpus-mix dataset_name percent ... into source specs.
 
     Example:
@@ -72,14 +108,14 @@ def parse_corpus_mix(corpus_mix_args: list[str]) -> list[dict[str, Any]]:
         except ValueError:
             raise ValueError(f"Percent value must be numeric, got: {corpus_mix_args[i + 1]}")
 
-        if dataset_name not in DATASET_REGISTRY:
-            known = ", ".join(sorted(DATASET_REGISTRY))
+        if dataset_name not in dataset_registry:
+            known = ", ".join(sorted(dataset_registry))
             raise ValueError(f"Unknown dataset '{dataset_name}'. Known: {known}")
 
         if percent <= 0:
             raise ValueError(f"Dataset '{dataset_name}' has non-positive percent: {percent}")
 
-        input_path, boundary_dataset, _desc = DATASET_REGISTRY[dataset_name]
+        input_path, boundary_dataset, _desc = dataset_registry[dataset_name]
 
         sources.append(
             {
@@ -263,6 +299,17 @@ def main() -> None:
         "Example: wikitext-103 50 tinystories 50",
     )
     parser.add_argument(
+        "--dataset-source",
+        nargs=2,
+        action="append",
+        metavar=("DATASET", "PATH"),
+        default=[],
+        help=(
+            "Override source path for a dataset key (repeatable). "
+            "Example: --dataset-source wikitext-103 /path/to/wikitext/train.txt"
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         required=True,
@@ -291,8 +338,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    dataset_registry = build_dataset_registry(args.dataset_source)
+
     # Parse corpus mix and build source specs from dataset registry
-    source_specs = parse_corpus_mix(args.corpus_mix)
+    source_specs = parse_corpus_mix(args.corpus_mix, dataset_registry)
     source_docs: dict[str, list[str]] = {}
     source_weights: dict[str, float] = {}
     source_inputs: dict[str, str] = {}

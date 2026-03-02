@@ -84,7 +84,7 @@ def create_tokenizer_from_data_config(data_config: DataConfig) -> Tokenizer:
 
     Example:
         >>> from src.config.experiment import ExperimentConfig
-        >>> config = ExperimentConfig.from_toml("config/experiment.toml")
+        >>> config = ExperimentConfig.from_toml("config/milestones/<experiment>.toml")
         >>> tokenizer = create_tokenizer_from_data_config(config.data)
     """
     tokenizer_kwargs: dict[str, Any]

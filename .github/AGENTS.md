@@ -28,6 +28,7 @@ Any agent working on this codebase should operate as simultaneously a **10x Seni
 - Do not broaden into unrelated refactors or speculative features.
 - Prefer action over questions — ask only when a blocker cannot be resolved from repository context.
 - When assumptions are needed, choose the simplest option consistent with current docs and code.
+- **Git operations**: Always use local `git` CLI (e.g., `git add`, `git commit`) via `run_in_terminal`. Never use MCP git wrappers, GitKraken, GitLens, or similar tools—see [L001 in LESSONS.md](LESSONS.md#-l001--never-use-mcp-git-tools-critical).
 
 ## Workflow
 

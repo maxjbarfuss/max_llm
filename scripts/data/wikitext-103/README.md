@@ -77,7 +77,7 @@ dataset_path = "data/fast/wikitext_100k_tokens__utf8.npy"
 Then train:
 
 ```bash
-python -m src.training.train --config config/experiment.toml
+python -m src.training.train --config config/milestones/p2_baseline.toml
 ```
 
 ## Dataset Source

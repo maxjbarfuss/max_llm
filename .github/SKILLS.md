@@ -109,7 +109,7 @@ Practical workflows and tool use patterns for working efficiently on max_llm. Th
 - **Update checkpoint frequently**: Add to [MEMORY.md](MEMORY.md) every 30-60 minutes with: current task, checkpoint location, recent completions
 - **Track phase progress**: Mark items ✅ in [docs/PLAN.md](../docs/PLAN.md) when completing phase deliverables, update progress percentages
 - **Follow TDD discipline**: Write failing test first → implement → verify test passes
-- **Git tool restriction**: Use local `git` CLI only; never use MCP git servers or wrapper tools (e.g., GitKraken, GitLens)
+- **🚨 Git tool restriction (L001 CRITICAL)**: Use **only** local `git` CLI (`run_in_terminal` with plain shell commands). Never use MCP git tools, GitKraken, GitLens, or any wrapper. This applies unconditionally to every session.
 
 ### File Purposes
 - **MEMORY.md** = working/thinking state (what you're doing now) — see [MEMORY vs SESSION_LOG Pattern](MEMORY.md#memory-vs-session_log-pattern-must-understand) for detailed rules
@@ -144,6 +144,7 @@ Before every commit:
 | Run Python tests | `runTests` (preferred) or terminal | Structured output, coverage tracking |
 | Run C++ build/tests | `Build_CMakeTools` / `RunCtest_CMakeTools` | IDE integration, better error messages |
 | Run terminal commands | `run_in_terminal` (sequential, not parallel) | Reliable for shell workflows |
+| **Git operations** | **`run_in_terminal` (plain `git` CLI)** | **L001 CRITICAL: No MCP wrappers—use local git directly** |
 | Plan complex work | `manage_todo_list` | Tracks progress, provides visibility |
 | Explore unknown codebase | `search_subagent` | Efficient parallelization, returns file map |
 

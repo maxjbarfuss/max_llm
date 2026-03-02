@@ -1,7 +1,7 @@
 """Inference entrypoint for max-llm.
 
 Usage:
-    python -m src.inference.run --config config/experiment.toml --prompt "Hello"
+    python -m src.inference.run --config config/milestones/<experiment>.toml --prompt "Hello"
 """
 
 from __future__ import annotations

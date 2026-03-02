@@ -53,6 +53,9 @@ artifacts/
 # Training outputs (checkpoints, generated text, experiment artifacts)
 /outputs/
 
+# Ephemeral experiment configs (intentionally local/untracked)
+/config/ephemeral/
+
 # Credentials (never commit)
 .github/.github_token
 .huggingface/.hf_token

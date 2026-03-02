@@ -10,8 +10,8 @@ This is the recommended workflow for Phase 2-4 training:
 Usage:
     # Full workflow: normalize + tokenize + extract 500K token subset
     python -m scripts/data/prepare_training_data.py \
-        --source /mnt/d/dev/data/wikitext-103-raw/train.txt \\
-        --output data/fast/wikitext_500k_tokens.npy \\
+        --source data/slow/<dataset>.txt \\
+        --output data/fast/<dataset>_500k_tokens.npy \\
         --size 500K \\
         --normalize \\
         --tokenize \\
@@ -19,8 +19,8 @@ Usage:
 
     # Extract token subset from already-cached tokens
     python -m scripts/data/prepare_training_data.py \
-        --source /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
-        --output data/fast/wikitext_1m_tokens.npy \\
+        --source data/slow/<dataset>_tokens.npy \\
+        --output data/fast/<dataset>_1m_tokens.npy \\
         --size 1M
 """
 
@@ -45,6 +45,7 @@ def prepare_training_data(
     tokenizer: str = "char",
     tokenizer_mode: str = "codepoint",
     vocab_size: int = 128,
+    config_hint: str | None = None,
     force: bool = False,
 ) -> None:
     """Prepare training data: optionally normalize, tokenize, then extract subset.
@@ -129,7 +130,7 @@ def prepare_training_data(
             else:
                 # Run tokenization script
                 try:
-                    result = subprocess.run(
+                    subprocess.run(
                         [
                             sys.executable,
                             "-m",
@@ -168,7 +169,7 @@ def prepare_training_data(
     if is_tokenized or current_path.suffix == ".npy":
         # Extract token subset
         try:
-            result = subprocess.run(
+            subprocess.run(
                 [
                     sys.executable,
                     "-m",
@@ -191,7 +192,7 @@ def prepare_training_data(
     else:
         # Extract text subset (legacy)
         try:
-            result = subprocess.run(
+            subprocess.run(
                 [
                     sys.executable,
                     "-m",
@@ -214,10 +215,11 @@ def prepare_training_data(
     # Step 4: Instructions for config update
     console.print("\n[bold green]✓ Data preparation complete![/bold green]")
     console.print("\n[bold]Next steps:[/bold]")
-    console.print("  1. Update config/experiment.toml:")
+    config_target = config_hint or "config/milestones/<experiment>.toml"
+    console.print(f"  1. Update {config_target}:")
     console.print(f'     dataset_path = "{output_path}"')
     console.print("  2. Run training:")
-    console.print("     python -m src.training.train --config config/experiment.toml")
+    console.print(f"     python -m src.training.train --config {config_target}")
 
 
 def main() -> None:
@@ -240,8 +242,8 @@ Size formats:
 Examples:
   # Full workflow: normalize + tokenize + extract 500K tokens
     python -m scripts/data/prepare_training_data.py \
-      --source /mnt/d/dev/data/wikitext-103-raw/train.txt \\
-      --output data/fast/wikitext_500k_tokens.npy \\
+            --source data/slow/<dataset>.txt \\
+            --output data/fast/<dataset>_500k_tokens.npy \\
       --size 500K \\
       --normalize \\
       --tokenize \\
@@ -249,20 +251,20 @@ Examples:
 
   # Extract from already-cached tokens
     python -m scripts/data/prepare_training_data.py \
-      --source /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
-      --output data/fast/wikitext_1m_tokens.npy \\
+            --source data/slow/<dataset>_tokens.npy \\
+            --output data/fast/<dataset>_1m_tokens.npy \\
       --size 1M
 
   # Legacy text extraction (without tokenization)
     python -m scripts/data/prepare_training_data.py \
-      --source /mnt/d/dev/data/wikitext-103-raw/train_normalized.txt \\
-      --output data/fast/wikitext_10mb.txt \\
+            --source data/slow/<dataset>_normalized.txt \\
+            --output data/fast/<dataset>_10mb.txt \\
       --size 10M
 
   # Overwrite existing files
     python -m scripts/data/prepare_training_data.py \
-      --source /mnt/d/dev/data/wikitext-103-raw/train.txt \\
-      --output data/fast/wikitext_new_tokens.npy \\
+            --source data/slow/<dataset>.txt \\
+            --output data/fast/<dataset>_new_tokens.npy \\
       --size 1M \\
       --normalize \\
       --tokenize \\
@@ -315,6 +317,11 @@ Examples:
         help="Vocabulary size for codepoint mode (default: 128)",
     )
     parser.add_argument(
+        "--config-hint",
+        default=None,
+        help="Optional config path shown in next-step guidance (e.g., config/milestones/p3_foo.toml)",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Overwrite existing files",
@@ -331,6 +338,7 @@ Examples:
         tokenizer=args.tokenizer,
         tokenizer_mode=args.mode,
         vocab_size=args.vocab_size,
+        config_hint=args.config_hint,
         force=args.force,
     )
 

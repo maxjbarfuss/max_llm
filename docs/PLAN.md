@@ -102,7 +102,7 @@ Data:
 - ✅ Download TinyStories; create `scripts/data/tinystories/default_utf8.yaml`; compare tokenization stats
 
 Components:
-- ✅ Fill `config/experiment.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128/256/512`, tokenizer_mode); wire into `src.training.train` entrypoint
+- ✅ Fill `config/milestones/p2_baseline.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128/256/512`, tokenizer_mode); wire into `src.training.train` entrypoint
 - ✅ Character-level tokenizer (`src/tokenizer/char_tokenizer.py`): multi-mode (codepoint/utf8/utf16/utf32), encode/decode with roundtrip tests
 - ✅ TokenizerFactory (`src/tokenizer/tokenizer.py`): **kwargs-based parameterization for mode and vocab_size
 - ✅ `BaseLearningModel` ABC (`src/models/learning_model/base.py`): `forward` and factory interface; evolves across phases
@@ -120,15 +120,15 @@ Quality:
 - ✅ Unit tests: 240 passing — end-to-end Phase 2 loop covered (tokenizer → data pipeline → training → checkpoint → inference → seed hardening → overfit test)
 
 **Exit Criteria** (status updated 2026-02-25 — Phase 2 100% complete):
-- ✅ `python -m src.training.train --config config/experiment.toml` trains end-to-end on WikiText-103 100k tokens, loss decreases (16.01→2.61)
-- ✅ `python -m src.training.train --config config/experiment_tinystories.toml` trains end-to-end on TinyStories, loss decreases (verified: 2.74 convergence)
+- ✅ `python -m src.training.train --config config/milestones/p2_baseline.toml` trains end-to-end on WikiText-103 100k tokens, loss decreases (16.01→2.61)
+- ✅ `python -m src.training.train --config config/milestones/p2_tinystories_baseline.toml` trains end-to-end on TinyStories, loss decreases (verified: 2.74 convergence)
 - ✅ Save/restore checkpoint with same seed produces bit-identical loss at step N+1 (seed hardening complete with 8 unit tests)
 - ✅ 240 unit tests passing — end-to-end Phase 2 loop (tokenizer → data pipeline → training → checkpoint → inference → seed hardening → overfit)
 - ✅ WikiText-103 subset (100K tokens) downloaded, tokenized, and validated (on disk)
 - ✅ TinyStories subset (100K tokens) downloaded, tokenized, and validated (on disk with boundary detection)
 - ✅ Overfit test achieves train loss < 0.1 on a 10K-token subset within 500 steps (verified: 3 tests passing)
-- ✅ Inference: `python -m src.inference.run --config config/experiment.toml --checkpoint <path> --prompt "Hello"` generates text from a trained checkpoint
-- ✅ Evaluation: `python scripts/evaluate_p2.py --config config/experiment.toml --checkpoint <path> --prompt "Hello"` reports perplexity and generation samples
+- ✅ Inference: `python -m src.inference.run --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` generates text from a trained checkpoint
+- ✅ Evaluation: `python scripts/evaluate_p2.py --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` reports perplexity and generation samples
 
 ---
 

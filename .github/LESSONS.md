@@ -3,14 +3,18 @@
 > Maintained by [@maxjbarfuss](https://github.com/maxjbarfuss). Read this at the start of every session (see [SKILLS.md](SKILLS.md#working-rule)).
 >
 > Each lesson captures a specific mistake observed in an agent session and the correct behavior. Agents must internalize these before starting work.
+>
+> ⚠️ **START HERE**: Read L001 immediately. It is non-negotiable and applies to every session.
 
 ---
 
-## L001 — Never Use MCP Git Tools
+## 🚨 L001 — Never Use MCP Git Tools (CRITICAL)
 
-**Observed behavior**: Agent used GitKraken, GitLens, or another MCP git server for repository operations instead of the local `git` CLI.
+**Observed behavior**: Agent used GitKraken, GitLens, or another MCP git server for repository operations instead of the local `git` CLI. This has been observed repeatedly despite being documented.
 
-**Correct approach**: Use only local `git` commands for all git operations (`git status`, `git add`, `git commit`, `git diff`, `git log`, `git push`). Never invoke any MCP server for git operations.
+**Correct approach**: Use **only** local `git` commands for all git operations (`git status`, `git add`, `git commit`, `git diff`, `git log`, `git push`). Execute these via `run_in_terminal` with plain shell commands. Never invoke any MCP server, wrapper tool, or git integration tool.
+
+**Why this matters**: MCP wrappers add latency, obscure error messages, and reduce control. Plain `git` CLI is faster, clearer, and more reliable. This is a non-negotiable rule that must be enforced across all sessions and agents.
 
 ---
 
@@ -18,7 +22,7 @@
 
 **Observed behavior**: Agent completed work and committed without updating `docs/SESSION.md` (clearing scratch pad, adding log entry).
 
-**Correct approach**: Before every commit, clear the Scratch Pad section of `docs/SESSION.md` and add a row to the Running Session Log with the date, commit marker, and a one-line summary of completed work. Omitting this breaks continuity for the next session.
+**Correct approach**: Before every commit, add a row to [SESSION_LOG.md](SESSION_LOG.md) with the date, commit marker, and a one-line summary of completed work. Then clear the relevant sections of [MEMORY.md](MEMORY.md). Omitting this breaks continuity for the next session.
 
 ---
 
@@ -34,7 +38,7 @@
 
 **Observed behavior**: Agent modified `.github/SKILLS.md`, `.github/LESSONS.md`, `CONTRIBUTING.md`, or `.github/CODEOWNERS` as incidental cleanup or as part of an unrelated task.
 
-**Correct approach**: Governance and agent instruction files require an explicit user request to change. Do not touch them speculatively or as a side effect of another task. Note: `docs/SESSION.md` and `docs/PLAN.md` are *not* governance files — updating them is expected as part of every session.
+**Correct approach**: Governance and agent instruction files require an explicit user request to change. Do not touch them speculatively or as a side effect of another task. Note: `.github/MEMORY.md`, `.github/SESSION_LOG.md`, and `docs/PLAN.md` are *not* governance files — updating them is expected as part of every session.
 
 ---
 
@@ -42,7 +46,7 @@
 
 **Observed behavior**: Agent added a "Current Phase" section to `README.md` containing task checklists, test counts, coverage percentages, or other mutable status information.
 
-**Correct approach**: `README.md` is a stable navigation document — it describes the project and links to resources. Mutable status belongs exclusively in `docs/SESSION.md` (current focus, next steps) and `docs/PLAN.md` (task checklists, exit criteria). Never add current-phase progress tables, checklist items, or quality metrics to `README.md`.
+**Correct approach**: `README.md` is a stable navigation document — it describes the project and links to resources. Mutable status belongs exclusively in `.github/MEMORY.md` (current focus), `.github/SESSION_LOG.md` (history), and `docs/PLAN.md` (task checklists, exit criteria). Never add current-phase progress tables, checklist items, or quality metrics to `README.md`.
 
 ---
 

@@ -5,7 +5,7 @@ Phase 2 training entrypoint lives in this folder.
 ## Run Training
 
 ```bash
-python -m src.training.train --config config/experiment.toml
+python -m src.training.train --config config/milestones/p2_baseline.toml
 ```
 
 ## Checkpoint

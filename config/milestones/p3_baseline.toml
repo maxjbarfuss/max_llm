@@ -1,19 +1,19 @@
-# Phase 3 — Test xFormers attention backend (torch.compile compatible)
+# Phase 3 — baseline milestone (decoder + BPE + optimized training)
 
 [experiment]
-name = "maxllm-p3-xformers-attn-test"
-output_dir = "./outputs/p3-xformers-attn-test"
+name = "maxllm-p3-baseline"
+output_dir = "./outputs/p3-baseline"
 
 [model]
-model_type = "attention_lm"
-hidden_size = 128
-num_layers = 1
+model_type = "decoder_lm"
+hidden_size = 256
+num_layers = 4
 num_heads = 4
 vocab_size = 50304
 max_seq_length = 256
 mla_latent_dim = 64
 rope_base = 10000
-intermediate_size = 512
+intermediate_size = 1024
 num_experts = 1
 experts_per_token = 1
 moe_frequency = 0
@@ -21,11 +21,11 @@ gru_hidden_size = 128
 dropout = 0.1
 
 [training]
-batch_size = 4
-gradient_accumulation_steps = 1
-max_steps = 200
-warmup_steps = 20
-learning_rate = 0.001
+batch_size = 8
+gradient_accumulation_steps = 2
+max_steps = 2000
+warmup_steps = 100
+learning_rate = 0.0005
 weight_decay = 0.01
 betas = [0.9, 0.999]
 epsilon = 1.0e-8
@@ -33,12 +33,12 @@ gradient_clip_norm = 1.0
 precision_schedule = [[0, -1, "bf16"]]
 moe_balance_loss_weight = 0.0
 distributed_backend = "ddp"
-checkpoint_interval = 100
+checkpoint_interval = 500
 eval_interval = 100
-log_interval = 25
+log_interval = 50
 keep_last_n_checkpoints = 3
 use_torch_compile = false
-attention_backend = "xformers"
+attention_backend = "flash"
 selective_checkpointing = false
 
 [inference]

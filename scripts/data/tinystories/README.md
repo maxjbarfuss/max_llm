@@ -50,7 +50,7 @@ dataset_path = "data/fast/tinystories_100k_tokens__utf8.npy"
 Then train:
 
 ```bash
-python -m src.training.train --config config/experiment_tinystories.toml
+python -m src.training.train --config config/milestones/p2_tinystories_baseline.toml
 ```
 
 ## Dataset Source

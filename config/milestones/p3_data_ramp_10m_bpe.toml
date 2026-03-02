@@ -1,33 +1,32 @@
-# Phase 3 — WikiText UTF8 full training test (1000 steps)
-# Full training validation with all modern training features enabled.
+# Phase 3 — data-ramp milestone (interleaved 10M BPE tokens)
 
 [experiment]
-name = "maxllm-p3-wikitext-utf8-test"
-output_dir = "./outputs/p3-wikitext-utf8-test"
+name = "maxllm-p3-data-ramp-10m-bpe"
+output_dir = "./outputs/p3-data-ramp-10m-bpe"
 
 [model]
-model_type = "decoder_lm"
-hidden_size = 256
-num_layers = 4
-num_heads = 8
-vocab_size = 256
-max_seq_length = 512
+model_type = "attention_lm"
+hidden_size = 128
+num_layers = 1
+num_heads = 4
+vocab_size = 50304
+max_seq_length = 256
 mla_latent_dim = 64
 rope_base = 10000
-intermediate_size = 1024
+intermediate_size = 512
 num_experts = 1
 experts_per_token = 1
 moe_frequency = 0
-gru_hidden_size = 256
+gru_hidden_size = 128
 dropout = 0.1
 
 [training]
-batch_size = 8
-gradient_accumulation_steps = 2
+batch_size = 4
+gradient_accumulation_steps = 1
 max_steps = 1000
-warmup_steps = 100
-learning_rate = 0.0003
-weight_decay = 0.01
+warmup_steps = 50
+learning_rate = 0.001
+weight_decay = 0.0
 betas = [0.9, 0.999]
 epsilon = 1.0e-8
 gradient_clip_norm = 1.0
@@ -36,7 +35,7 @@ moe_balance_loss_weight = 0.0
 distributed_backend = "ddp"
 checkpoint_interval = 200
 eval_interval = 200
-log_interval = 50
+log_interval = 100
 keep_last_n_checkpoints = 3
 use_torch_compile = false
 attention_backend = "standard"
@@ -52,16 +51,16 @@ use_kv_cache = false
 kv_cache_dtype = "bf16"
 
 [data]
-dataset_path = "data/fast/wikitext_5m_tokens__utf8.npy"
-tokenizer_name = "char"
+dataset_path = "data/fast/interleaved_wikitext_tinystories_10m_tokens_bpe_gpt2.npy"
+tokenizer_name = "bpe"
 tokenizer_mode = "utf8"
-tokenizer_vocab_size = 256
+tokenizer_vocab_size = 50304
 tokenizer_backend = "gpt2_bpe"
 unigram_model_path = ""
-max_length = 512
-num_workers = 4
+max_length = 256
+num_workers = 0
 prefetch_factor = 2
-pin_memory = true
+pin_memory = false
 persistent_workers = false
 streaming = false
 cache_dir = "./data/cache"

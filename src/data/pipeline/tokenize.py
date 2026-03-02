@@ -8,8 +8,8 @@ This is part of the recommended workflow:
 
 Usage:
     python -m src.data.pipeline.tokenize \\
-        --input /mnt/d/dev/data/wikitext-103-raw/train_normalized.txt \\
-        --output /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
+        --input data/slow/<dataset>_normalized.txt \\
+        --output data/slow/<dataset>_tokens.npy \\
         --tokenizer char
 """
 
@@ -166,17 +166,17 @@ Workflow:
   3. Extract token subsets to fast storage (instant, reusable)
 
 Examples:
-  # Tokenize normalized WikiText with character tokenizer
+  # Tokenize normalized text with character tokenizer
   python -m src.data.pipeline.tokenize \\
-      --input /mnt/d/dev/data/wikitext-103-raw/train_normalized.txt \\
-      --output /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
+      --input data/slow/<dataset>_normalized.txt \\
+      --output data/slow/<dataset>_tokens.npy \\
       --tokenizer char
 
-  # Tokenize with different tokenizer (future)
+  # Tokenize with BPE tokenizer
   python -m src.data.pipeline.tokenize \\
-      --input /mnt/d/dev/data/wikitext-103-raw/train_normalized.txt \\
-      --output /mnt/d/dev/data/wikitext-103-raw/train_tokens_bpe.npy \\
-      --tokenizer gpt2
+      --input data/slow/<dataset>_normalized.txt \\
+      --output data/slow/<dataset>_tokens_bpe.npy \\
+      --tokenizer bpe --encoding gpt2
         """,
     )
 

@@ -27,11 +27,11 @@ python scripts/data/run_data_prep.py \
     --normalize --tokenize
 
 # Then point your experiment config at the output
-# config/experiment.toml:
+# config/milestones/p2_baseline.toml:
 #   [data]
 #   dataset_path = "data/fast/wikitext_1m_tokens__utf8.npy"
 
-python -m src.training.train --config config/experiment.toml
+python -m src.training.train --config config/milestones/p2_baseline.toml
 ```
 
 ### Multiple Datasets (Interleaved)
@@ -56,7 +56,7 @@ python scripts/data/mix_interleaved_pages.py \
 
 1. Pick or create a dataset config under `scripts/data/<dataset>/`
 2. Run `run_data_prep.py` with the config
-3. Point `config/experiment.toml` at the output `.npy` path
+3. Point `config/milestones/p2_baseline.toml` at the output `.npy` path
 4. To try a different subset size, create another YAML pointing at the same token cache but with a different `subset.size`
 
 ## Interleaving Multiple Datasets

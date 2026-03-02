@@ -5,8 +5,8 @@ Loads a checkpoint and provides a simple REPL for generating text.
 
 Usage:
     python -m src.inference.chat \
-        --config config/experiment_curriculum.toml \
-        --checkpoint outputs/curriculum-alternating/checkpoint.pt
+    --config config/milestones/<experiment>.toml \
+    --checkpoint outputs/<run>/checkpoint.pt
 """
 
 from __future__ import annotations
