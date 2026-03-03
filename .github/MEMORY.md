@@ -6,15 +6,43 @@
 
 ## Current Work
 
-(Cleared after commit — see SESSION_LOG for completed work)
+**Session**: Phase 2-3 Closeout + Ephemeral Testing (2026-03-03)
 
-Pending (next agent): Re-tokenize TinyStories with BPE; scale WikiText BPE to 10-50M (Phase 4).
+**Completed** ✅:
+- Phase 2 closeout report: SimpleLM validation (UTF-8 works, BPE fails on 50K vocab)
+- Phase 3 closeout report: DecoderLM proven (49% improvement: 4.31 vs 8.50)
+- Training code: Implemented early stopping, label smoothing, validation tracking
+- Committed: c5b4133 (training code) + 593979e (doc cleanup) + 6b48557 (closeouts) + f4f8331 (config)
+- Doc sync verified: All evidence self-contained in phase closeouts, supporting materials in outputs/
+- Convergence run: ~15K+ steps ongoing, expected to early-stop around 20K
+
+**Next**: 
+- Ephemeral testing: Validate training infrastructure on small runs
+- Ready for Phase 4: Llama-style architecture upgrades (RMSNorm, RoPE, SwiGLU, GQA)
 
 ---
 
 ## Thinking Notes
 
-(Cleared after commit)
+**Key Findings**:
+- SimpleLM + 256 vocab (UTF-8): Works well, loss 2.84
+- SimpleLM + 50K vocab (BPE): Fails (stuck at 8.50), architectural rank bottleneck (128 < 50K)
+- DecoderLM + 50K vocab (BPE): Proven superior, loss 4.31, 49% improvement
+- Root cause: Multi-head attention distributes info across heads (implicit high rank)
+
+**Tech Stack Validated** (Phase 3):
+1. Flash Attention 2 ✓
+2. BF16 mixed precision ✓
+3. Gradient accumulation (batch 32) ✓
+4. Early stopping framework ✓
+5. Label smoothing (0.1) ✓
+6. Selective weight decay ✓
+7. Cosine LR schedule ✓
+8. torch.compile ready ✓
+9. Validation/test tracking ✓
+10. Reproducibility ✓
+
+**Ephemeral Approach**: Quick 100-500 step runs to validate code changes, configs, data loading before committing to long runs
 
 ---
 
