@@ -75,14 +75,15 @@ gradient_accumulation_steps = 4  # Effective batch = 32
 7. ✅ **512h_8l-ddp launched**: Running on 2 GPUs (RTX 4090 + 3090 Ti)
 8. ✅ **Real-time convergence tracking**: CSV analysis shows step 4895/5000, loss 6.63
 
-### Experiments Status (UPDATED 2026-03-03 19:02)
+### Experiments Status (UPDATED 2026-03-03 19:20)
 
 | Exp | Config | Model | Data | Status | Notes |
 |-----|--------|-------|------|--------|-------|
 | 512h_8l-ddp | `p3_optimized_512h_8l.toml` | 512H×8L | 10M | ✅ COMPLETE | Loss 6.752, PPL 855.7 (WORSE than baseline!) |
-| 50m_data | `p3_optimized_50m_data.toml` | 256H×4L | 50M | 🟢 RUNNING | Step 1800+, no early stopping yet |
-| data-prep | `prepare_code_github_webtext.py` | N/A | 20M+15M | 🔵 RUNNING | OpenWebText download (1/80 files), ~24 min ETA |
-| 512h_50m | `p3_optimized_512h_50m.toml` | 512H×8L | 50M | ⏳ CONDITIONAL | Only if 50m_data shows >10% improvement |
+| 50m_data OLD | `p3_optimized_50m_data.toml` | 256H×4L | 11.5M | ⏹️ ABORTED | Dataset mislabeled (50M *pages* ≠ 50M tokens) |
+| 50m_data RE-RUN | `p3_optimized_50m_data.toml` | 256H×4L | 50M | ⏳ WAITING | Rerun script waiting for data_prep + mixing |
+| data-prep | `prepare_code_github_webtext.py` | N/A | 15M | 🟢 RUNNING | OpenWebText download (80%, 64/80 files), ~4 min ETA |
+| 512h_50m | `p3_optimized_512h_50m.toml` | 512H×8L | 50M | ⏳ CONDITIONAL | After 50m_data shows improvement |
 
 ### Launch Commands
 
@@ -200,23 +201,39 @@ From AGENTS.md & LESSONS.md:
 
 ---
 
-## Data Scaling Strategy (NEW — In Preparation)
+## Data Scaling Strategy (NEW — In Execution)
 
-**Status**: 50M baseline test running. Data preparation (GitHub + OpenWebText) now in progress.
+**Status**: 50m_data re-run in progress (waiting for data_prep to finish mixing).
 
-### Data Preparation Progress (Stage 1: OpenWebText)
+### Critical Discovery: 50m_data Dataset Error
+**Original issue**: Config pointed to "50m_pages" file, which was only **11.5M tokens** (not 50M)
+- "Pages" ≠ "tokens" after BPE encoding (5x compression)
+- Training ran on barely more data than baseline (10M vs 11.5M)
+- **Result**: Invalid test (loss worse, as expected for 15% more data on same model)
+- **Action**: Aborted run after step 1800, retesting with PROPER 50M dataset
+
+### 50m_data Re-Run: Proper 50M Dataset
+**Plan**: Mix available data to reach 50M tokens
+- **Source 1**: wikitext_10m (10.0M tokens) ✓ exists
+- **Source 2**: tinystories_5m (5.0M tokens) ✓ exists
+- **Source 3**: openwebtext_15m (from prepare_code_github_webtext.py) 🟢 downloading
+- **Total**: 30M unique + selective repetition → 50M
+- **Mixing method**: All 30M (pass 1) + 20M repeated (pass 2) = 50M
+- **Status**: Rerun script waiting (PID 70140), will trigger on data_prep completion
+
+### Data Preparation Progress (OpenWebText)
 **Started**: 2026-03-03 19:01 UTC+3
-**Process**: PID 65485 (background)
-**Log**: `outputs/data_prep_github_webtext.log`
-**Progress**:
-- GitHub Code source: ❌ Not accessible (expected)
-- OpenWebText fallback: ✅ Active download (1/80 files, ~18s/file → 24 min total)
-- Expected tokenization start: ~19:30 UTC+3
-- Estimated completion: ~21:30-22:00 UTC+3
+**Download**: 80% (64/80 files), **~4 min ETA**
+**Tokenization**: **~1-2 hours** after download completes
+**Estimated data file creation**: ~21:30 UTC+3
+**Rerun training start**: ~21:30-22:00 UTC+3
 
-**Output files** (will appear in `data/fast/`):
-- `openwebtext_15m_bpe_gpt2.npy` (15M tokens)
-- `openwebtext_15m_bpe_gpt2.meta.json` (metadata)
+**Process flow**:
+1. data_prep downloads OpenWebText (4 min) → tokenizes (1-2 hours)
+2. rerun_50m_data.sh detects .npy file → triggers mix_for_50m_rerun.py
+3. Mixing creates `interleaved_mixed_50m_tokens_bpe_gpt2.npy`
+4. Config updated automatically
+5. Training re-launches with proper 50M dataset
 
 ### If 50m_data succeeds (loss < 3.9): Stage 2 Coming
 **Add Diversity** (100M total with complementary sources):
