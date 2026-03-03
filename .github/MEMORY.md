@@ -6,7 +6,44 @@
 
 ## Current Work
 
-(Empty — session completed and committed)
+**PHASE 3 PRETRAIN RUNNING** ✓
+
+**Terminal ID**: `6bbd1844-d5a9-4bc3-9bba-fb3a5849f6f7`
+
+Config: `config/ephemeral/p3_tinystories_pretrain_512_combined_single.toml`
+
+**Current Progress** (updated continuously):
+- Step 900/5000 (18% complete)
+- Loss: 5.2711 → Perplexity: 194.63
+- Throughput: 136-138K tokens/sec
+- GPU memory: 903-904 MB (2 GPUs, minimal overhead)
+- Validation loss: 5.2910 (improved at step 500)
+- LR schedule: At 7.86e-04 (after warmup, in cosine decay)
+
+**Architecture**:
+- Model: decoder_lm (5 layers, 768 hidden, 12 heads)
+- Cross-layer sharing: 1 physical block reused 5× (22M → 4.4M parameters)
+- Factorized embeddings: 256 → 768 projection, untied head
+- Tokenizer: GPT2 BPE, 512 vocab, 37M train tokens
+
+**Optimizations Active**:
+- ✓ torch.compile (mode=max-autotune) — WORKING (gradient accumulation fix applied)
+- ✓ Flash Attention 2 (kernel-level speedup)
+- ✓ BF16 mixed precision AMP
+- ✓ Gradient accumulation (2 micro-batches → eff. batch 32)
+- ✓ Label smoothing (0.1)
+- ✓ Cosine LR schedule with warmup (500 steps)
+- ✓ Early stopping (patience=10)
+
+**Critical Fix Applied** (commit 74f8020):
+- `torch.compiler.cudagraph_mark_step_begin()` moved from train_step() to main loop
+- Only called once per accumulation cycle (at cycle start), not on every forward pass
+- Fixed: "RuntimeError: accessing tensor output of CUDAGraphs that has been overwritten"
+- Result: torch.compile now works stably with gradient accumulation + DDP
+
+**Next Step**: Fine-tune from pretrain checkpoint at `/outputs/ephemeral/p3-tinystories-pretrain-512-combined-single/checkpoint.pt`
+- Config: `config/ephemeral/p3_mixed_wikitext_tinystories_finetune_512_combined_single.toml` (10K steps, 3:1 data)
+- Will trigger automatically after pretrain completion
 
 ---
 
