@@ -116,9 +116,11 @@ class DecoderLM(BaseLearningModel):
         # LM head
         logits = self.lm_head(h)
 
-        assert logits.shape == (B, T, self.vocab_size), (
-            f"DecoderLM output shape mismatch: expected {(B, T, self.vocab_size)}, got {logits.shape}"
-        )
+        assert logits.shape == (
+            B,
+            T,
+            self.vocab_size,
+        ), f"DecoderLM output shape mismatch: expected {(B, T, self.vocab_size)}, got {logits.shape}"
         return logits
 
     def load_state_dict(

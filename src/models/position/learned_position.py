@@ -31,14 +31,18 @@ class LearnedPositionEmbedding(nn.Module):
             Positional embeddings of shape (1, T, d_model), broadcastable
             over batch dimension.
         """
-        assert x.ndim == 2, f"LearnedPositionEmbedding expects 2-D input (batch, seq_len), got shape {x.shape}"
+        assert (
+            x.ndim == 2
+        ), f"LearnedPositionEmbedding expects 2-D input (batch, seq_len), got shape {x.shape}"
         T = x.shape[1]
         assert (
             T <= self.embedding.num_embeddings
         ), f"seq_len {T} exceeds max_seq_len {self.embedding.num_embeddings}"
         positions = torch.arange(T, device=x.device)
         out = self.embedding(positions).unsqueeze(0)  # (1, T, d_model)
-        assert out.shape == (1, T, self.embedding.embedding_dim), (
-            f"LearnedPositionEmbedding output shape mismatch: expected {(1, T, self.embedding.embedding_dim)}, got {out.shape}"
-        )
+        assert out.shape == (
+            1,
+            T,
+            self.embedding.embedding_dim,
+        ), f"LearnedPositionEmbedding output shape mismatch: expected {(1, T, self.embedding.embedding_dim)}, got {out.shape}"
         return out

@@ -242,13 +242,11 @@ class TestDecoderLMOverfit:
 
         min_loss = min(losses)
         final_loss = losses[-1]
-        min_ppl = 2.718281828 ** min_loss  # e^loss
+        min_ppl = 2.718281828**min_loss  # e^loss
 
         assert min_loss < 0.5, (
             f"DecoderLM overfit failed: min_loss={min_loss:.4f} (need < 0.5), "
             f"final_loss={final_loss:.4f}, steps={len(losses)}"
         )
-        assert min_ppl < 2.0, (
-            f"DecoderLM overfit failed: min_ppl={min_ppl:.4f} (need < 2.0)"
-        )
+        assert min_ppl < 2.0, f"DecoderLM overfit failed: min_ppl={min_ppl:.4f} (need < 2.0)"
         print(f"✓ DecoderLM loss < 0.5 achieved: min_loss={min_loss:.4f}, min_ppl={min_ppl:.4f}")

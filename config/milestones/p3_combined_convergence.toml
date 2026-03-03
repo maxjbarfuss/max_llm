@@ -1,0 +1,87 @@
+# Combined corpus convergence experiment
+# P3 decoder LM with full optimizations, early stopping, and label smoothing
+# Track convergence from undertrain → optimal → plateau (no divergence)
+
+[experiment]
+name = "p3-combined-convergence"
+output_dir = "./outputs/ephemeral/p3-combined-convergence"
+
+[model]
+model_type = "decoder_lm"
+hidden_size = 256
+num_layers = 4
+num_heads = 4
+vocab_size = 50304
+max_seq_length = 256
+mla_latent_dim = 64
+rope_base = 10000
+intermediate_size = 1024
+num_experts = 1
+experts_per_token = 1
+moe_frequency = 0
+gru_hidden_size = 128
+dropout = 0.15  # Increased for regularization
+
+[training]
+batch_size = 8
+gradient_accumulation_steps = 4  # Effective batch = 32
+max_steps = 50000  # Will early stop before this
+warmup_steps = 500
+learning_rate = 0.0003
+weight_decay = 0.15  # Increased for regularization
+betas = [0.9, 0.999]
+epsilon = 1.0e-8
+gradient_clip_norm = 1.0
+precision_schedule = [[0, -1, "bf16"]]
+moe_balance_loss_weight = 0.0
+distributed_backend = "ddp"
+checkpoint_interval = 2000
+eval_interval = 500  # Evaluate every 500 steps
+log_interval = 50
+keep_last_n_checkpoints = 5
+use_torch_compile = true  # Phase 3 optimization: AOT compilation for 10-20% speedup
+attention_backend = "flash"
+selective_checkpointing = false
+
+# Early stopping to prevent val/test divergence
+early_stopping_patience = 5  # Stop after 5 evals (2500 steps) without improvement
+early_stopping_min_delta = 0.01  # Minimum improvement threshold
+
+# Label smoothing to prevent overfitting
+label_smoothing = 0.1
+
+# Evaluate on test set
+eval_on_test = true
+
+[inference]
+device = "auto"
+max_new_tokens = 64
+temperature = 1.0
+top_p = 0.9
+top_k = 0
+use_kv_cache = false
+kv_cache_dtype = "bf16"
+
+[data]
+dataset_path = "data/fast/interleaved_wikitext_tinystories_10m_tokens_bpe_gpt2.npy"
+tokenizer_name = "bpe"
+tokenizer_mode = "utf8"
+tokenizer_vocab_size = 50304
+tokenizer_backend = "gpt2_bpe"
+unigram_model_path = ""
+max_length = 256
+num_workers = 4
+prefetch_factor = 2
+pin_memory = true
+persistent_workers = true
+streaming = false
+cache_dir = "./data/cache"
+num_shards = 1
+validation_split = 0.1
+seed = 42
+
+# Optional: separate validation dataset (commented out for now)
+# validation_dataset_path = ""
+
+# Optional: separate test dataset (commented out for now)
+# test_dataset_path = ""

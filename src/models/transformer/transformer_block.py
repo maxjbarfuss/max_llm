@@ -64,11 +64,15 @@ class TransformerBlock(nn.Module):
         Returns:
             Output tensor of shape (batch, seq_len, d_model).
         """
-        assert x.ndim == 3, f"TransformerBlock expects 3-D input (batch, seq_len, d_model), got shape {x.shape}"
-        assert x.is_floating_point(), f"TransformerBlock expects floating-point input, got {x.dtype}"
-        assert x.shape[-1] == self.d_model, (
-            f"TransformerBlock input last dim {x.shape[-1]} != d_model {self.d_model}"
-        )
+        assert (
+            x.ndim == 3
+        ), f"TransformerBlock expects 3-D input (batch, seq_len, d_model), got shape {x.shape}"
+        assert (
+            x.is_floating_point()
+        ), f"TransformerBlock expects floating-point input, got {x.dtype}"
+        assert (
+            x.shape[-1] == self.d_model
+        ), f"TransformerBlock input last dim {x.shape[-1]} != d_model {self.d_model}"
         in_shape = x.shape
 
         # Pre-norm attention with residual
@@ -79,5 +83,7 @@ class TransformerBlock(nn.Module):
         ff_out = self.feedforward(self.norm2(x))
         x = x + ff_out
 
-        assert x.shape == in_shape, f"TransformerBlock output shape {x.shape} != input shape {in_shape}"
+        assert (
+            x.shape == in_shape
+        ), f"TransformerBlock output shape {x.shape} != input shape {in_shape}"
         return x
