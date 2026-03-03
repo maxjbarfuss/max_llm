@@ -6,24 +6,7 @@
 
 ## Current Work
 
-**Session**: Phase 3 advanced experiments — 512-vocab layer-sharing + factorized embeddings pipeline.
-
-**Context**: User requested consolidation of 3 experiment configs (cross-layer sharing, LR tuning, larger vocab) into single end-to-end run. Work evolved into full infrastructure task: dataset generation (512 BPE), unit test coverage, config hardening, CUDA environment fix, venv activation integration.
-
-**State**: phase3 branch, working tree clean.
-- ✅ Combined config created: `config/ephemeral/p3_tinystories_pretrain_512_combined_single.toml` (5000 steps, all optimizations on)
-- ✅ Fine-tune config created: `config/ephemeral/p3_mixed_wikitext_tinystories_finetune_512_combined_single.toml` (10000 steps, resume from pretrain)
-- ✅ 512-vocab BPE dataset generated + validated (tinystories + wikitext, 256←→768 embedding projection)
-- ✅ Unit tests added (432 pass): layer sharing reuse verification, factorized embedding projection check, from_config wiring
-- ✅ CUDA integration complete: venv activate script now sets CUDA_HOME=/usr/local/cuda-12.9 + PATH exports (redundant exports removed from train_ddp.sh)
-- ✅ torch.compile verified working end-to-end with CUDA
-- 🔄 **CURRENTLY RUNNING**: Pretraining (terminal ID: 98e3304b-f50b-4a48-9c81-8564f02479ad)
-  - Config: p3_tinystories_pretrain_512_combined_single.toml
-  - Data: TinyStories 512-vocab BPE (37M train tokens)
-  - Model: DecoderLM 768 hidden, 5 layers (1 layer reused), embedding_dim=256→768
-  - GPUs: 2 (DDP distributed training)
-
-**Next Immediate**: Monitor pretrain completion, then trigger fine-tune from checkpoint.
+(Empty — session completed and committed)
 
 ---
 
