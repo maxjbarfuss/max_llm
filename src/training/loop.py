@@ -148,6 +148,11 @@ def train_step(
     if not accumulate_grad:
         optimizer.zero_grad()
 
+    # Mark CUDA graph step begin for torch.compile compatibility
+    # Prevents "CUDAGraphs tensor overwritten" errors in multi-step setups
+    if torch.cuda.is_available():
+        torch.compiler.cudagraph_mark_step_begin()
+
     # Forward pass with optional AMP
     if use_amp and device.type == "cuda":
         with torch.amp.autocast(device_type="cuda"):

@@ -6,20 +6,60 @@
 
 ## Current Work
 
-Phase 3 closeout complete. Stopping for the night.
+**Session**: Phase 3 advanced experiments — 512-vocab layer-sharing + factorized embeddings pipeline.
 
-**State**: phase3 branch, working tree clean (commit 01b8e90).
-- `config/milestones/p3_baseline.toml` + `p3_combined_convergence.toml` live and committed
-- `PHASE_2_CLOSEOUT.md` + `PHASE_3_CLOSEOUT.md` rewritten (KISS/DRY)
-- Phase 3 results noted as non-final (Phase 4 will improve)
+**Context**: User requested consolidation of 3 experiment configs (cross-layer sharing, LR tuning, larger vocab) into single end-to-end run. Work evolved into full infrastructure task: dataset generation (512 BPE), unit test coverage, config hardening, CUDA environment fix, venv activation integration.
 
-**Next**: Push phase3 → remote, then start Phase 4 (RMSNorm, RoPE, SwiGLU, GQA, FSDP).
+**State**: phase3 branch, working tree clean.
+- ✅ Combined config created: `config/ephemeral/p3_tinystories_pretrain_512_combined_single.toml` (5000 steps, all optimizations on)
+- ✅ Fine-tune config created: `config/ephemeral/p3_mixed_wikitext_tinystories_finetune_512_combined_single.toml` (10000 steps, resume from pretrain)
+- ✅ 512-vocab BPE dataset generated + validated (tinystories + wikitext, 256←→768 embedding projection)
+- ✅ Unit tests added (432 pass): layer sharing reuse verification, factorized embedding projection check, from_config wiring
+- ✅ CUDA integration complete: venv activate script now sets CUDA_HOME=/usr/local/cuda-12.9 + PATH exports (redundant exports removed from train_ddp.sh)
+- ✅ torch.compile verified working end-to-end with CUDA
+- 🔄 **CURRENTLY RUNNING**: Pretraining (terminal ID: 98e3304b-f50b-4a48-9c81-8564f02479ad)
+  - Config: p3_tinystories_pretrain_512_combined_single.toml
+  - Data: TinyStories 512-vocab BPE (37M train tokens)
+  - Model: DecoderLM 768 hidden, 5 layers (1 layer reused), embedding_dim=256→768
+  - GPUs: 2 (DDP distributed training)
+
+**Next Immediate**: Monitor pretrain completion, then trigger fine-tune from checkpoint.
 
 ---
 
 ## Thinking Notes
 
----
+**Technical Checkpoint** (crash recovery info):
+
+**Dataset & Config Status:**
+- 512-vocab BPE tokenizer: `/home/max/dev/max_llm/data/fast/` (tinystories + wikitext BPE, 512 vocab)
+- Pretrain config: `config/ephemeral/p3_tinystories_pretrain_512_combined_single.toml` — 5K steps, 768 hidden, 5 layers (1 shared block reused), 256 embedding_dim (projection to 768), share_layer_weights=true, embedding_dim=256
+- Finetune config: `config/ephemeral/p3_mixed_wikitext_tinystories_finetune_512_combined_single.toml` — 10K steps, same arch, resume from pretrain checkpoint, 3:1 alternating wikitext:tinystories data
+- All optimizations wired: torch.compile, Flash Attention, label_smoothing=0.1, BF16 AMP, early_stopping_patience=10, selective weight decay
+
+**Tests Passing**: 432 unit tests, 0 failures
+- New tests added: test_cross_layer_parameter_sharing_reuses_one_block(), test_factorized_embeddings_create_projection_and_disable_weight_tying(), test_from_config_wires_sharing_and_factorized_embedding()
+- All layer-sharing + factorized embedding behaviors validated in DecoderLM
+
+**CUDA Status:**
+- CUDA 12.9 installed at `/usr/local/cuda-12.9` (verified: nvcc present, 27MB, executable)
+- torch.compile succeeds when CUDA_HOME=/usr/local/cuda-12.9 and PATH prepended (`/usr/local/cuda-12.9/bin:$PATH`)
+- **Current Issue**: CUDA exports in train_ddp.sh only, not persistent in venv activation
+- **User Request**: "put CUDA in the path during activate" — integrate into `.venv/bin/activate` script
+
+**Next Action**:
+1. ✅ COMPLETED: Integrated CUDA_HOME/PATH into venv activate script
+2. ✅ COMPLETED: Verified torch.compile works with CUDA
+3. ✅ COMPLETED: Launched pretrain (5000 steps on TinyStories)
+4. MONITOR: Watch pretraining progress in terminal 98e3304b-f50b-4a48-9c81-8564f02479ad
+5. ON COMPLETION: Check logs at `outputs/p3-tinystories-pretrain-512-combined-single/`
+6. THEN: Launch fine-tune from checkpoint with `./scripts/train_ddp.sh config/ephemeral/p3_mixed_wikitext_tinystories_finetune_512_combined_single.toml 2`
+
+**Files Modified Recent Session**:
+- [scripts/train_ddp.sh](scripts/train_ddp.sh) — absolute path resolution for venv sourcing + CUDA exports (now redundant after venv integration)
+- [src/models/learning_model/decoder_lm.py](src/models/learning_model/decoder_lm.py) — runtime assertions for layer sharing
+- [tests/unit/test_decoder_lm.py](tests/unit/test_decoder_lm.py) — 3 new tests for layer sharing + factorized embeddings
+- 2 config files created in `config/ephemeral/`
 
 ## MEMORY vs SESSION_LOG Pattern (MUST UNDERSTAND)
 

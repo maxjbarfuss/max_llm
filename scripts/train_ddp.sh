@@ -34,8 +34,13 @@ echo "Config: $CONFIG_FILE"
 echo "GPUs: $NUM_GPUS"
 echo ""
 
-# Activate virtual environment
-source .venv/bin/activate
+# Resolve script and project directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Activate virtual environment using absolute path
+# (venv activate script now includes CUDA_HOME and PATH exports)
+source "$PROJECT_DIR/.venv/bin/activate"
 
 # Launch with torchrun
 # torchrun automatically sets RANK, WORLD_SIZE, MASTER_ADDR, MASTER_PORT

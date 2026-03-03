@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 import torch
 
+from src.config.model import ModelConfig
 from src.models.learning_model.decoder_lm import DecoderLM
+from src.models.position.learned_position import LearnedPositionEmbedding
 
 
 class TestDecoderLM:
@@ -224,3 +226,122 @@ class TestDecoderLM:
         out2 = model2(x)
 
         assert torch.allclose(out1, out2, atol=1e-5)
+
+    def test_phase3_pre_layernorm_architecture(self) -> None:
+        """Phase 3 minimal transformer should use learned positions + pre-LN blocks."""
+        model = DecoderLM(
+            vocab_size=256,
+            d_model=64,
+            num_layers=2,
+            num_heads=4,
+            attention_backend="standard",
+        )
+        assert isinstance(model.position_embedding, LearnedPositionEmbedding)
+        block = model.blocks[0]
+        assert isinstance(block.norm1, torch.nn.LayerNorm)
+        assert isinstance(block.norm2, torch.nn.LayerNorm)
+
+    def test_cross_layer_parameter_sharing_reuses_one_block(self) -> None:
+        """When enabled, one block should be reused across all logical layers."""
+        model = DecoderLM(
+            vocab_size=256,
+            d_model=64,
+            num_layers=4,
+            num_heads=4,
+            attention_backend="standard",
+            share_layer_weights=True,
+        )
+        assert len(model.blocks) == 1
+
+        x = torch.randint(0, 256, (2, 8))
+        out = model(x)
+        assert out.shape == (2, 8, 256)
+
+        # State dict should only contain one physical block when sharing is enabled
+        block_keys = [k for k in model.state_dict() if k.startswith("blocks.")]
+        assert any(k.startswith("blocks.0.") for k in block_keys)
+        assert not any(k.startswith("blocks.1.") for k in block_keys)
+
+    def test_cross_layer_parameter_sharing_reduces_parameters(self) -> None:
+        """Shared-layer model should have fewer parameters than non-shared model."""
+        non_shared = DecoderLM(
+            vocab_size=256,
+            d_model=128,
+            num_layers=4,
+            num_heads=8,
+            attention_backend="standard",
+            share_layer_weights=False,
+        )
+        shared = DecoderLM(
+            vocab_size=256,
+            d_model=128,
+            num_layers=4,
+            num_heads=8,
+            attention_backend="standard",
+            share_layer_weights=True,
+        )
+
+        non_shared_params = sum(p.numel() for p in non_shared.parameters())
+        shared_params = sum(p.numel() for p in shared.parameters())
+        assert shared_params < non_shared_params
+
+    def test_factorized_embeddings_create_projection_and_disable_weight_tying(self) -> None:
+        """Factorized embeddings should project to d_model and not tie lm_head weights."""
+        model = DecoderLM(
+            vocab_size=256,
+            d_model=128,
+            num_layers=2,
+            num_heads=8,
+            attention_backend="standard",
+            embedding_dim=64,
+        )
+        assert model.use_factorized
+        assert model.embedding_projection is not None
+        assert model.token_embedding.embedding.embedding_dim == 64
+        assert model.embedding_projection.in_features == 64
+        assert model.embedding_projection.out_features == 128
+        assert model.lm_head.weight.data_ptr() != model.token_embedding.embedding.weight.data_ptr()
+
+        x = torch.randint(0, 256, (2, 8))
+        out = model(x)
+        assert out.shape == (2, 8, 256)
+
+    def test_non_factorized_embeddings_keep_weight_tying(self) -> None:
+        """Without factorization, lm_head should be tied to token embedding."""
+        model = DecoderLM(
+            vocab_size=256,
+            d_model=128,
+            num_layers=2,
+            num_heads=8,
+            attention_backend="standard",
+            embedding_dim=None,
+        )
+        assert not model.use_factorized
+        assert model.embedding_projection is None
+        assert model.lm_head.weight.data_ptr() == model.token_embedding.embedding.weight.data_ptr()
+
+    def test_from_config_wires_sharing_and_factorized_embedding(self) -> None:
+        """from_config should propagate share_layer_weights and embedding_dim."""
+        config = ModelConfig(
+            model_type="decoder_lm",
+            hidden_size=128,
+            num_layers=4,
+            num_heads=8,
+            vocab_size=256,
+            max_seq_length=128,
+            mla_latent_dim=64,
+            rope_base=10000,
+            intermediate_size=512,
+            num_experts=1,
+            experts_per_token=1,
+            moe_frequency=0,
+            gru_hidden_size=128,
+            dropout=0.1,
+            embedding_dim=64,
+            share_layer_weights=True,
+        )
+        model = DecoderLM.from_config(config, attention_backend="standard")
+        assert model.share_layer_weights
+        assert len(model.blocks) == 1
+        assert model.use_factorized
+        assert model.embedding_dim == 64

@@ -32,6 +32,7 @@ class TrainingConfig:
     use_torch_compile: bool
     attention_backend: str
     selective_checkpointing: bool
+    resume_from_checkpoint: str | None = None
     early_stopping_patience: int | None = None
     early_stopping_min_delta: float = 0.0
     label_smoothing: float = 0.0

@@ -504,11 +504,22 @@ def main() -> None:  # noqa: C901
     # Move model to device
     model = model.to(device)
 
+    # Track loaded step for scheduler initialization
+    loaded_step = 0
+
+    # Optional: initialize model from an existing checkpoint
+    if config.training.resume_from_checkpoint:
+        resume_path = Path(config.training.resume_from_checkpoint)
+        if not resume_path.exists():
+            raise FileNotFoundError(f"Resume checkpoint not found: {resume_path}")
+        print_once(f"Checkpoint : Loading model weights from {resume_path}")
+        loaded_step = load_checkpoint(resume_path, model, optimizer=None, strict_version_check=True)
+        print_once(f"Checkpoint : Loaded (saved at step {loaded_step})")
+
     # Log model size if profiling enabled
     if args.profile and is_main_process():
         log_model_size(model)
 
-    # Wrap model with DDP if distributed
     if args.distributed:
         assert distributed_info is not None, "distributed_info should be set when distributed=True"
         print_once("Wrapping model with DistributedDataParallel")
@@ -547,16 +558,21 @@ def main() -> None:  # noqa: C901
         )
 
     # Create learning rate scheduler
+    # If resuming from checkpoint, initialize scheduler at the loaded step
+    # to avoid "scheduler.step() before optimizer.step()" warning
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer=optimizer,
         num_warmup_steps=config.training.warmup_steps,
         num_training_steps=config.training.max_steps,
         min_lr_ratio=0.1,
+        last_epoch=loaded_step - 1 if loaded_step > 0 else -1,
     )
     print_once(
         f"Scheduler  : Warmup {config.training.warmup_steps} steps, "
         f"cosine decay to 10% over {config.training.max_steps} steps"
     )
+    if loaded_step > 0:
+        print_once(f"Scheduler  : Resuming from step {loaded_step}")
 
     # Determine mixed precision setting from precision_schedule
     # For now, use the first schedule entry; Phase 4 will implement full schedule support

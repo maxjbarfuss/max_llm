@@ -27,6 +27,8 @@ class ModelConfig:
     moe_frequency: int
     gru_hidden_size: int | None
     dropout: float
+    embedding_dim: int | None = None  # For factorized embeddings (optional)
+    share_layer_weights: bool = False  # Optional optimization (reuses one block N times)
 
     def __post_init__(self) -> None:
         """Validate model configuration."""
