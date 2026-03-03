@@ -6,6 +6,15 @@
 
 ## Current Work
 
+Phase 3 closeout complete. Stopping for the night.
+
+**State**: phase3 branch, working tree clean (commit 01b8e90).
+- `config/milestones/p3_baseline.toml` + `p3_combined_convergence.toml` live and committed
+- `PHASE_2_CLOSEOUT.md` + `PHASE_3_CLOSEOUT.md` rewritten (KISS/DRY)
+- Phase 3 results noted as non-final (Phase 4 will improve)
+
+**Next**: Push phase3 → remote, then start Phase 4 (RMSNorm, RoPE, SwiGLU, GQA, FSDP).
+
 ---
 
 ## Thinking Notes

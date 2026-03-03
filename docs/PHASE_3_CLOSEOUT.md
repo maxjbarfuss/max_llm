@@ -177,3 +177,6 @@ for multi-GPU scaling to 300M+ parameters.
 ---
 
 **Phase 3 Status**: ✅ COMPLETE — `outputs/p3-bpe-convergence/` (loss 4.31, ppl 74.5)
+
+> **Note**: Results represent Phase 3 validation baselines, not final model performance.
+> Phase 4 (RMSNorm, RoPE, SwiGLU, GQA, FSDP) will improve on these numbers significantly.
