@@ -68,3 +68,8 @@ dist/
 
 # Pre-commit
 .pre-commit-framework/
+
+# Local ad-hoc chat helpers (do not track)
+/interactive_chat.py
+/phase2_chat.py
+/phase2_chat_ascii128.py

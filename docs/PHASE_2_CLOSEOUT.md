@@ -27,7 +27,7 @@ Phase 2 established the foundational training pipeline using SimpleLM (single-la
 
 ### UTF-8 Success (Primary Deliverable)
 
-**Config**: `config/experiment_p2_simple_utf8.toml` (inferred from artifacts)
+**Canonical config lineage**: started from `config/milestones/p2_baseline.toml` and finalized as `config/milestones/p2_final_best_in_class.toml`
 **Results**:
 ```
 Corpus:        WikiText + TinyStories (10M tokens)
@@ -50,7 +50,7 @@ Final ckpt:    968 KB
 
 ### BPE Limitation (Documented Failure)
 
-**Config**: `config/experiment_p2_simple_bpe.toml` (inferred)
+**Config context**: non-canonical BPE stress variant (used only to document SimpleLM large-vocab limitation)
 **Results**:
 ```
 Corpus:        WikiText + TinyStories (10M tokens)
@@ -106,10 +106,10 @@ Final ckpt:    75 MB
 
 | Artifact | Location | Size | Purpose |
 |----------|----------|------|---------|
-| **SimpleLM UTF-8 Checkpoint** | `outputs/ephemeral/p2-combined-10m-utf8/checkpoint.pt` | 968 KB | Trained weights + optimizer state |
-| **Loss Curve** | `outputs/ephemeral/p2-combined-10m-utf8/loss_curve.csv` | 24 KB | Training trajectory (500 steps) |
-| **BPE Checkpoint** | `outputs/ephemeral/p2-combined-10m-bpe/checkpoint.pt` | 75 MB | Failed run (documented limitation) |
-| **BPE Loss Curve** | `outputs/ephemeral/p2-combined-10m-bpe/loss_curve.csv` | 25 KB | Plateau evidence (no convergence) |
+| **SimpleLM UTF-8 Checkpoint** | `outputs/p2-closeout-final-20260303/p2-combined-10m-utf8/checkpoint.pt` | 968 KB | Trained weights + optimizer state |
+| **Loss Curve** | `outputs/p2-closeout-final-20260303/p2-combined-10m-utf8/loss_curve.csv` | 24 KB | Training trajectory (500 steps) |
+| **BPE Checkpoint** | `outputs/p2-closeout-final-20260303/p2-combined-10m-bpe/checkpoint.pt` | 75 MB | Failed run (documented limitation) |
+| **BPE Loss Curve** | `outputs/p2-closeout-final-20260303/p2-combined-10m-bpe/loss_curve.csv` | 25 KB | Plateau evidence (no convergence) |
 
 ---
 
@@ -129,7 +129,7 @@ This aligns with the project intent for Phase 2: establish the minimal reliable 
 
 Interactive chat was run successfully with:
 
-- `outputs/ephemeral/p2-combined-10m-utf8/checkpoint.pt`
+- `outputs/p2-closeout-final-20260303/p2-combined-10m-utf8/checkpoint.pt`
 - `SimpleLM` (`hidden_size=128`, `max_seq_length=256`)
 - `CharTokenizer(mode="utf8")`
 
@@ -159,12 +159,12 @@ Verification evidence:
 2. **Canonical Phase 2 artifacts present**
 	- `outputs/p2-final-best-in-class/checkpoint.pt` (968 KB)
 	- `outputs/p2-final-best-in-class/loss_curve.csv` (5,000 rows)
-	- `outputs/ephemeral/p2-combined-10m-utf8/checkpoint.pt` (968 KB)
-	- `outputs/ephemeral/p2-combined-10m-utf8/loss_curve.csv` (500 rows)
+	- `outputs/p2-closeout-final-20260303/p2-combined-10m-utf8/checkpoint.pt` (968 KB)
+	- `outputs/p2-closeout-final-20260303/p2-combined-10m-utf8/loss_curve.csv` (500 rows)
 
 3. **Loss-curve sanity check**
 	- `outputs/p2-final-best-in-class/loss_curve.csv`: final loss `2.5155` at step `5000`, best loss `2.3368` at step `4103`
-	- `outputs/ephemeral/p2-combined-10m-utf8/loss_curve.csv`: final loss `2.8432` at step `500`, best loss `2.5175` at step `430`
+	- `outputs/p2-closeout-final-20260303/p2-combined-10m-utf8/loss_curve.csv`: final loss `2.8432` at step `500`, best loss `2.5175` at step `430`
 
 4. **Inference runtime check from final checkpoint**
 	- Command: `python -m src.inference.chat --config config/milestones/p2_final_best_in_class.toml --checkpoint outputs/p2-final-best-in-class/checkpoint.pt`
@@ -175,7 +175,7 @@ Verification evidence:
 	- Config: `config/milestones/p2_final_best_in_class.toml`
 	- Sampling: `temperature=0.9`, `top_p=0.9`, `top_k=20`, `max_new_tokens=40`
 	- Compared checkpoints:
-		- Early workable: `outputs/ephemeral/p2-combined-10m-utf8/checkpoint.pt`
+		- Early workable: `outputs/p2-closeout-final-20260303/p2-combined-10m-utf8/checkpoint.pt`
 		- Final best-in-class: `outputs/p2-final-best-in-class/checkpoint.pt`
 
 	Representative side-by-side outputs:
@@ -219,6 +219,8 @@ A run is **Final Phase 2 Best-in-Class** only if all gates are met:
 
 ### Canonical Final Phase 2 Artifact Set
 
+**DRY/KISS convention**: treat `outputs/p2-closeout-final-20260303/` as the single canonical root for archived Phase 2 closeout artifacts. Subdirectories under this root (`p2-combined-10m-utf8`, `p2-combined-10m-bpe`, `p2-wikitext-overtrain-limit`, `p2-wikitext-overtrain-limit-6k`) are the permanent references for this report.
+
 - **Final experiment config**: `config/milestones/p2_final_best_in_class.toml`
 - **Checkpoint**: `outputs/p2-final-best-in-class/checkpoint.pt`
 - **Training curve**: `outputs/p2-final-best-in-class/loss_curve.csv`
@@ -242,12 +244,10 @@ To explicitly test "close to overtrain" behavior, Phase 2 was stress-tested on a
 - Validation: `data/fast/wikitext_100k_tokens__utf8_val.npy` (10,000 tokens)
 - Test: `data/fast/wikitext_100k_tokens__utf8_test.npy` (10,000 tokens)
 
-Configs and outputs:
+Artifacts used:
 
-- `config/ephemeral/p2_wikitext_overtrain_limit.toml` (3000 steps)
-- `config/ephemeral/p2_wikitext_overtrain_limit_6k.toml` (6000 steps)
-- `outputs/ephemeral/p2-wikitext-overtrain-limit/loss_curve.csv`
-- `outputs/ephemeral/p2-wikitext-overtrain-limit-6k/loss_curve.csv`
+- `outputs/p2-closeout-final-20260303/p2-wikitext-overtrain-limit/loss_curve.csv`
+- `outputs/p2-closeout-final-20260303/p2-wikitext-overtrain-limit-6k/loss_curve.csv`
 
 ### Quantitative Findings
 

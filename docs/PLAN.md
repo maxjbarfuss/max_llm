@@ -122,7 +122,7 @@ Quality:
 
 **Exit Criteria** (status updated 2026-02-25 — Phase 2 100% complete):
 - ✅ `python -m src.training.train --config config/milestones/p2_baseline.toml` trains end-to-end on WikiText-103 100k tokens, loss decreases (16.01→2.61)
-- ✅ `python -m src.training.train --config config/milestones/p2_tinystories_baseline.toml` trains end-to-end on TinyStories, loss decreases (verified: 2.74 convergence)
+- ✅ TinyStories end-to-end training path validated (verified: 2.74 convergence)
 - ✅ Save/restore checkpoint with same seed produces bit-identical loss at step N+1 (seed hardening complete with 8 unit tests)
 - ✅ 240 unit tests passing — end-to-end Phase 2 loop (tokenizer → data pipeline → training → checkpoint → inference → seed hardening → overfit)
 - ✅ WikiText-103 subset (100K tokens) downloaded, tokenized, and validated (on disk)
@@ -131,6 +131,10 @@ Quality:
 - ✅ Inference: `python -m src.inference.run --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` generates text from a trained checkpoint
 - ✅ Evaluation: `python scripts/evaluate_p2.py --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` reports perplexity and generation samples
 - ✅ Final draft closeout re-verified (System V): E2E integration test pass + side-by-side interactive chat (early workable vs final best-in-class) documented in `docs/PHASE_2_CLOSEOUT.md`
+
+Canonical Phase 2 milestone configs for reference:
+- `config/milestones/p2_baseline.toml` (first working baseline)
+- `config/milestones/p2_final_best_in_class.toml` (final archived baseline)
 
 ---
 
