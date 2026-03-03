@@ -6,13 +6,7 @@
 
 ## Current Work
 
-Agent: Claude Sonnet 4.6 — Phase 3 data + convergence session (2026-03-02)
-
-Completed this session:
-1. **Memory-mapped reads**: `load_tokens()` returns `np.memmap` for .npy; `TokenDataset` yields (x,y) lazily — no full-RAM copy; backward-compatible with existing TensorDataset tests.
-2. **Committed convergence run**: `config/milestones/p3_bpe_convergence.toml` (70/30 WikiText+TinyStories BPE, 2.15M train / 0.38M val); 5000 steps → loss 10.89→4.31, **best ppl 67.9**; checkpoint + CSV at `outputs/p3-bpe-convergence/`.
-3. **PLAN.md updated**: mmap + convergence milestone marked ✅; result documented in Exit Criteria.
-4. **All 425 tests passing**.
+(Cleared after commit — see SESSION_LOG for completed work)
 
 Pending (next agent): Re-tokenize TinyStories with BPE; scale WikiText BPE to 10-50M (Phase 4).
 
@@ -20,7 +14,7 @@ Pending (next agent): Re-tokenize TinyStories with BPE; scale WikiText BPE to 10
 
 ## Thinking Notes
 
-(Cleared after commit — see SESSION_LOG for this session's work)
+(Cleared after commit)
 
 ---
 
