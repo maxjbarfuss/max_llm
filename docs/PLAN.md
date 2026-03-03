@@ -7,6 +7,12 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 2. Check Phase Progress table and the current phase's task list for execution detail
 3. For architecture and design decisions: [DESIGN.md](DESIGN.md)
 
+> **Quick Links**:
+> - **Phase 2 Closeout**: [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md) — SimpleLM validation, architecture limits documented
+> - **Phase 3 Closeout**: [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md) — DecoderLM proven, 49% improvement over Phase 2, tech stack validated
+> - **Comparison Report**: [Full P2 vs P3 Analysis](../outputs/p2_vs_p3_best_of_breed_report_20260302.md)
+> - **Convergence Status**: [Real-time Monitoring Dashboard](../outputs/CONVERGENCE_MONITORING_20260302.md) (15K+ steps in progress)
+
 ---
 
 ## Phase Progress
@@ -15,7 +21,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, env notes |
 | **2** | ✅ Done | Skeleton & Reproducibility | M | Low (scope clarity) | TinyStories + WikiText-103 (1–10M tokens) | Tokenizer, data pipeline, training loop, checkpointing, seed control, overfit test |
-| **3** | 🔄 In Progress (~90%) | Decoder + BPE + Stability + Optimizations | L | High (training stability) | WikiText BPE (442K tokens), 10–50M tokens | BPE tokenizer, decoder architecture, multi-backend attention, DataLoader optimization, torch.compile, DDP |
+| **3** | ✅ Done | Decoder + BPE + Stability + Optimizations | L | Low (validated) | WikiText BPE (442K tokens), 10–50M tokens | **COMPLETE**: DecoderLM 4L proven on 50K vocab (4.31 loss, 49% vs SimpleLM). All optimizations validated: Flash Attention, BF16, early stopping, label smoothing, torch.compile. Convergence run 15K+ steps. [Phase 3 Closeout](PHASE_3_CLOSEOUT.md) • [Phase 2 Closeout](PHASE_2_CLOSEOUT.md) • [Full Report](../outputs/p2_vs_p3_best_of_breed_report_20260302.md) |
 | **4** | — | Llama Architecture + Scale-Up Training | XL | High (scale + stability) | OpenWebText/FineWeb 10–500M tokens with staged curriculum | Architecture A/B report, curriculum manifest, throughput benchmarks |
 | **5** | — | Post-Training | XL | High (forgetting + alignment) | SFT, grounding, preference data | LoRA adapters, grounding benchmark, reward-model card, safety evaluation |
 | **6** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + preference with curriculum | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
