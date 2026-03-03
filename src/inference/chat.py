@@ -50,14 +50,19 @@ def load_checkpoint_model(
     device_obj = resolve_device(device)
     print(f"📍 Device: {device_obj}")
 
+    # Honour the attention backend specified in the training config so that
+    # flash/xformers models don't crash at inference time (no AMP context →
+    # fp32 tensors → flash requires fp16/bf16).
+    attn_backend = getattr(config.training, "attention_backend", "standard")
+
     # Create model based on model_type
     model: BaseLearningModel
     if config.model.model_type == "simple_lm":
         model = SimpleLM.from_config(config.model).to(device_obj)
     elif config.model.model_type == "attention_lm":
-        model = AttentionLM.from_config(config.model).to(device_obj)
+        model = AttentionLM.from_config(config.model, attention_backend=attn_backend).to(device_obj)
     elif config.model.model_type == "decoder_lm":
-        model = DecoderLM.from_config(config.model).to(device_obj)
+        model = DecoderLM.from_config(config.model, attention_backend=attn_backend).to(device_obj)
     else:
         raise ValueError(
             f"Unknown model_type: {config.model.model_type}. "
@@ -146,7 +151,14 @@ def chat_mode(
             try:
                 tokens = list(prompt_tokens)
 
-                with torch.no_grad():
+                # Use autocast so flash/xformers backends receive the expected dtype
+                # (fp16/bf16) even without an explicit AMP training loop.
+                autocast_ctx = (
+                    torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+                    if device.type == "cuda"
+                    else torch.no_grad()
+                )
+                with torch.no_grad(), autocast_ctx:
                     for _ in range(max_new_tokens):
                         input_ids = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(
                             0
