@@ -1,10 +1,11 @@
-# Combined corpus convergence experiment
-# P3 decoder LM with full optimizations, early stopping, and label smoothing
-# Track convergence from undertrain → optimal → plateau (no divergence)
+# Phase 3 — optimized full-stack convergence run
+# DecoderLM + BPE with all optimizations: early stopping, label smoothing, torch.compile
+# Extends the sealed baseline with validation-driven convergence tracking
+# Expected: 15-25 GPU hours to convergence with early stopping
 
 [experiment]
-name = "p3-combined-convergence"
-output_dir = "./outputs/ephemeral/p3-combined-convergence"
+name = "p3-optimized-convergence"
+output_dir = "./outputs/p3-optimized-convergence"
 
 [model]
 model_type = "decoder_lm"

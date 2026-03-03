@@ -9,9 +9,27 @@
 **TRAINING RUNNING** — `p3_512bpe_noshare_mixed_10k.toml` (10K steps, flash+compile)
 - Config: `config/ephemeral/p3_512bpe_noshare_mixed_10k.toml` (in gitignore, ephemeral)
 - Output: `outputs/ephemeral/p3-512bpe-noshare-mixed-10k/loss_curve.csv`
-- Check: `tail -5 outputs/ephemeral/p3-512bpe-noshare-mixed-10k/loss_curve.csv`
+- Check val progress: `python3 -c "import csv,math; rows=list(csv.DictReader(open('outputs/ephemeral/p3-512bpe-noshare-mixed-10k/loss_curve.csv'))); [print(f'step={r[\"step\"]} PPL={math.exp(float(r[\"val_loss\"])):.1f}') for r in rows if r.get('val_loss') and r['val_loss'].strip()]"`
 - Relaunch if dead: `./scripts/train_ddp.sh config/ephemeral/p3_512bpe_noshare_mixed_10k.toml 2 > outputs/ephemeral/p3-512bpe-noshare-mixed-10k-launch.log 2>&1 &`
-- At step ~499: val_loss=3.35 (PPL=28) — converging well, target PPL=15-25 by step 10K
+
+**Val loss trajectory (as of 2026-03-03):**
+- Step  500: PPL=28.5
+- Step 1000: PPL=24.0
+- Step 1500: PPL=22.1
+- Step 2000: PPL=18.5  ← already below target PPL=20
+- Currently at step ~2500/10000, LR still near peak (4.7e-4 of 5e-4 max)
+- Realistic end-of-training target: PPL=10-14
+
+**Root cause of all prior PPL=195 plateaus (SOLVED):**
+- `share_layer_weights=true` caused gradient conflict across depth levels → weights couldn't specialize
+- Fixed by: share_layer_weights=false, label_smoothing=0.0, mixed 3:1 wikitext:stories data (17.5M tok)
+
+**Key decisions made this session:**
+- attention_backend="flash" (sage breaks DDP; single-GPU sage+compile=667K tok/s, flash+compile=543K)
+- use_torch_compile=true, dropout=0.0, no label smoothing
+- CommonKV hypothesis NOT supported at this scale (adjacent K/V cosine sim ≈ 0)
+- Overfitting NOT a concern yet (tokens/param=0.49, severely underfit by Chinchilla)
+- User open to increasing training data if PPL plateaus before ~PPL=10
 
 ---
 

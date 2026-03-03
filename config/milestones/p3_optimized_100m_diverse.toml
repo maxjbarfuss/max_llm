@@ -1,0 +1,67 @@
+# Phase 3 — optimized variant: 100M mixed dataset with complementary sources
+# Tests: Does data diversity (beyond WikiText+TinyStories) improve convergence?
+# Expected: If Stage 1 (50M wiki/stories) beats baseline significantly,
+#           Stage 2 (100M diverse) should improve further
+
+[experiment]
+name = "p3-optimized-100m-mixed-diverse"
+output_dir = "./outputs/p3-optimized-100m-mixed-diverse"
+
+[model]
+model_type = "decoder_lm"
+hidden_size = 256           # Keep baseline architecture
+num_layers = 4              # Keep baseline
+num_heads = 4               # Keep baseline
+vocab_size = 50304
+max_seq_length = 256
+mla_latent_dim = 64
+rope_base = 10000
+intermediate_size = 1024
+num_experts = 1
+experts_per_token = 1
+moe_frequency = 0
+gru_hidden_size = 128
+dropout = 0.1
+
+[training]
+batch_size = 8
+gradient_accumulation_steps = 4  # Eff batch = 32 (same as 50m baseline)
+max_steps = 15000               # More steps for more data
+warmup_steps = 500              # Proportional warmup (for 256H)
+learning_rate = 0.0003          # Baseline LR (works for 256H×4L)
+weight_decay = 0.01
+betas = [0.9, 0.999]
+epsilon = 1.0e-8
+gradient_clip_norm = 1.0
+precision_schedule = [[0, -1, "bf16"]]
+moe_balance_loss_weight = 0.0
+distributed_backend = "ddp"
+checkpoint_interval = 500
+eval_interval = 100
+log_interval = 50
+keep_last_n_checkpoints = 3
+use_torch_compile = false
+attention_backend = "flash"
+selective_checkpointing = false
+
+[inference]
+device = "auto"
+max_new_tokens = 64
+temperature = 1.0
+top_p = 0.9
+top_k = 0
+use_kv_cache = false
+kv_cache_dtype = "bf16"
+
+[data]
+# NOTE: Use prepare_complementary.py to create these files if not present
+# Ratio (by token count):
+# - 40M WikiText-103
+# - 20M TinyStories
+# - 20M mixed (ArXiv + StackExchange + Code)
+# Final mix: 40% wiki, 20% stories, 40% diverse
+dataset_path = "data/fast/interleaved_wikitext_tinystories_arxiv_stackexchange_code_100m_tokens_bpe_gpt2.npy"
+tokenizer_name = "bpe"
+tokenizer_mode = "utf8"
+tokenizer_vocab_size = 50304
+tokenizer_backend = "gpt2_bpe"
