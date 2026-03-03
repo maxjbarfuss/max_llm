@@ -130,6 +130,7 @@ Quality:
 - ✅ Overfit test achieves train loss < 0.1 on a 10K-token subset within 500 steps (verified: 3 tests passing)
 - ✅ Inference: `python -m src.inference.run --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` generates text from a trained checkpoint
 - ✅ Evaluation: `python scripts/evaluate_p2.py --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` reports perplexity and generation samples
+- ✅ Final draft closeout re-verified (System V): E2E integration test pass + side-by-side interactive chat (early workable vs final best-in-class) documented in `docs/PHASE_2_CLOSEOUT.md`
 
 ---
 
