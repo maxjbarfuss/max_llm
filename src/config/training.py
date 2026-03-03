@@ -32,6 +32,10 @@ class TrainingConfig:
     use_torch_compile: bool
     attention_backend: str
     selective_checkpointing: bool
+    early_stopping_patience: int | None = None
+    early_stopping_min_delta: float = 0.0
+    label_smoothing: float = 0.0
+    eval_on_test: bool = False
 
     def __post_init__(self) -> None:
         """Validate training configuration."""

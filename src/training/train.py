@@ -292,7 +292,9 @@ def create_simple_loaders(
             f"Not enough tokens ({len(train_tokens)}) for at least one sample (need {seq_len + 1})"
         )
 
-    def _make_dataset(tokens: np.ndarray | torch.Tensor, start: int = 0, end: int | None = None) -> Dataset:
+    def _make_dataset(
+        tokens: np.ndarray | torch.Tensor, start: int = 0, end: int | None = None
+    ) -> Dataset:
         """Return a Dataset for sample indices [start, end)."""
         if isinstance(tokens, np.ndarray):
             tok_start = start * (seq_len + 1)
@@ -337,7 +339,9 @@ def create_simple_loaders(
         # Split train_tokens into train/val by sample index
         split_idx = int(total_samples * (1 - validation_split))
         train_loader = _create_loader(_make_dataset(train_tokens, 0, split_idx), shuffle=True)
-        val_loader = _create_loader(_make_dataset(train_tokens, split_idx, total_samples), shuffle=False)
+        val_loader = _create_loader(
+            _make_dataset(train_tokens, split_idx, total_samples), shuffle=False
+        )
 
     # Create optional test loader
     test_loader = None
@@ -590,6 +594,12 @@ def main() -> None:  # noqa: C901
         log_tokens_per_sec=True,
         log_gpu_memory=True,
         csv_log_path=csv_log_path if is_main_process() else None,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        eval_interval=config.training.eval_interval,
+        early_stopping_patience=config.training.early_stopping_patience,
+        early_stopping_min_delta=config.training.early_stopping_min_delta,
+        label_smoothing=config.training.label_smoothing,
     )
     if is_main_process():
         print_once(f"Loss curve : {csv_log_path}")
