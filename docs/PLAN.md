@@ -6,12 +6,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 1. Read [MEMORY.md](../.github/MEMORY.md) first — current focus and agent working state; read [SESSION_LOG.md](../.github/SESSION_LOG.md) for completed-session history
 2. Check Phase Progress table and the current phase's task list for execution detail
 3. For architecture and design decisions: [DESIGN.md](DESIGN.md)
-
-> **Quick Links**:
-> - **Phase 2 Closeout**: [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md) — SimpleLM validation, architecture limits documented
-> - **Phase 3 Closeout**: [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md) — DecoderLM proven, 49% improvement over Phase 2, tech stack validated
-> - **Comparison Report**: [Full P2 vs P3 Analysis](../outputs/p2_vs_p3_best_of_breed_report_20260302.md)
-> - **Convergence Status**: [Real-time Monitoring Dashboard](../outputs/CONVERGENCE_MONITORING_20260302.md) (15K+ steps in progress)
+4. For completed phases: [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md) and [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md)
 
 ---
 
