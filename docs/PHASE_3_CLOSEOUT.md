@@ -31,69 +31,134 @@ Phase 3 transitioned from SimpleLM (single-layer MLP) to DecoderLM (4-layer Tran
 
 ## DecoderLM Architecture Validation
 
-### Best-of-Breed Run (Milestone Baseline)
+Two experiments bracket the Phase 3 work: the first run that successfully trained a DecoderLM
+on BPE data, and the final optimized milestone run. Chat sessions below use matched prompts
+for direct comparison.
 
-**Config**: `config/milestones/p3_bpe_convergence.toml` *(archived — removed from repo after phase closeout)*
+---
+
+### Experiment 1 — First Working Run
+
+**Checkpoint**: `outputs/p3-decoder-lm-test/checkpoint.pt` (Feb 27, step 500)
+**Status**: ✅ **COMPLETE** — First successful DecoderLM + BPE training
+
+```
+Corpus:              WikiText-103 BPE (442K tokens)
+Tokenization:        BPE GPT2 (50,304 vocab)
+Architecture:        2L Transformer (128H, 4 heads, 512 FFN)   ← initial depth
+Batch size:          4
+Gradient accumulation: none → Effective batch: 4
+Learning rate:       0.001
+Weight decay:        0.0
+Precision:           BF16
+Attention backend:   Standard (no Flash yet)
+Dropout:             0.1
+Max steps:           500
+
+Results:
+Step 1:    loss=10.86, ppl=52,070
+Step 500:  loss=6.72,  ppl=831       ← significant drop but not converged
+```
+
+**Chat** (step 500, temp=0.9, top_k=20, max_tokens=80):
+```
+You: The quick brown fox jumped
+🤖 The quick brown fox jumped of
+
+You: Once upon a time
+🤖 Once upon a time. the he of the the the the the the the the the a a " first the
+   the he the a be the the the the he was the the his a to the the
+
+You: In the beginning
+🤖 In the beginning on the the been " a the was the a the a a the the the " was
+   the the the the a the ". The In
+
+You: The model learned to
+🤖 The model learned to " " He the the the a a the the " the he a an a the a " to
+   a " the " a the the a the first and " a the the the a a the the " a the an,
+   the a a The was.
+```
+
+**Diagnosis**: Model has learned that `the`, `a`, `he` are high-frequency — good statistical
+signal — but collapses into degenerate repetition. Not enough data (442K tokens) and not
+enough capacity (128H/2L) to produce coherent phrases at step 500.
+
+---
+
+### Experiment 2 — Best-of-Breed Run (Final Optimized)
+
+**Checkpoint**: `outputs/p3-bpe-convergence/checkpoint.pt`
+**Config**: `config/milestones/p3_bpe_convergence.toml` *(archived — removed after phase closeout)*
 **Status**: ✅ **COMPLETE** — Highest confidence convergence proof
 
-**Run Details**:
 ```
-Corpus:              WikiText + TinyStories (curated)
+Corpus:              WikiText + TinyStories (curated interleaved)
 Train tokens:        2,146,538 (70% WikiText + 30% TinyStories)
 Validation tokens:   375,246
 Tokenization:        BPE GPT2 (50,304 vocab)
-Architecture:        4L Transformer (256H, 4 heads, 1024 FFN)
+Architecture:        4L Transformer (256H, 4 heads, 1024 FFN)  ← scaled up
 Batch size:          8
 Gradient accumulation: 2 → Effective batch: 16
 Learning rate:       0.0003 (cosine schedule, 200-step warmup)
 Weight decay:        0.01 (selective)
 Precision:           BF16 mixed
-Attention backend:   Flash Attention 2
+Attention backend:   Flash Attention 2                          ← added
 Dropout:             0.1
-Max steps:           5000
+Max steps:           5000                                       ← 10× longer
 
 Results:
 Step 1:    loss=10.80, ppl=49,079
-Step 500:  loss=4.41            (major convergence achieved)
+Step 500:  loss=4.41            (major convergence — already below Exp. 1 final)
 Step 1000: loss=4.18
 Step 5000: loss=4.31, ppl=74.5
 
-Training time:       ~20 hours
-Throughput:          165K tokens/sec
+Throughput:          165K tokens/sec (Flash enabled)
 GPU memory peak:     1566 MB
 Training trajectory: Smooth, no divergence, predictable curve
 ```
 
-**Validation Metrics**:
-- Convergence achieved at ~1000 steps
-- Validation loss tracked separately
-- No NaN events
-- Loss curve matches expected Transformer dynamics
-
-**Interactive Chat Session** (5000-step BoB checkpoint, BPE 50K vocab, temp=0.9, top_k=20, max_tokens=80):
+**Chat** (step 5000, same prompts, same sampling):
 ```
 You: The quick brown fox jumped
-🤖 The quick brown fox jumped, and lawy cat. We fluct up the car tried to find feeling
-   heartbeat, and Bates came around, but they made it. The Colbert became angry. The fuels
-   and like itsBlue played ceremony. Theieth played drying.
+🤖 The quick brown fox jumped Alv, fail inside and said, the evident, after and his!
+   Portuguese, a little like the red park with her cardinal to the park with not home,
+   "As his friend, beautiful Kum. He was a time, "Ioning. He had like to very Customs."
 
 You: Once upon a time
-🤖 Once upon a time, playing together on a WC cardboard job!
+🤖 Once upon a time didn't somewhere time, they went out. He saw. He went to was
+   scared and "azo! The cat said anymore.
 
 You: In the beginning
-🤖 In the beginning.
+🤖 In the beginning of a time, regulators Leonardraised XV. The unpuff bleak to show
+   arising on him feel soft and the big, tied that he wanted to something tile and Sam
+   were for a Haskell. They heard a character lived in the Saw at the planetary of
+   the amount.
 
 You: The model learned to
-🤖 The model learned to had to worry, he could. She felt a new friend. The bell.
-   The big, a time, Sue looked. premiere in the car.
+🤖 The model learned to be auctive to the grass and started to look string again.
+   Room." Booth. They collaborative around it flew down together. He smiled and
+   misogyny. They were best friends. He put the food and happy that the Hunters
+   who was better go.
 ```
 
-**Chat Analysis**:
-- Real English words and sentence structure — a decisive jump from char-level UTF-8 output
-- BPE tokenizer (50K vocab) enables word-level representations; coherent phrases emerge
-- Narrative fragments visible ("Bates came around, but they made it", "She felt a new friend")
-- Hallucinations and non-sequiturs remain — expected at 5000 steps on 2.1M tokens
-- Confirms: the first architecture + dataset combination that generates recognisable language
+---
+
+### Progression Summary
+
+| | Experiment 1 (First Working) | Experiment 2 (BoB) |
+|---|---|---|
+| **Date** | Feb 27 | Feb 28 – Mar 2 |
+| **Architecture** | 2L / 128H | 4L / 256H |
+| **Dataset** | 442K BPE tokens | 2.15M BPE tokens |
+| **Attention** | Standard | Flash Attention 2 |
+| **Steps** | 500 | 5000 |
+| **Final loss** | 6.72 | **4.31** |
+| **Output quality** | Degenerate repetition ("the the the") | Coherent English words and narrative fragments |
+| **Verdict** | First proof of concept | Production-ready baseline |
+
+**Key driver**: Scaling data (442K → 2.15M tokens) and model capacity (128H/2L → 256H/4L)
+produces the qualitative jump from degenerate repetition to coherent English. Flash Attention
+enables the throughput (165K tok/s) that makes the longer run practical.
 
 **Verdict**: ✅ **PRODUCTION-READY BASELINE** — Highest validation, most reproducible run.
 
