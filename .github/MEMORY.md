@@ -6,80 +6,16 @@
 
 ## Current Work
 
-**PHASE 3 PRETRAIN RUNNING** ✓
-
-**Terminal ID**: `6bbd1844-d5a9-4bc3-9bba-fb3a5849f6f7`
-
-Config: `config/ephemeral/p3_tinystories_pretrain_512_combined_single.toml`
-
-**Current Progress** (updated continuously):
-- Step 900/5000 (18% complete)
-- Loss: 5.2711 → Perplexity: 194.63
-- Throughput: 136-138K tokens/sec
-- GPU memory: 903-904 MB (2 GPUs, minimal overhead)
-- Validation loss: 5.2910 (improved at step 500)
-- LR schedule: At 7.86e-04 (after warmup, in cosine decay)
-
-**Architecture**:
-- Model: decoder_lm (5 layers, 768 hidden, 12 heads)
-- Cross-layer sharing: 1 physical block reused 5× (22M → 4.4M parameters)
-- Factorized embeddings: 256 → 768 projection, untied head
-- Tokenizer: GPT2 BPE, 512 vocab, 37M train tokens
-
-**Optimizations Active**:
-- ✓ torch.compile (mode=max-autotune) — WORKING (gradient accumulation fix applied)
-- ✓ Flash Attention 2 (kernel-level speedup)
-- ✓ BF16 mixed precision AMP
-- ✓ Gradient accumulation (2 micro-batches → eff. batch 32)
-- ✓ Label smoothing (0.1)
-- ✓ Cosine LR schedule with warmup (500 steps)
-- ✓ Early stopping (patience=10)
-
-**Critical Fix Applied** (commit 74f8020):
-- `torch.compiler.cudagraph_mark_step_begin()` moved from train_step() to main loop
-- Only called once per accumulation cycle (at cycle start), not on every forward pass
-- Fixed: "RuntimeError: accessing tensor output of CUDAGraphs that has been overwritten"
-- Result: torch.compile now works stably with gradient accumulation + DDP
-
-**Next Step**: Fine-tune from pretrain checkpoint at `/outputs/ephemeral/p3-tinystories-pretrain-512-combined-single/checkpoint.pt`
-- Config: `config/ephemeral/p3_mixed_wikitext_tinystories_finetune_512_combined_single.toml` (10K steps, 3:1 data)
-- Will trigger automatically after pretrain completion
+**TRAINING RUNNING** — `p3_512bpe_noshare_mixed_10k.toml` (10K steps, flash+compile)
+- Config: `config/ephemeral/p3_512bpe_noshare_mixed_10k.toml` (in gitignore, ephemeral)
+- Output: `outputs/ephemeral/p3-512bpe-noshare-mixed-10k/loss_curve.csv`
+- Check: `tail -5 outputs/ephemeral/p3-512bpe-noshare-mixed-10k/loss_curve.csv`
+- Relaunch if dead: `./scripts/train_ddp.sh config/ephemeral/p3_512bpe_noshare_mixed_10k.toml 2 > outputs/ephemeral/p3-512bpe-noshare-mixed-10k-launch.log 2>&1 &`
+- At step ~499: val_loss=3.35 (PPL=28) — converging well, target PPL=15-25 by step 10K
 
 ---
 
 ## Thinking Notes
-
-**Technical Checkpoint** (crash recovery info):
-
-**Dataset & Config Status:**
-- 512-vocab BPE tokenizer: `/home/max/dev/max_llm/data/fast/` (tinystories + wikitext BPE, 512 vocab)
-- Pretrain config: `config/ephemeral/p3_tinystories_pretrain_512_combined_single.toml` — 5K steps, 768 hidden, 5 layers (1 shared block reused), 256 embedding_dim (projection to 768), share_layer_weights=true, embedding_dim=256
-- Finetune config: `config/ephemeral/p3_mixed_wikitext_tinystories_finetune_512_combined_single.toml` — 10K steps, same arch, resume from pretrain checkpoint, 3:1 alternating wikitext:tinystories data
-- All optimizations wired: torch.compile, Flash Attention, label_smoothing=0.1, BF16 AMP, early_stopping_patience=10, selective weight decay
-
-**Tests Passing**: 432 unit tests, 0 failures
-- New tests added: test_cross_layer_parameter_sharing_reuses_one_block(), test_factorized_embeddings_create_projection_and_disable_weight_tying(), test_from_config_wires_sharing_and_factorized_embedding()
-- All layer-sharing + factorized embedding behaviors validated in DecoderLM
-
-**CUDA Status:**
-- CUDA 12.9 installed at `/usr/local/cuda-12.9` (verified: nvcc present, 27MB, executable)
-- torch.compile succeeds when CUDA_HOME=/usr/local/cuda-12.9 and PATH prepended (`/usr/local/cuda-12.9/bin:$PATH`)
-- **Current Issue**: CUDA exports in train_ddp.sh only, not persistent in venv activation
-- **User Request**: "put CUDA in the path during activate" — integrate into `.venv/bin/activate` script
-
-**Next Action**:
-1. ✅ COMPLETED: Integrated CUDA_HOME/PATH into venv activate script
-2. ✅ COMPLETED: Verified torch.compile works with CUDA
-3. ✅ COMPLETED: Launched pretrain (5000 steps on TinyStories)
-4. MONITOR: Watch pretraining progress in terminal 98e3304b-f50b-4a48-9c81-8564f02479ad
-5. ON COMPLETION: Check logs at `outputs/p3-tinystories-pretrain-512-combined-single/`
-6. THEN: Launch fine-tune from checkpoint with `./scripts/train_ddp.sh config/ephemeral/p3_mixed_wikitext_tinystories_finetune_512_combined_single.toml 2`
-
-**Files Modified Recent Session**:
-- [scripts/train_ddp.sh](scripts/train_ddp.sh) — absolute path resolution for venv sourcing + CUDA exports (now redundant after venv integration)
-- [src/models/learning_model/decoder_lm.py](src/models/learning_model/decoder_lm.py) — runtime assertions for layer sharing
-- [tests/unit/test_decoder_lm.py](tests/unit/test_decoder_lm.py) — 3 new tests for layer sharing + factorized embeddings
-- 2 config files created in `config/ephemeral/`
 
 ## MEMORY vs SESSION_LOG Pattern (MUST UNDERSTAND)
 

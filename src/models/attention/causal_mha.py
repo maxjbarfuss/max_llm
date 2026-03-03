@@ -24,7 +24,7 @@ except ImportError:
 
 # Try to import Sage Attention
 try:
-    from sageattention import flash_attn_func as sage_attn_func
+    from sageattention import sageattn as sage_attn_func
 
     SAGE_ATTN_AVAILABLE = True
 except ImportError:
@@ -203,13 +203,14 @@ class CausalMultiHeadAttention(nn.Module):
             v = v.view(B, T, self.num_heads, self.head_dim)
 
             # Sage Attention handles causal masking internally
+            # tensor_layout="NHD": (B, T, num_heads, head_dim); sm_scale replaces softmax_scale
             attn_output = sage_attn_func(
                 q,
                 k,
                 v,
-                dropout_p=self.dropout_p if self.training else 0.0,
-                softmax_scale=1.0 / (self.head_dim**0.5),
-                causal=True,
+                tensor_layout="NHD",
+                is_causal=True,
+                sm_scale=1.0 / (self.head_dim**0.5),
             )
             # Output shape: (B, T, num_heads, head_dim)
             attn_output = attn_output.view(B, T, self.d_model)
