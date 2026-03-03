@@ -117,7 +117,7 @@ Phase 2 and Phase 3 have successfully delivered a **production-ready, single-GPU
 - ✅ Fallback works (xFormers, standard PyTorch available)
 
 **Evidence**:
-- Config: `attention_backend="flash"` in `config/milestones/p3_bpe_convergence.toml`
+- Config: `attention_backend="flash"` in `config/milestones/p3_bpe_convergence.toml` *(archived)*
 - Run logs: 22K-step convergence run (`/tmp/convergence_run.log`)
 - Memory profile: 1764 MB stable (reasonable for 4L×256H model)
 

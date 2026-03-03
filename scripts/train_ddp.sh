@@ -6,17 +6,17 @@
 #
 # Examples:
 #   # Train on 2 GPUs
-#   ./scripts/train_ddp.sh config/milestones/p3_baseline.toml 2
+#   ./scripts/train_ddp.sh config/tests/p3/p3_ddp.toml 2
 #
 #   # Train on all available GPUs
-#   ./scripts/train_ddp.sh config/milestones/p3_baseline.toml
+#   ./scripts/train_ddp.sh config/milestones/p2_final_best_in_class.toml
 
 set -e
 
 # Validate required config argument
 if [ -z "${1:-}" ]; then
     echo "Usage: ./scripts/train_ddp.sh <config_file> [num_gpus]"
-    echo "Example: ./scripts/train_ddp.sh config/milestones/p3_baseline.toml 2"
+    echo "Example: ./scripts/train_ddp.sh config/tests/p3/p3_ddp.toml 2"
     exit 1
 fi
 

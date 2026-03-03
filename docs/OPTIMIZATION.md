@@ -67,11 +67,11 @@ Enables near-linear scaling via data parallelism. Expected: ~1.8x throughput (30
 ### Usage
 
 ```bash
-# Using launcher script (recommended, baseline run)
-./scripts/train_ddp.sh config/milestones/p3_baseline.toml 2
-
-# Optional validation-only config
+# Using launcher script (short DDP test, 200 steps)
 ./scripts/train_ddp.sh config/tests/p3/p3_ddp.toml 2
+
+# Full production run
+./scripts/train_ddp.sh config/milestones/p2_final_best_in_class.toml 2
 
 # Or manually with torchrun
 source .venv/bin/activate

@@ -33,7 +33,7 @@ Phase 3 transitioned from SimpleLM (single-layer MLP) to DecoderLM (4-layer Tran
 
 ### Best-of-Breed Run (Milestone Baseline)
 
-**Config**: `config/milestones/p3_bpe_convergence.toml`
+**Config**: `config/milestones/p3_bpe_convergence.toml` *(archived — removed from repo after phase closeout)*
 **Status**: ✅ **COMPLETE** — Highest confidence convergence proof
 
 **Run Details**:
@@ -206,7 +206,7 @@ Multi-head self-attention:
 |----------|----------|------|---------|
 | **BoB Checkpoint** | `outputs/p3-bpe-convergence/checkpoint.pt` | 193 MB | Best-of-breed model weights |
 | **BoB Loss Curve** | `outputs/p3-bpe-convergence/loss_curve.csv` | 252 KB | 5000-step trajectory |
-| **BoB Config** | `config/milestones/p3_bpe_convergence.toml` | 2.2 KB | Production baseline config |
+| **BoB Config** | `config/milestones/p3_bpe_convergence.toml` *(archived)* | 2.2 KB | Production baseline config — archived after phase closeout |
 | **Full-stack Checkpoint** | `outputs/ephemeral/combined-convergence/checkpoint.pt` | 193 MB | Validation run checkpoint |
 | **Full-stack Loss Curve** | `outputs/ephemeral/combined-convergence/loss_curve.csv` | 457 KB | 15K+ step trajectory (ongoing) |
 | **Full-stack Config** | `config/ephemeral/combined_convergence.toml` | 2.5 KB | Safety features enabled |

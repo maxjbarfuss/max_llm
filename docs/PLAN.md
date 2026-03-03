@@ -160,11 +160,11 @@ Tokenizer:
 - ✅ Update `scripts/data/` configs — BPE support added to pipeline; `wikitext-103_bpe_gpt2_small.yaml`
 
 Data:
-- ✅ Phase 3 convergence milestone run: 5000 steps on interleaved TinyStories+WikiText BPE dataset (70/30 mix, 2.15M train / 0.38M val tokens); loss 10.89→4.31, best ppl 67.9; checkpoint `outputs/p3-bpe-convergence/`; config `config/milestones/p3_bpe_convergence.toml`; throughput ~140–160K tokens/sec
+- ✅ Phase 3 convergence milestone run: 5000 steps on interleaved TinyStories+WikiText BPE dataset (70/30 mix, 2.15M train / 0.38M val tokens); loss 10.89→4.31, best ppl 67.9; checkpoint `outputs/p3-bpe-convergence/`; config `config/milestones/p3_bpe_convergence.toml` *(archived)*; throughput ~140–160K tokens/sec
 - ✅ Memory-mapped data reads: `load_tokens()` returns `np.memmap` for .npy files; `TokenDataset` yields (x,y) pairs lazily — O(1) RAM regardless of dataset size; backward-compatible with TensorDataset tests
 - ✅ Re-tokenize TinyStories with BPE: 70M docs → 18.2M BPE tokens → 5M subset artifact `data/fast/tinystories_5m_tokens_bpe_gpt2.npy` (4.04 chars/token, gpt2 encoding)
 - ✅ Scale WikiText-103 BPE to 10M and 50M: artifacts `data/fast/wikitext_10m_tokens_bpe_gpt2.npy` and `data/fast/wikitext_50m_tokens_bpe_gpt2.npy`; configs added to `scripts/data/wikitext-103/`
-- ✅ Phase 3 data ramp validation: 5000-step convergence run on 10M WikiText BPE (single-split, 90% train / 10% val auto-split); loss 10.89→7.22, ppl 53772→1362; checkpoint `outputs/p3-wikitext-10m-validation/`; config `config/milestones/p3_wikitext_10m_validation.toml`; stable training; demonstrates larger-scale convergence
+- ✅ Phase 3 data ramp validation: 5000-step convergence run on 10M WikiText BPE (single-split, 90% train / 10% val auto-split); loss 10.89→7.22, ppl 53772→1362; checkpoint `outputs/p3-wikitext-10m-validation/`; config `config/milestones/p3_wikitext_10m_validation.toml` *(archived)*; stable training; demonstrates larger-scale convergence
 
 Components:
 - ✅ Token embedding (vocab_size × d_model) — `src/models/embeddings/token_embedding.py`; N(0,0.02) init; 7 tests
@@ -213,7 +213,7 @@ Evaluation and quality:
 - ✅ BPE tokenizer integrated and verified on Phase 2 datasets (WikiText-103 BPE: 442K tokens, gpt2 encoding)
 - ✅ Long-run stability check: 3000-step quality run (~24M token-steps) with no NaN/Inf; gradients remained stable under clipping
 - ✅ Loss curve smooth: 5000-step BPE convergence run — 0 spike violations of 3× running-avg criterion; CSV at `outputs/ephemeral/p3-bpe-convergence/loss_curve.csv` (ephemeral/gitignored)
-- ✅ **Convergence proof (committed)**: 5000-step interleaved TinyStories+WikiText BPE milestone run — loss 10.89→4.31, best ppl **67.9**; CSV + checkpoint at `outputs/p3-bpe-convergence/`; config `config/milestones/p3_bpe_convergence.toml`; Flash Attention + bf16 AMP; stable training (0 NaN/Inf)
+- ✅ **Convergence proof (committed)**: 5000-step interleaved TinyStories+WikiText BPE milestone run — loss 10.89→4.31, best ppl **67.9**; CSV + checkpoint at `outputs/p3-bpe-convergence/`; config `config/milestones/p3_bpe_convergence.toml` *(archived)*; Flash Attention + bf16 AMP; stable training (0 NaN/Inf)
 - ✅ Throughput baseline documented: ~128–137k tokens/sec (single-GPU baseline); ~175k tokens/sec with Flash Attention + DataLoader optimization on RTX 4090
 - ✅ Multi-GPU validated: DDP tested with 2 GPUs, identical loss across processes at same seed
 - ✅ Re-tokenized TinyStories with BPE: 5M token artifact created; configs added to pipeline
