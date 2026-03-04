@@ -82,6 +82,14 @@
 
 ---
 
+## L010 — Keep `.claude/CLAUDE.md` Bootstrap-Only
+
+**Observed behavior**: Agent wrote session memory, experiment summaries, and mutable status into `.claude/CLAUDE.md`, turning a bootstrap file into a stale state store.
+
+**Correct approach**: `.claude/CLAUDE.md` must remain a short bootstrap file that only points to `.github/AGENTS.md`, `.github/SKILLS.md`, and `.github/LESSONS.md`, plus where memory lives. Put active state in `.github/MEMORY.md` and historical summaries in `.github/SESSION_LOG.md`. Never store mutable run status or session reports in `.claude/CLAUDE.md`.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:
