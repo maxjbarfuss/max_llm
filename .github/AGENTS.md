@@ -28,7 +28,7 @@ Any agent working on this codebase should operate as simultaneously a **10x Seni
 - Do not broaden into unrelated refactors or speculative features.
 - Prefer action over questions — ask only when a blocker cannot be resolved from repository context.
 - When assumptions are needed, choose the simplest option consistent with current docs and code.
-- **Git operations**: Always use local `git` CLI (e.g., `git add`, `git commit`) via `run_in_terminal`. Never use MCP git wrappers, GitKraken, GitLens, or similar tools—see [L001 in LESSONS.md](LESSONS.md#-l001--never-use-mcp-git-tools-critical).
+- **Git operations**: Always use local `git` CLI (e.g., `git add`, `git commit`) via your agent's terminal tool. Never use GUI git wrappers, integrated git extensions, or git server tools of any kind—see [L001 in LESSONS.md](LESSONS.md#-l001--never-use-gui-git-wrappers-critical).
 
 ## Workflow
 
@@ -65,6 +65,18 @@ Key requirements:
 - **Phase 6+**: Eval benchmarks (HellaSwag, MMLU, task-specific)
 - **Anytime**: Training efficiency (xformers, `torch.compile`, FP8, selective checkpointing, activation offloading), data streaming and token caching
 - **Optimization**: C++20, Flash Attention 2, Sage Attention 2++, CMake, CUDA kernels
+
+## Platform-Specific Configuration
+
+Each agent platform has a native instruction file that adapts this standard with inline rules and platform-specific tool guidance. If you are one of these agents, read your native file in addition to this one:
+
+| Agent Platform | Native Instruction File | Notes |
+|---|---|---|
+| Claude Code | [`.claude/CLAUDE.md`](../.claude/CLAUDE.md) | Bootstrap pointer; Claude reads this automatically |
+| GitHub Copilot | [`.github/copilot-instructions.md`](copilot-instructions.md) | Copilot reads this automatically in chat and agent mode |
+| Other agents | This file (`AGENTS.md`) | Universal standard; sufficient for any agent without a native file |
+
+All agents must read this file (`AGENTS.md`) regardless of platform. Native files add platform tool guidance but do not replace this standard.
 
 ---
 

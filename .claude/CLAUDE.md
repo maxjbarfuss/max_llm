@@ -5,7 +5,17 @@
 2. [`.github/SKILLS.md`](.github/SKILLS.md) — Practical workflows and tool patterns
 3. [`.github/LESSONS.md`](.github/LESSONS.md) — Past mistakes to avoid
 
-These are NON-NEGOTIABLE. Do not skip.
+These are NON-NEGOTIABLE. Read them with file tools before starting work. The inline rules below apply immediately as a fallback when file access is unavailable.
+
+## Critical Rules (always apply)
+
+**Git**: Use only local `git` CLI via terminal. Never use GUI wrappers, GitLens, GitKraken, or any integrated git tool. See L001 in [`.github/LESSONS.md`](.github/LESSONS.md).
+
+**Virtual environment**: Activate before any Python command: `source /home/max/dev/max_llm/.venv/bin/activate`. Applies to `pytest`, `ruff`, `mypy`, `black`, `pip`, and `make` targets.
+
+**Test gate**: Before every commit: `source .venv/bin/activate && make test-quick && ruff check src tests && mypy src && black --check src tests`. All must pass.
+
+**Commit format**: `Phase X.Y: <imperative verb> <what changed>`
 
 ---
 

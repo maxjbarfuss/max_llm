@@ -8,13 +8,13 @@
 
 ---
 
-## 🚨 L001 — Never Use MCP Git Tools (CRITICAL)
+## 🚨 L001 — Never Use GUI Git Wrappers (CRITICAL)
 
-**Observed behavior**: Agent used GitKraken, GitLens, or another MCP git server for repository operations instead of the local `git` CLI. This has been observed repeatedly despite being documented.
+**Observed behavior**: Agent used GitKraken, GitLens, GitHub Desktop, or another GUI wrapper or integrated git extension for repository operations instead of the local `git` CLI. This has been observed repeatedly despite being documented.
 
-**Correct approach**: Use **only** local `git` commands for all git operations (`git status`, `git add`, `git commit`, `git diff`, `git log`, `git push`). Execute these via `run_in_terminal` with plain shell commands. Never invoke any MCP server, wrapper tool, or git integration tool.
+**Correct approach**: Use **only** local `git` commands for all git operations (`git status`, `git add`, `git commit`, `git diff`, `git log`, `git push`). Execute these via your agent's terminal tool with plain shell commands. Never invoke any GUI git client, VS Code git extension, integrated git tool, or git server wrapper of any kind.
 
-**Why this matters**: MCP wrappers add latency, obscure error messages, and reduce control. Plain `git` CLI is faster, clearer, and more reliable. This is a non-negotiable rule that must be enforced across all sessions and agents.
+**Why this matters**: Wrappers add latency, obscure error messages, and reduce control. Plain `git` CLI is faster, clearer, and more reliable. This is a non-negotiable rule that must be enforced across all sessions and agents.
 
 ---
 
@@ -86,7 +86,7 @@
 
 **Observed behavior**: Agent wrote session memory, experiment summaries, and mutable status into `.claude/CLAUDE.md`, turning a bootstrap file into a stale state store.
 
-**Correct approach**: `.claude/CLAUDE.md` must remain a short bootstrap file that only points to `.github/AGENTS.md`, `.github/SKILLS.md`, and `.github/LESSONS.md`, plus where memory lives. Put active state in `.github/MEMORY.md` and historical summaries in `.github/SESSION_LOG.md`. Never store mutable run status or session reports in `.claude/CLAUDE.md`.
+**Correct approach**: `.claude/CLAUDE.md` must remain a short bootstrap file. It may contain static critical rules (git CLI, venv, test gate, commit format) as inline reminders so they apply in chat sessions too. It must not contain session memory, experiment reports, or mutable run status — those belong in `.github/MEMORY.md` (active state) and `.github/SESSION_LOG.md` (history).
 
 ---
 
