@@ -9,7 +9,7 @@
 #   ./scripts/train_ddp.sh config/tests/p3/p3_ddp.toml 2
 #
 #   # Train on all available GPUs
-#   ./scripts/train_ddp.sh config/milestones/p2_final_best_in_class.toml
+#   ./scripts/train_ddp.sh config/milestones/p2_final.toml
 
 set -e
 

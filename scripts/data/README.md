@@ -34,106 +34,12 @@ python scripts/data/run_data_prep.py \
 python -m src.training.train --config config/milestones/p2_baseline.toml
 ```
 
-### Multiple Datasets (Interleaved)
-```bash
-# Generate a mixed corpus with 60% WikiText + 40% TinyStories
-python scripts/data/mix_interleaved_pages.py \
-    --corpus-mix wikitext-103 60 tinystories 40 \
-    --output mixed_corpus.txt \
-    --target-size 100M
-
-# Or with train/val/test splits (80/10/10)
-python scripts/data/mix_interleaved_pages.py \
-    --corpus-mix wikitext-103 50 tinystories 50 \
-    --output corpus_50_50 \
-    --target-size 100M \
-    --splits 80 10 10
-# Generates: corpus_50_50_train.txt, corpus_50_50_val.txt, corpus_50_50_test.txt
-```
-
-
 ## Typical Workflow
 
 1. Pick or create a dataset config under `scripts/data/<dataset>/`
 2. Run `run_data_prep.py` with the config
 3. Point `config/milestones/p2_baseline.toml` at the output `.npy` path
 4. To try a different subset size, create another YAML pointing at the same token cache but with a different `subset.size`
-
-## Interleaving Multiple Datasets
-
-Combine multiple datasets with specified percentages and optionally generate train/val/test splits.
-
-### Available Datasets
-
-Use these names in `--corpus-mix`:
-- `wikitext-103` — WikiText-103 (article-aligned boundaries)
-- `tinystories` — TinyStories GPT-4 clean (story-aligned boundaries)
-
-### Corpus Mix Format
-
-```bash
---corpus-mix dataset1 percent1 dataset2 percent2 [dataset3 percent3 ...]
-```
-
-Percentages must sum to 100. Example:
-```bash
-# 50/50 WikiText + TinyStories
---corpus-mix wikitext-103 50 tinystories 50
-
-# 60/30/10 three-way mix
---corpus-mix wikitext-103 60 tinystories 30 new_dataset 10
-```
-
-### Generating Splits
-
-```bash
-python scripts/data/mix_interleaved_pages.py \
-    --corpus-mix wikitext-103 50 tinystories 50 \
-    --output my_corpus \
-    --target-size 100M \
-    --splits 80 10 10
-```
-
-Creates three files preserving the corpus mix ratio:
-- `my_corpus_train.txt` (80% of docs, both sources mixed)
-- `my_corpus_val.txt` (10% of docs, both sources mixed)
-- `my_corpus_test.txt` (10% of docs, both sources mixed)
-
-Metadata saved to `my_corpus.splits.meta.json`:
-```json
-{
-  "splits": {
-    "train": {"percent": 80, "docs": 123, "bytes": 987654, "path": "..."},
-    "val": {"percent": 10, "docs": 16, "bytes": 123456, "path": "..."},
-    "test": {"percent": 10, "docs": 15, "bytes": 123456, "path": "..."}
-  },
-  "corpus_mix": [{"wikitext-103": 50}, {"tinystories": 50}],
-  "sources": [...]
-}
-```
-
-### Single Output File
-
-Omit `--splits` to generate a single interleaved file:
-```bash
-python scripts/data/mix_interleaved_pages.py \
-    --corpus-mix wikitext-103 60 tinystories 40 \
-    --output mixed.txt \
-    --target-size 50M
-```
-
-Creates:
-- `mixed.txt` — interleaved corpus
-- `mixed.txt.meta.json` — metadata (corpus mix, sources used, byte counts)
-
-### Reproducibility
-
-Both `--corpus-mix` and `--splits` use seeded randomization:
-```bash
---seed 42       # default; set to reproduce exact same interleaving and splits
-```
-
-Changing the seed reshuffles documents but maintains the corpus mix percentages.
 
 ## Config Anatomy
 
@@ -225,5 +131,5 @@ python scripts/data/run_data_prep.py --config scripts/data/wikitext-103/wikitext
 ## Scripts
 
 - **`run_data_prep.py`** — config-driven workflow runner (normalize → tokenize → extract)
-- **`mix_interleaved_pages.py`** — combine multiple datasets with percent-based mix and optional train/val/test splits
+- **`prepare_complementary.py`** — optional complementary corpus preparation pipeline
 - **`wikitext-103/`** — WikiText-103 dataset configs and any dataset-specific helpers

@@ -22,7 +22,7 @@
 
 ### UTF-8 — Success ✅
 
-**Config**: `config/milestones/p2_final_best_in_class.toml`
+**Config**: `config/milestones/p2_final.toml`
 
 ```
 Corpus: WikiText + TinyStories (10M tokens) | Tokenization: UTF-8 (256 vocab)
@@ -106,4 +106,4 @@ Architectural limit — hyperparameters cannot fix this.
 
 ---
 
-**Phase 2 Status**: ✅ COMPLETE — `outputs/p2-final-best-in-class/` (loss 2.84)
+**Phase 2 Status**: ✅ COMPLETE — `outputs/p2-final/` (loss 2.84)

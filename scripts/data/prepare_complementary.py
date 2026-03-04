@@ -3,9 +3,10 @@
 Prepare complementary datasets for mixing with WikiText/TinyStories.
 
 Usage:
-    python scripts/data/prepare_arxiv.py --output data/fast/arxiv_abstracts_2m_bpe.npy
-    python scripts/data/prepare_stack_exchange.py --output data/fast/stackexchange_qa_3m_bpe.npy
-    python scripts/data/prepare_code.py --output data/fast/github_python_5m_bpe.npy
+    python scripts/data/prepare_complementary.py --source arxiv
+    python scripts/data/prepare_complementary.py --source stack-exchange
+    python scripts/data/prepare_complementary.py --source code
+    python scripts/data/prepare_complementary.py --source all
 """
 
 import argparse
@@ -17,6 +18,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from src.tokenizer import TokenizerFactory
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -31,7 +33,7 @@ def prepare_arxiv_abstracts(output_path: str, token_limit: int = 2_000_000):
     Size: ~2M tokens for ~50K abstracts
     """
     try:
-        from datasets import load_dataset
+        from datasets import load_dataset  # type: ignore[import-untyped]
     except ImportError:
         logger.error("datasets library not found. Install with: pip install datasets")
         return False
@@ -49,9 +51,9 @@ def prepare_arxiv_abstracts(output_path: str, token_limit: int = 2_000_000):
         return False
 
     # Get tokenizer
-    tokenizer = get_tokenizer("bpe", "gpt2")
+    tokenizer = TokenizerFactory.create("bpe", encoding="gpt2")
 
-    tokens = []
+    tokens: list[int] = []
     for i, item in enumerate(ds):
         if i % 10000 == 0:
             logger.info(f"Processed {i}/{len(ds)} abstracts ({len(tokens)} tokens)")
@@ -85,7 +87,7 @@ def prepare_arxiv_abstracts(output_path: str, token_limit: int = 2_000_000):
                 "source": "arxiv-abstracts",
                 "num_tokens": len(tokens),
                 "tokenizer": "gpt2_bpe",
-                "vocab_size": tokenizer.vocab_size,
+                "vocab_size": getattr(tokenizer, "vocab_size", None),
             },
             f,
         )
@@ -121,7 +123,7 @@ def prepare_stack_exchange(output_path: str, token_limit: int = 3_000_000):
     # Get tokenizer
     tokenizer = TokenizerFactory.create("bpe", encoding="gpt2")
 
-    tokens = []
+    tokens: list[int] = []
     for i, item in enumerate(ds):
         if i % 5000 == 0:
             logger.info(f"Processed {i}/{len(ds)} Q&A pairs ({len(tokens)} tokens)")
@@ -157,7 +159,7 @@ def prepare_stack_exchange(output_path: str, token_limit: int = 3_000_000):
                 "source": "stack-exchange-dump",
                 "num_tokens": len(tokens),
                 "tokenizer": "gpt2_bpe",
-                "vocab_size": tokenizer.vocab_size,
+                "vocab_size": getattr(tokenizer, "vocab_size", None),
             },
             f,
         )
@@ -195,8 +197,8 @@ def prepare_code_samples(output_path: str, token_limit: int = 5_000_000):
     # Get tokenizer
     tokenizer = TokenizerFactory.create("bpe", encoding="gpt2")
 
-    tokens = []
-    language_counts = {}
+    tokens: list[int] = []
+    language_counts: dict[str, int] = {}
 
     for i, item in enumerate(ds):
         if i % 5000 == 0:
@@ -239,7 +241,7 @@ def prepare_code_samples(output_path: str, token_limit: int = 5_000_000):
                 "num_tokens": len(tokens),
                 "languages": language_counts,
                 "tokenizer": "gpt2_bpe",
-                "vocab_size": tokenizer.vocab_size,
+                "vocab_size": getattr(tokenizer, "vocab_size", None),
             },
             f,
         )

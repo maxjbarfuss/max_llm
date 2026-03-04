@@ -2,8 +2,8 @@
 # Canonical Phase 2 capabilities with explicit train/val/test and reproducible settings.
 
 [experiment]
-name = "maxllm-p2-final-best-in-class"
-output_dir = "./outputs/p2-final-best-in-class"
+name = "maxllm-p2-final"
+output_dir = "./outputs/p2-final"
 
 [model]
 model_type = "simple_lm"
