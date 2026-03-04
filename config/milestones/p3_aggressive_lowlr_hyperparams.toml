@@ -32,6 +32,21 @@ dataset_path = "data/fast/interleaved_mixed_50m_tokens_bpe_gpt2_v2.npy"
 #   - webtext_15m: 15M tokens (30%)
 #   + repeat: wiki 8M, stories 4M, webtext 8M
 #   = 50M total, all three sources represented
+tokenizer_name = "bpe"
+tokenizer_mode = "utf8"
+tokenizer_vocab_size = 50304
+tokenizer_backend = "gpt2_bpe"
+unigram_model_path = ""
+max_length = 256
+num_workers = 4
+prefetch_factor = 2
+pin_memory = true
+persistent_workers = true
+streaming = false
+cache_dir = "./data/cache"
+num_shards = 1
+validation_split = 0.1
+seed = 42
 
 [training]
 # AGGRESSIVE HYPERPARAMS (Option A)
@@ -63,6 +78,11 @@ eval_on_test = true
 [inference]
 device = "auto"
 max_new_tokens = 64
+temperature = 1.0
+top_p = 0.9
+top_k = 0
+use_kv_cache = false
+kv_cache_dtype = "bf16"
 
 [logging]
 log_level = "INFO"

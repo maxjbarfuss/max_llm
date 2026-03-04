@@ -37,15 +37,14 @@ echo ""
 echo "=================================================="
 echo ""
 
+echo "=================================================="
+echo ""
+
 # Clean previous output
 rm -rf outputs/p3-aggressive-lowlr-hyperparams
 
 # Launch training
-python train.py \
-    --config config/milestones/p3_aggressive_lowlr_hyperparams.toml \
-    --output-dir outputs/p3-aggressive-lowlr-hyperparams \
-    --use-ddp \
-    --rank 0
+python -m src.training.train --config config/milestones/p3_aggressive_lowlr_hyperparams.toml
 
 echo ""
 echo "=================================================="
