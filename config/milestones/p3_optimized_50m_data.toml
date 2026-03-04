@@ -43,10 +43,10 @@ use_torch_compile = false
 attention_backend = "flash"
 selective_checkpointing = false
 
-# Early stopping to prevent wasteful training on plateau
-early_stopping_patience = 5
-early_stopping_min_delta = 0.01
-eval_on_test = true
+# Early stopping disabled - set patience very high so it never triggers
+early_stopping_patience = 10000
+early_stopping_min_delta = 0.0
+eval_on_test = false
 
 [inference]
 device = "auto"

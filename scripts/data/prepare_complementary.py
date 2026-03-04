@@ -17,7 +17,6 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.tokenizer.tokenizer import get_tokenizer
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -120,7 +119,7 @@ def prepare_stack_exchange(output_path: str, token_limit: int = 3_000_000):
         return False
 
     # Get tokenizer
-    tokenizer = get_tokenizer("bpe", "gpt2")
+    tokenizer = TokenizerFactory.create("bpe", encoding="gpt2")
 
     tokens = []
     for i, item in enumerate(ds):
@@ -194,7 +193,7 @@ def prepare_code_samples(output_path: str, token_limit: int = 5_000_000):
         return False
 
     # Get tokenizer
-    tokenizer = get_tokenizer("bpe", "gpt2")
+    tokenizer = TokenizerFactory.create("bpe", encoding="gpt2")
 
     tokens = []
     language_counts = {}
