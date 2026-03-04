@@ -58,7 +58,7 @@ use_kv_cache = false
 kv_cache_dtype = "bf16"
 
 [data]
-dataset_path = "data/fast/interleaved_wikitext_tinystories_50m_pages_bpe_gpt2.npy"
+dataset_path = "data/fast/interleaved_mixed_50m_tokens_bpe_gpt2.npy"
 tokenizer_name = "bpe"
 tokenizer_mode = "utf8"
 tokenizer_vocab_size = 50304
