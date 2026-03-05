@@ -595,6 +595,15 @@ def main() -> None:  # noqa: C901
             f"(effective batch size: {config.training.effective_batch_size})"
         )
 
+    # TensorBoard writer (main process only)
+    tb_writer = None
+    if is_main_process():
+        from torch.utils.tensorboard import SummaryWriter
+        tb_log_dir = Path(config.output_dir) / "tensorboard"
+        tb_writer = SummaryWriter(log_dir=str(tb_log_dir))
+        print_once(f"TensorBoard: {tb_log_dir}")
+        print_once(f"             tensorboard --logdir {tb_log_dir}")
+
     # Train
     csv_log_path = Path(config.output_dir) / "loss_curve.csv"
     metrics = train(
@@ -616,7 +625,10 @@ def main() -> None:  # noqa: C901
         early_stopping_patience=config.training.early_stopping_patience,
         early_stopping_min_delta=config.training.early_stopping_min_delta,
         label_smoothing=config.training.label_smoothing,
+        tb_writer=tb_writer,
     )
+    if tb_writer is not None:
+        tb_writer.close()
     if is_main_process():
         print_once(f"Loss curve : {csv_log_path}")
 

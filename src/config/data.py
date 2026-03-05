@@ -17,7 +17,7 @@ class DataConfig:
     tokenizer_name: str
     tokenizer_mode: Literal["codepoint", "utf8", "utf16", "utf32"]
     tokenizer_vocab_size: int
-    tokenizer_backend: Literal["gpt2_bpe", "unigram"]
+    tokenizer_backend: Literal["gpt2_bpe", "unigram", "char", "char_utf8"]
     unigram_model_path: str | None
     max_length: int
     num_workers: int
@@ -34,10 +34,10 @@ class DataConfig:
 
     def _validate_split(self) -> None:
         if isinstance(self.validation_split, float):
-            if not (0 < self.validation_split < 1):
-                raise ValueError("validation_split fraction must be in (0, 1)")
-        elif self.validation_split <= 0:
-            raise ValueError("validation_split must be positive")
+            if not (0.0 <= self.validation_split < 1):
+                raise ValueError("validation_split fraction must be in [0, 1)")
+        elif self.validation_split < 0:
+            raise ValueError("validation_split must be non-negative")
 
     def __post_init__(self) -> None:
         """Validate data configuration."""
@@ -45,8 +45,8 @@ class DataConfig:
             raise ValueError("max_length must be positive")
         if self.num_workers < 0:
             raise ValueError("num_workers must be non-negative")
-        if self.tokenizer_backend not in {"gpt2_bpe", "unigram"}:
-            raise ValueError("tokenizer_backend must be 'gpt2_bpe' or 'unigram'")
+        if self.tokenizer_backend not in {"gpt2_bpe", "unigram", "char", "char_utf8"}:
+            raise ValueError("tokenizer_backend must be 'gpt2_bpe', 'unigram', 'char', or 'char_utf8'")
         if not self.tokenizer_name:
             raise ValueError("tokenizer_name cannot be empty")
         if self.tokenizer_mode not in {"codepoint", "utf8", "utf16", "utf32"}:

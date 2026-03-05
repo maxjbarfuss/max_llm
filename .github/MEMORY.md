@@ -6,13 +6,9 @@
 
 ## Current Work
 
-No active in-session task.
-
----
-
 ## Thinking Notes
 
-None.
+---
 
 ## MEMORY vs SESSION_LOG Pattern (MUST UNDERSTAND)
 

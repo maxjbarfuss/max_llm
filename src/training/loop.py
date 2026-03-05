@@ -217,6 +217,7 @@ def train(  # noqa: C901
     early_stopping_patience: int | None = None,
     early_stopping_min_delta: float = 0.0,
     label_smoothing: float = 0.0,
+    tb_writer: Any | None = None,
 ) -> dict[str, list[float]]:
     """Train for exactly max_steps gradient steps with modern training features.
 
@@ -424,6 +425,22 @@ def train(  # noqa: C901
                     }
                     csv_writer.writerow(row)
                     csv_file.flush()  # type: ignore[union-attr]
+
+                # TensorBoard: log train metrics every step
+                if tb_writer is not None:
+                    current_lr = optimizer.param_groups[0]["lr"]
+                    tb_writer.add_scalar("train/loss", avg_loss, step + 1)
+                    tb_writer.add_scalar("train/perplexity", perplexity, step + 1)
+                    tb_writer.add_scalar("train/lr", current_lr, step + 1)
+                    if log_tokens_per_sec and tokens_per_sec > 0:
+                        tb_writer.add_scalar("train/tokens_per_sec", tokens_per_sec, step + 1)
+                    if log_gpu_memory and device.type == "cuda":
+                        tb_writer.add_scalar("train/gpu_memory_mb", memory_mb, step + 1)
+                    if val_loss is not None:
+                        tb_writer.add_scalar("eval/val_loss", val_loss, step + 1)
+                        tb_writer.add_scalar("eval/val_perplexity", math.exp(val_loss), step + 1)
+                    if test_loss is not None:
+                        tb_writer.add_scalar("eval/test_loss", test_loss, step + 1)
 
                 # Logging
                 if log_interval > 0 and (step + 1) % log_interval == 0:

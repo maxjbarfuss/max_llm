@@ -1,0 +1,114 @@
+# Phase 3 Baseline — Coherence Run
+#
+# Goal: Train a ~92M-param decoder LM that generates coherent English prose.
+#
+# Architecture: GPT-2 Small equivalent with 8K custom BPE vocab
+#   12 layers × 768 hidden × 12 heads × 3072 FFN ≈ 92M params
+#   vocab_size=8192 keeps the embedding table small (6MB vs 38MB for GPT-2's 50K),
+#   freeing the parameter budget for transformer depth.
+#
+# Tokenizer: Custom BPE 8192 vocab trained on TinyStories + WikiText + FineWeb-Edu
+#   No lowercase; ByteLevel pre-tokeniser (GPT-2 style).
+#   File: data/fast/bpe_vocab_8192.json
+#
+# Data: ~370M BPE tokens, 3-phase curriculum (document-boundary interleaving)
+#   Phase 1 (0–40%): 25% TinyStories / 58% FineWeb-Edu / 17% WikiText
+#   Phase 2 (40–80%):  5% TinyStories / 65% FineWeb-Edu / 30% WikiText
+#   Phase 3 (80–100%): 0% TinyStories / 55% FineWeb-Edu / 45% WikiText
+#   Validation: WikiText-103 held-out val set
+#
+# Training: 2 passes (≈ 2×370M = 740M token-steps = 8× params)
+#   Steps per pass (2-GPU DDP, batch=64/GPU, accum=2, seq=1024): ~1400
+#   max_steps set for ~2 passes; early stopping terminates if val plateaus.
+#
+# Prepare data (run once, in order):
+#   source .venv/bin/activate
+#   python scripts/data/train_bpe_8k.py
+#   python scripts/data/retokenize_with_bpe_8k.py
+#   python scripts/data/mixed/prep_p3_baseline_curriculum.py
+#
+# Train (2 GPUs):
+#   source .venv/bin/activate
+#   torchrun --nproc_per_node=2 -m src.training.train \
+#     --config config/milestones/p3_baseline.toml
+
+[experiment]
+name       = "p3-coherence"
+output_dir = "./outputs/p3-coherence"
+
+[model]
+model_type        = "decoder_lm"
+hidden_size       = 768
+num_layers        = 12           # 12L × 768d × 12h ≈ 92M params (GPT-2 Small equiv.)
+num_heads         = 12           # head_dim = 768/12 = 64
+vocab_size        = 8192         # Custom BPE 8K; embedding = 6MB vs 38MB for GPT-2 50K
+max_seq_length    = 1024
+intermediate_size = 3072         # 4 × 768
+mla_latent_dim    = 96           # placeholder — Phase 6
+rope_base         = 10000
+num_experts       = 1
+experts_per_token = 1
+moe_frequency     = 0
+gru_hidden_size   = 768
+dropout           = 0.0
+share_layer_weights = false
+
+[data]
+dataset_path            = "data/fast/p3_coherence_train_bpe8k.npy"
+validation_dataset_path = "data/fast/p3_coherence_val_bpe8k.npy"
+test_dataset_path       = "data/fast/p3_coherence_val_bpe8k.npy"
+tokenizer_name          = "bpe"
+tokenizer_mode          = "utf8"          # unused for BPE; required by DataConfig
+tokenizer_vocab_size    = 8192            # triggers HFBPETokenizer in inference utils
+tokenizer_backend       = "gpt2_bpe"     # unused for .npy loading; satisfies validation
+max_length              = 1024
+num_workers             = 4
+prefetch_factor         = 2
+pin_memory              = true
+persistent_workers      = false
+streaming               = false
+seed                    = 42
+unigram_model_path      = ""
+cache_dir               = "./data/cache"
+num_shards              = 1
+validation_split        = 0.0            # explicit val path above
+
+[training]
+# 2-GPU DDP: 64/GPU × 2 GPUs × accum=2 × seq=1024 = 262,144 tokens/step
+# ~370M train tokens → ~1,411 steps/pass → 2 passes ≈ 2,822 steps.
+# max_steps=3000 gives a small buffer; early stopping cuts short if val plateaus.
+batch_size                  = 64
+gradient_accumulation_steps = 2
+max_steps                   = 3000
+warmup_steps                = 150        # 5% of max_steps
+learning_rate               = 3e-4
+weight_decay                = 0.1
+betas                       = [0.9, 0.95]
+epsilon                     = 1e-8
+gradient_clip_norm          = 1.0
+precision_schedule          = [[0, -1, "bf16"]]
+moe_balance_loss_weight     = 0.0
+distributed_backend         = "ddp"
+checkpoint_interval         = 200
+eval_interval               = 100
+log_interval                = 20
+keep_last_n_checkpoints     = 3
+use_torch_compile           = true
+attention_backend           = "flash"
+selective_checkpointing     = true
+early_stopping_patience     = 10         # stop if val loss stalls for 10 evals = 1000 steps
+early_stopping_min_delta    = 0.001
+label_smoothing             = 0.1
+eval_on_test                = true
+
+[validation]
+eval_max_batches            = 64
+
+[inference]
+device         = "auto"
+max_new_tokens = 256
+temperature    = 0.8
+top_p          = 0.9
+top_k          = 40
+use_kv_cache   = false
+kv_cache_dtype = "bf16"
