@@ -6,7 +6,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 1. Read [MEMORY.md](../.github/MEMORY.md) first — current focus and agent working state; read [SESSION_LOG.md](../.github/SESSION_LOG.md) for completed-session history
 2. Check Phase Progress table and the current phase's task list for execution detail
 3. For architecture and design decisions: [DESIGN.md](DESIGN.md)
-4. For completed phases: [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md)
+4. For completed phases: [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md) | [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md)
 
 ---
 
@@ -16,7 +16,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, env notes |
 | **2** | ✅ Done | Skeleton & Reproducibility | M | Low (scope clarity) | TinyStories + WikiText-103 (1–10M tokens) | Tokenizer, data pipeline, training loop, checkpointing, seed control, overfit test |
-| **3** | ✅ Done | Decoder + Unigram + Stability + Optimizations | L | Low (validated) | Mixed corpus (TinyStories/FineWeb-Edu/WikiText-103), Unigram 8K tokenizer | **COMPLETE**: DecoderLM proven. All optimizations validated: Flash Attention, BF16, early stopping, label smoothing, torch.compile. BPE plateau confirmed (7.92 loss after 1600 steps); switched to Unigram 8K (6.85 loss at step 80). [Phase 2 Closeout](PHASE_2_CLOSEOUT.md) |
+| **3** | 🔄 In Progress | Decoder + Unigram + Stability + Optimizations | L | Medium (dataset rebuild needed) | Mixed corpus (TinyStories/FineWeb-Edu/WikiText-103), Unigram 8K tokenizer | BPE/optimization stack validated (loss 4.31). Unigram 8K dataset rebuild required (prior run had no EOS + broken doc boundaries). Goal not yet met: coherent output. [Phase 3 Closeout (BPE)](PHASE_3_CLOSEOUT.md) |
 | **4** | — | Llama Architecture + Scale-Up Training | XL | High (scale + stability) | OpenWebText/FineWeb 10–500M tokens with staged curriculum | Architecture A/B report, curriculum manifest, throughput benchmarks |
 | **5** | — | Post-Training | XL | High (forgetting + alignment) | SFT, grounding, preference data | LoRA adapters, grounding benchmark, reward-model card, safety evaluation |
 | **6** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + preference with curriculum | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
@@ -107,7 +107,7 @@ Components:
 - ✅ Character-level tokenizer (`src/tokenizer/char_tokenizer.py`): multi-mode (codepoint/utf8/utf16/utf32), encode/decode with roundtrip tests
 - ✅ TokenizerFactory (`src/tokenizer/tokenizer.py`): **kwargs-based parameterization for mode and vocab_size
 - ✅ `BaseLearningModel` ABC (`src/models/learning_model/base.py`): `forward` and factory interface; evolves across phases
-- ✅ `SimpleLM` (`src/models/learning_model/simple_lm.py`): token embedding → GELU MLP → weight-tied LM head
+- ✅ `SimpleLM`: token embedding → GELU MLP → weight-tied LM head *(removed in Phase 3 consolidation; reproduced via DecoderLM small config)*
 
 Training and evaluation:
 - ✅ Seed control: Python, NumPy, PyTorch (CPU/CUDA) — implemented with `seed_everything` utility
@@ -115,7 +115,7 @@ Training and evaluation:
 - ✅ Checkpointing: model state, optimizer state, step (`save_checkpoint` in `src/training/train.py`)
 - ✅ Inference: `src/inference/run.py` — temperature, top-k, top-p sampling; loads checkpoint; text-in → text-out
 - ✅ Perplexity metrics: per-batch computation (train loop returns dict with losses + perplexities)
-- ✅ Evaluation script: `scripts/evaluate_p2.py` — checkpoint → prompt → generation samples with config-driven sampling
+- ✅ Evaluation: checkpoint → prompt → generation samples with config-driven sampling *(evaluate_p2.py removed; use `python -m src.inference.run`)*
 
 Quality:
 - ✅ Unit tests: 240 passing — end-to-end Phase 2 loop covered (tokenizer → data pipeline → training → checkpoint → inference → seed hardening → overfit test)
@@ -129,7 +129,7 @@ Quality:
 - ✅ TinyStories subset (100K tokens) downloaded, tokenized, and validated (on disk with boundary detection)
 - ✅ Overfit test achieves train loss < 0.1 on a 10K-token subset within 500 steps (verified: 3 tests passing)
 - ✅ Inference: `python -m src.inference.run --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` generates text from a trained checkpoint
-- ✅ Evaluation: `python scripts/evaluate_p2.py --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` reports perplexity and generation samples
+- ✅ Evaluation: `python -m src.inference.run --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` generates text and reports perplexity *(evaluate_p2.py removed in Phase 3 consolidation)*
 - ✅ Final draft closeout re-verified (System V): E2E integration test pass + side-by-side interactive chat (early workable vs final best-in-class) documented in `docs/PHASE_2_CLOSEOUT.md`
 
 Canonical Phase 2 milestone configs for reference:
@@ -171,7 +171,7 @@ Components:
 - ✅ Learned position embedding (max_seq_len × d_model) — `src/models/position/learned_position.py`; N(0,0.02) init; 6 tests
 - ✅ Multi-head causal self-attention — `src/models/attention/causal_mha.py`: Q/K/V project, scaled dot-product, upper-triangular mask, Xavier uniform init; 15 tests
 - ✅ AttentionLM test model — `src/models/learning_model/attention_lm.py`: token+pos embeddings → pre-norm → attention → residual → LM head; weight-tied; validated end-to-end
-- ✅ Model factory — `src/config/model.py`: Added `model_type` field; `src/training/train.py` factory supports "simple_lm", "attention_lm", "decoder_lm"
+- ✅ Model factory — `src/config/model.py`: `model_type` field; `src/training/train.py` factory supports "decoder_lm" *(simple_lm/attention_lm removed in Phase 3 consolidation)*
 - ✅ Transformer block (repeat N times): pre-norm LayerNorm → multi-head causal attention → residual → FFN → residual
 - ✅ Feed-forward: Linear → GELU → Linear (d_model → 4×d_model → d_model)
 - ✅ DecoderLM: embeddings → N transformer blocks → LM head (weight-tied)
@@ -194,7 +194,7 @@ Training optimizations (advanced from Phase 4 to accelerate experimentation):
 - ✅ Multi-backend attention support: Flash Attention 2, Sage Attention, xFormers, Standard PyTorch (automatic fallback; config-selectable via `attention_backend`)
 - ✅ DataLoader optimization: parallel workers (`num_workers`), prefetching (`prefetch_factor`), pinned memory, persistent workers; eliminates CPU data loading bottleneck
 - ✅ torch.compile support: kernel fusion for 30-40% speedup (compatible with xFormers/standard, incompatible with Flash/Sage)
-- ✅ Multi-GPU (DDP): tested with 2 GPUs, ~1.8x throughput (30-35% sync overhead); launcher script `scripts/train_ddp.sh`
+- ✅ Multi-GPU (DDP): tested with 2 GPUs, ~1.8x throughput (30-35% sync overhead) *(train_ddp.sh removed; use `torchrun` directly)*
 - ✅ Profiling utilities: model size logging, GPU memory tracking, throughput monitoring (`--profile` flag)
 - ✅ Optimization guide: [OPTIMIZATION.md](OPTIMIZATION.md) with backend selection matrix, config recommendations, troubleshooting
 

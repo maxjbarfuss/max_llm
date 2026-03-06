@@ -6,29 +6,7 @@
 
 ## Current Work
 
-**Task**: Phase 3 — Unigram training underway; infra fixes complete
-**Agent**: Claude Sonnet 4.6
-**Start**: 2026-03-06
-
 ## Thinking Notes
-
-**Completed this session**:
-- eval_max_batches wired: TrainingConfig → loop.py evaluate(max_batches=64)
-- Periodic checkpoints with rotating keep_last_n (loop.py + train.py)
-- Gradient normalization: loss / accum_steps before backward
-- data/fast/ → only mixed_10t_60f_30w_unigram8k_* + {tinystories,wikitext}_70m_docs.txt
-- scripts/data/ → only prepare_dataset.py (one parameterized pipeline)
-- EOS tokens: fixed in prepare_dataset.py (eos_token_id in OutputConfig) and UnigramTokenizer.train_model(add_eos=True)
-- p3_unigram.toml created; Unigram run launched and descending fast (6.85 at step 80 vs BPE's 7.92)
-
-**Current state**:
-- Unigram run: stopped (user request), outputs at outputs/p3-unigram/
-- Existing mixed_10t data has NO EOS tokens (tokenizer trained without eos_id) — needs rebuild for proper doc boundaries
-- BPE: abandoned — confirmed plateau, not worth further effort
-
-**Next**:
-- Rebuild dataset with new tokenizer (add_eos=True) + eos_token_id=1 in prepare_dataset.py config
-- Resume / restart Unigram training on rebuilt data
 
 ---
 
