@@ -16,13 +16,13 @@
 |-------|------|--------------|----------------|
 | **1** | Foundation | Design, repo setup, config system, build tools, CI, test scaffolding | Setup; no training data |
 | **2** | Skeleton & Reproducibility | Config, seed control, char tokenizer, training loop, checkpointing, metrics | TinyStories + WikiText-103 (1–10M tokens); overfit test |
-| **3** | Decoder + BPE + Training Stability + Optimizations | Embeddings, causal attention, FFN, LM head, BPE tokenizer, generation (greedy + temp + top-k/top-p), LR scheduling, gradient clipping, AMP, gradient accumulation; multi-backend attention (Flash/Sage/xFormers), DataLoader optimization, torch.compile, multi-GPU DDP | WikiText BPE (442K tokens), 10–50M tokens |
+| **3** | Capable GPT-2-like model (~60M params, coherent output) | Decoder architecture (8L/768H/12H, Unigram 8K vocab, 1024 ctx); full optimization stack (Flash Attn, BF16, DDP, torch.compile, early stopping, label smoothing); training run to coherent text generation | Mixed corpus 21.5B tokens: 10% TinyStories / 60% FineWeb-Edu / 30% WikiText-103; Unigram 8K tokenizer with EOS |
 | **4** | Llama Architecture + Scale-Up Training | RMSNorm, RoPE, SwiGLU, GQA, FSDP for 300M+ params, chunked token caching, data filters, A/B comparison vs Phase 3; multi-phase curriculum pretraining | OpenWebText/FineWeb 10–500M tokens with staged ramp (10–50M, 50–100M, 100–500M curriculum stages) |
 | **5** | Post-Training | KV-cache, SFT, LoRA, grounding (math/logic/world-model/games), DPO or PPO/GRPO, continual learning | 1–5M SFT pairs, 50K–500K grounding (GSM8K, MATH, ARC), 10K–100K preference pairs (HH-RLHF, UltraFeedback) + 5–10% harmful, 5K–10K reward labels |
 | **6** | MoE + MLA | MLA (latent KV compression), sparse MoE, top-k gating, load-balance loss, continual expert specialization | Partitioned SFT + preference (1–5M pairs) with curriculum; expert utilization tracking |
 | **7** | Dual-Stream Reasoning | GRU Reasoning Stream + GRU Combiner (gated fusion); scheduled teacher forcing (100%→0%); STaR bootstrap; reasoning accuracy delta | 50K–500K (input, trace, answer) triples (GSM8K, MATH, ARC-Challenge, OpenOrca); STaR traces; 60% reasoned / 40% direct |
 
-**Status**: Phase 3 in progress (~75%).
+**Status**: Phase 3 in progress — architecture + optimization stack complete; dataset rebuild in progress (EOS + doc boundaries); training run pending.
 
 ---
 

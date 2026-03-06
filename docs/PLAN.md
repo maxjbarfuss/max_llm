@@ -16,7 +16,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, env notes |
 | **2** | ✅ Done | Skeleton & Reproducibility | M | Low (scope clarity) | TinyStories + WikiText-103 (1–10M tokens) | Tokenizer, data pipeline, training loop, checkpointing, seed control, overfit test |
-| **3** | 🔄 In Progress | Decoder + Unigram + Stability + Optimizations | L | Medium (dataset rebuild needed) | Mixed corpus (TinyStories/FineWeb-Edu/WikiText-103), Unigram 8K tokenizer | BPE/optimization stack validated (loss 4.31). Unigram 8K dataset rebuild required (prior run had no EOS + broken doc boundaries). Goal not yet met: coherent output. [Phase 3 Closeout (BPE)](PHASE_3_CLOSEOUT.md) |
+| **3** | 🔄 In Progress | Capable GPT-2-like model (~60M params, coherent output) | L | Medium (dataset rebuild needed) | 21.5B token mixed corpus (10% TinyStories / 60% FineWeb-Edu / 30% WikiText-103), Unigram 8K tokenizer | Architecture + optimization stack complete. Dataset rebuild required (prior run: no EOS, broken doc boundaries). Goal not yet met: coherent text generation at scale. [Phase 3 BPE Validation](PHASE_3_CLOSEOUT.md) |
 | **4** | — | Llama Architecture + Scale-Up Training | XL | High (scale + stability) | OpenWebText/FineWeb 10–500M tokens with staged curriculum | Architecture A/B report, curriculum manifest, throughput benchmarks |
 | **5** | — | Post-Training | XL | High (forgetting + alignment) | SFT, grounding, preference data | LoRA adapters, grounding benchmark, reward-model card, safety evaluation |
 | **6** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + preference with curriculum | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
@@ -138,14 +138,14 @@ Canonical Phase 2 milestone configs for reference:
 
 ---
 
-### Phase 3: Decoder + BPE + Training Stability + Optimizations
+### Phase 3: Capable GPT-2-like Model
 
-**Goal**: Decoder architecture with BPE, training stability, and optimizations (multi-backend attention, DataLoader, torch.compile, DDP) to accelerate experimentation.
+**Goal**: Train a ~60M parameter decoder model (8L/768H/12H, Unigram 8K, 1024 ctx) on a clean 21.5B token mixed corpus to produce coherent text. Architecture + optimization stack are complete (BPE experiments validate all components). Remaining work: rebuild dataset with correct document boundaries and EOS tokens, then run.
 
 **Dependencies**: Phase 2 reproducibility and checkpointing completed.
-**Artifacts**: Decoder baseline metrics, tokenizer benchmarking report, integration test log, training stability diagnostics, optimization benchmark results.
-**Kill Criteria**: Stop if causal masking correctness fails OR if NaN/Inf recurs >2 times after stability mitigations.
-**Out of Scope**: Large corpus preparation (Phase 4), curriculum pretraining, RL alignment, architecture upgrades (RMSNorm/RoPE/SwiGLU/GQA).
+**Artifacts**: Trained ~60M param checkpoint producing coherent output; tokenizer benchmark; training stability diagnostics; optimization benchmark.
+**Kill Criteria**: Stop if loss fails to decrease below BPE baseline (4.31) after 1000 steps, OR if NaN/Inf recurs >2 times after stability mitigations.
+**Out of Scope**: Llama architecture (Phase 4), curriculum pretraining, RL alignment, architecture upgrades (RMSNorm/RoPE/SwiGLU/GQA).
 **Decision Log**: Record decisions as `P3-DEC-<n>` in Running Session Log.
 
 **Tasks**:
@@ -219,6 +219,9 @@ Evaluation and quality:
 - ✅ Re-tokenized TinyStories with BPE: 5M token artifact created; configs added to pipeline
 - ✅ Scaled WikiText BPE to 10–50M tokens: both artifacts prepared and validated
 - ✅ Data ramp validation: 10M WikiText BPE run successful (5000 steps, loss 10.89→7.22, ppl 1362); demonstrates stable convergence at larger scale; 419 unit tests passing
+- ☐ **[REMAINING]** Rebuild Unigram 8K dataset: proper document splitting, EOS token between docs (`eos_token_id=1`), retrain tokenizer with `add_eos=True`
+- ☐ **[REMAINING]** Train ~60M param Unigram run to convergence (config: `p3_unigram.toml`, 2 GPUs, 3000+ steps, 21.5B token corpus)
+- ☐ **[REMAINING — GATE]** Coherent output: generated text shows real word sequences, sentence structure, narrative fragments — not degenerate repetition
 
 ---
 
@@ -226,7 +229,7 @@ Evaluation and quality:
 
 **Goal**: Llama components (RMSNorm, RoPE, SwiGLU, GQA), FSDP for 300M+ params, scale to 100–500M tokens with curriculum.
 
-**Dependencies**: Phase 3 single-GPU training stability established with Unigram 8K tokenizer.
+**Dependencies**: Phase 3 ~60M param model producing coherent output on Unigram 8K tokenizer.
 **Artifacts**: Architecture A/B report, curriculum manifest, per-stage training curves, memory/perf summary, distributed training logs, throughput benchmark report.
 **Kill Criteria**: Stop if Llama architecture degrades perplexity vs Phase 3 baseline OR if multi-GPU loss diverges from single-GPU by >5% at same seed after 100 steps.
 **Out of Scope**: Fine-tuning, RL alignment, MoE/MLA upgrades.

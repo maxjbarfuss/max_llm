@@ -51,6 +51,7 @@ class TestLoadCheckpointIntoModel:
     def model(self):
         """Create a small model for testing."""
         from tests.conftest import build_model_config
+
         config = build_model_config()
         return DecoderLM.from_config(config, attention_backend="standard")
 
@@ -181,7 +182,10 @@ class TestCreateTokenizerFromDataConfig:
     def test_create_utf8_tokenizer(self):
         """Test creating UTF-8 tokenizer."""
         from tests.conftest import build_data_config
-        config = build_data_config(tokenizer_name="char", tokenizer_mode="utf8", tokenizer_backend="char_utf8")
+
+        config = build_data_config(
+            tokenizer_name="char", tokenizer_mode="utf8", tokenizer_backend="char_utf8"
+        )
         tokenizer = create_tokenizer_from_data_config(config)
 
         # Should be able to encode/decode

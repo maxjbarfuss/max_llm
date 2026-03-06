@@ -52,7 +52,12 @@ def main() -> None:
     if not prompt_tokens:
         raise ValueError("Prompt produced no tokens; check tokenizer settings.")
 
-    model = DecoderLM.from_config(config.model, attention_backend=config.training.attention_backend if hasattr(config, "training") else "standard").to(device)
+    model = DecoderLM.from_config(
+        config.model,
+        attention_backend=(
+            config.training.attention_backend if hasattr(config, "training") else "standard"
+        ),
+    ).to(device)
     model.eval()
 
     if args.checkpoint:

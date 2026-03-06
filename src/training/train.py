@@ -495,8 +495,7 @@ def main() -> None:  # noqa: C901
         model = DecoderLM.from_config(config.model, attention_backend=attention_backend)
     else:
         raise ValueError(
-            f"Unknown model_type: {config.model.model_type}. "
-            "Supported types: decoder_lm"
+            f"Unknown model_type: {config.model.model_type}. " "Supported types: decoder_lm"
         )
 
     # Move model to device

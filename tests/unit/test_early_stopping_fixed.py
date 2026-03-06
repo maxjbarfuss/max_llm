@@ -96,9 +96,7 @@ class TestConfigPresence:
 
         import tomllib
 
-        config_path = (
-            Path(__file__).parent.parent.parent / "config/milestones/p3_unigram.toml"
-        )
+        config_path = Path(__file__).parent.parent.parent / "config/milestones/p3_unigram.toml"
 
         assert config_path.exists(), f"Config not found: {config_path}"
 
