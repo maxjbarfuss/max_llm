@@ -1,21 +1,21 @@
 """Overfit tests — verify models can memorize small datasets.
 
-Phase 2: SimpleLM overfits 10K-token char-level dataset.
+Phase 2: Small DecoderLM overfits 10K-token char-level dataset.
 Phase 3: DecoderLM overfits 1K-token char-level dataset (exit criterion).
 """
 
 import torch
 
 from src.config.model import ModelConfig
-from src.models.learning_model import DecoderLM, SimpleLM
+from src.models.learning_model import DecoderLM
 from src.training.loop import train
 from src.training.train import create_simple_loaders
 
 
-def _make_model() -> SimpleLM:
+def _make_model() -> DecoderLM:
     """Create a small model for Phase 2 overfitting."""
     config = ModelConfig(
-        model_type="simple_lm",
+        model_type="decoder_lm",
         hidden_size=128,
         num_layers=1,
         num_heads=4,
@@ -30,7 +30,7 @@ def _make_model() -> SimpleLM:
         gru_hidden_size=128,
         dropout=0.0,
     )
-    return SimpleLM.from_config(config)
+    return DecoderLM.from_config(config, attention_backend="standard")
 
 
 class TestOverfit:

@@ -40,8 +40,6 @@ class ModelConfig:
     def _validate_basic(self) -> None:
         """Validate basic scalar constraints."""
         valid_model_types = {
-            "simple_lm",
-            "attention_lm",
             "decoder_lm",
             "llama_lm",
             "moe_lm",

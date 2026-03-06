@@ -270,7 +270,7 @@ class TestDataConfig:
         config = make_data_config(validation_split=1000)
         assert config.validation_split == 1000
 
-        with pytest.raises(ValueError, match="validation_split must be positive"):
+        with pytest.raises(ValueError, match="validation_split must be non-negative"):
             make_data_config(validation_split=-100)
 
 
@@ -351,7 +351,7 @@ name = "toml-test"
 output_dir = "./tmp-outputs"
 
 [model]
-model_type = "simple_lm"
+model_type = "decoder_lm"
 hidden_size = 768
 num_layers = 12
 num_heads = 12
@@ -439,7 +439,7 @@ seed = 42
         model_file.write_text(
             "\n".join(
                 [
-                    'model_type = "simple_lm"',
+                    'model_type = "decoder_lm"',
                     "hidden_size = 768",
                     "num_layers = 12",
                     "num_heads = 12",
@@ -536,28 +536,28 @@ seed = 42
         assert config.data.tokenizer_name == "gpt2"
 
 
-class TestP2ExperimentToml:
-    """Smoke tests for the on-disk Phase 2 experiment.toml config file."""
+class TestMilestoneToml:
+    """Smoke tests for on-disk milestone TOML configs."""
 
-    def test_p2_toml_loads(self):
-        """config/milestones/p2_baseline.toml loads and reflects Phase 2 model values."""
-        config_path = Path(__file__).parents[2] / "config" / "milestones" / "p2_baseline.toml"
+    def test_p3_unigram_toml_loads(self):
+        """config/milestones/p3_unigram.toml loads and reflects expected values."""
+        config_path = Path(__file__).parents[2] / "config" / "milestones" / "p3_unigram.toml"
         config = ExperimentConfig.from_toml(config_path)
-        assert config.name == "maxllm-p2-baseline"
-        assert config.model.hidden_size == 128
-        assert config.model.vocab_size == 256
-        assert config.model.num_layers == 1
+        assert config.name == "p3-unigram"
+        assert config.model.hidden_size == 768
+        assert config.model.vocab_size == 8192
+        assert config.model.num_layers == 8
 
-    def test_p2_toml_training_values(self):
-        """P2 training config reflects prototype-scale hyperparameters."""
-        config_path = Path(__file__).parents[2] / "config" / "milestones" / "p2_baseline.toml"
+    def test_p3_unigram_toml_training_values(self):
+        """P3 Unigram training config reflects scale hyperparameters."""
+        config_path = Path(__file__).parents[2] / "config" / "milestones" / "p3_unigram.toml"
         config = ExperimentConfig.from_toml(config_path)
-        assert config.training.max_steps == 500
+        assert config.training.max_steps == 3000
         assert config.training.use_torch_compile is False
-        assert config.training.attention_backend == "standard"
+        assert config.training.attention_backend == "flash"
 
-    def test_p2_toml_data_seq_length(self):
-        """P2 data max_length is within model max_seq_length."""
-        config_path = Path(__file__).parents[2] / "config" / "milestones" / "p2_baseline.toml"
+    def test_p3_unigram_toml_data_seq_length(self):
+        """P3 data max_length is within model max_seq_length."""
+        config_path = Path(__file__).parents[2] / "config" / "milestones" / "p3_unigram.toml"
         config = ExperimentConfig.from_toml(config_path)
         assert config.data.max_length <= config.model.max_seq_length

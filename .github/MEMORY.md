@@ -6,7 +6,29 @@
 
 ## Current Work
 
+**Task**: Phase 3 — Unigram training underway; infra fixes complete
+**Agent**: Claude Sonnet 4.6
+**Start**: 2026-03-06
+
 ## Thinking Notes
+
+**Completed this session**:
+- eval_max_batches wired: TrainingConfig → loop.py evaluate(max_batches=64)
+- Periodic checkpoints with rotating keep_last_n (loop.py + train.py)
+- Gradient normalization: loss / accum_steps before backward
+- data/fast/ → only mixed_10t_60f_30w_unigram8k_* + {tinystories,wikitext}_70m_docs.txt
+- scripts/data/ → only prepare_dataset.py (one parameterized pipeline)
+- EOS tokens: fixed in prepare_dataset.py (eos_token_id in OutputConfig) and UnigramTokenizer.train_model(add_eos=True)
+- p3_unigram.toml created; Unigram run launched and descending fast (6.85 at step 80 vs BPE's 7.92)
+
+**Current state**:
+- Unigram run: stopped (user request), outputs at outputs/p3-unigram/
+- Existing mixed_10t data has NO EOS tokens (tokenizer trained without eos_id) — needs rebuild for proper doc boundaries
+- BPE: abandoned — confirmed plateau, not worth further effort
+
+**Next**:
+- Rebuild dataset with new tokenizer (add_eos=True) + eos_token_id=1 in prepare_dataset.py config
+- Resume / restart Unigram training on rebuilt data
 
 ---
 
@@ -38,19 +60,6 @@
 - [ ] **If current**: Understand what task was in progress, read those notes to resume
 - [ ] If "Current Work" is empty: Read [PLAN.md](../docs/PLAN.md), pick next task, fill it in with agent name
 - [ ] `git status && source .venv/bin/activate && make test-quick` (verify baseline)
-
-**When context compaction detected** (conversation-summary block present, or references to unseen work):
-- [ ] **RE-READ MEMORY.md completely** — summary may be incomplete or outdated
-- [ ] Update "Thinking Notes" with current state based on summary + conversation context
-- [ ] Verify "Current Work" matches what you're actually doing
-- [ ] Cross-check: Do file states match what summary claims? (`git status`, check test results)
-- [ ] **This is a checkpoint moment** — synchronize MEMORY with reality before proceeding
-
-**When user gives new instruction**:
-- [ ] This is a NEW session/task: Clear "Thinking Notes" section completely
-- [ ] Update "Current Work": NEW task, NEW agent name, fresh checkpoint
-- [ ] Do NOT mix multiple sessions' work in "Current Work"
-
 **EVERY 30min-1hr during work**:
 - [ ] Update "Thinking Notes" with immediate state (if crash now, what's the next line of code?)
 - [ ] After completing logical chunk: update "Current Work" checkpoint

@@ -9,13 +9,13 @@ from unittest.mock import Mock, patch
 import pytest
 import torch
 
-from src.config.experiment import DataConfig, ExperimentConfig
+from src.config.experiment import DataConfig
 from src.inference.utils import (
     create_tokenizer_from_data_config,
     load_checkpoint_into_model,
     resolve_device,
 )
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import DecoderLM
 
 
 class TestResolveDevice:
@@ -49,9 +49,10 @@ class TestLoadCheckpointIntoModel:
 
     @pytest.fixture
     def model(self):
-        """Create a simple model for testing."""
-        config = ExperimentConfig.from_toml("config/milestones/p2_baseline.toml")
-        return SimpleLM.from_config(config.model)
+        """Create a small model for testing."""
+        from tests.conftest import build_model_config
+        config = build_model_config()
+        return DecoderLM.from_config(config, attention_backend="standard")
 
     def test_load_checkpoint_with_model_state_key(self, model):
         """Test loading checkpoint with 'model_state' key."""
@@ -155,7 +156,7 @@ class TestCreateTokenizerFromDataConfig:
         data_config = Mock(spec=DataConfig)
         data_config.tokenizer_name = "bpe"
         data_config.tokenizer_mode = "utf8"
-        data_config.tokenizer_vocab_size = 256
+        data_config.tokenizer_vocab_size = 50_000
         data_config.tokenizer_backend = "gpt2_bpe"
         data_config.unigram_model_path = None
 
@@ -169,7 +170,7 @@ class TestCreateTokenizerFromDataConfig:
         data_config = Mock(spec=DataConfig)
         data_config.tokenizer_name = "unigram"
         data_config.tokenizer_mode = "utf8"
-        data_config.tokenizer_vocab_size = 256
+        data_config.tokenizer_vocab_size = 50_000
         data_config.tokenizer_backend = "unigram"
         data_config.unigram_model_path = "models/unigram.model"
 
@@ -179,8 +180,9 @@ class TestCreateTokenizerFromDataConfig:
 
     def test_create_utf8_tokenizer(self):
         """Test creating UTF-8 tokenizer."""
-        config = ExperimentConfig.from_toml("config/milestones/p2_baseline.toml")
-        tokenizer = create_tokenizer_from_data_config(config.data)
+        from tests.conftest import build_data_config
+        config = build_data_config(tokenizer_name="char", tokenizer_mode="utf8", tokenizer_backend="char_utf8")
+        tokenizer = create_tokenizer_from_data_config(config)
 
         # Should be able to encode/decode
         tokens = tokenizer.encode("Hello")

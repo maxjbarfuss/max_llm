@@ -4,14 +4,14 @@ import pytest
 import torch
 
 from src.config.model import ModelConfig
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import DecoderLM
 from src.training.loop import optimizer_step, train, train_step
 from src.training.train import create_simple_loaders
 
 
-def _make_model() -> SimpleLM:
+def _make_model() -> DecoderLM:
     config = ModelConfig(
-        model_type="simple_lm",
+        model_type="decoder_lm",
         hidden_size=64,
         num_layers=1,
         num_heads=4,
@@ -26,7 +26,7 @@ def _make_model() -> SimpleLM:
         gru_hidden_size=None,
         dropout=0.0,
     )
-    return SimpleLM.from_config(config)
+    return DecoderLM.from_config(config, attention_backend="standard")
 
 
 def _make_batch(batch_size: int = 4, seq_len: int = 8) -> tuple[torch.Tensor, torch.Tensor]:
@@ -35,7 +35,7 @@ def _make_batch(batch_size: int = 4, seq_len: int = 8) -> tuple[torch.Tensor, to
     return x, y
 
 
-def _make_optimizer(model: SimpleLM) -> torch.optim.Optimizer:
+def _make_optimizer(model: DecoderLM) -> torch.optim.Optimizer:
     return torch.optim.Adam(model.parameters(), lr=1e-3)
 
 
@@ -249,8 +249,8 @@ class TestEnhancedTrainingFeatures:
         )
 
         # Gradients should exist
-        assert model.token_emb.weight.grad is not None
-        grad_sum_1 = model.token_emb.weight.grad.sum().item()
+        assert model.token_embedding.embedding.weight.grad is not None
+        grad_sum_1 = model.token_embedding.embedding.weight.grad.sum().item()
 
         # Second step: accumulate more gradients
         train_step(
@@ -262,7 +262,7 @@ class TestEnhancedTrainingFeatures:
         )
 
         # Gradients should have accumulated
-        grad_sum_2 = model.token_emb.weight.grad.sum().item()
+        grad_sum_2 = model.token_embedding.embedding.weight.grad.sum().item()
         assert abs(grad_sum_2) > abs(grad_sum_1)  # More gradients accumulated
 
     def test_train_step_amp_cpu(self):

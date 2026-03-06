@@ -17,7 +17,7 @@ from src.inference.utils import (
     load_checkpoint_into_model,
     resolve_device,
 )
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import DecoderLM
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,7 +52,7 @@ def main() -> None:
     if not prompt_tokens:
         raise ValueError("Prompt produced no tokens; check tokenizer settings.")
 
-    model = SimpleLM.from_config(config.model).to(device)
+    model = DecoderLM.from_config(config.model, attention_backend=config.training.attention_backend if hasattr(config, "training") else "standard").to(device)
     model.eval()
 
     if args.checkpoint:

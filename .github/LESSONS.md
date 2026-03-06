@@ -90,6 +90,22 @@
 
 ---
 
+## L011 — One-Off Scripts Belong in `/tmp/`, Not `scripts/`
+
+**Observed behavior**: Agent created validation scripts, debugging tools, or ad-hoc analysis scripts directly in `scripts/`, treating them as permanent repository artifacts even though they were single-use for a specific request.
+
+**Correct approach**: One-off scripts (validation, debugging, data inspection, analysis) that serve a single session or task belong in `/tmp/`, a local `.scratch/` directory, or another ephemeral location — **not** in the `scripts/` directory. Only commit permanent scripts to `scripts/` when they are: (1) reusable across multiple sessions/tasks, (2) part of the standard pipeline or workflow, and (3) documented with clear purpose. This keeps `scripts/` clean and signals intent: files here are canonical tools, not experimental work.
+
+---
+
+## L012 — Do Not Create New Data-Prep Scripts or Config Files (Without Instruction)
+
+**Observed behavior**: Agent created a new `README.md` or new data-preparation config file (JSON, YAML, TOML) in `scripts/data/` or `config/` as "documentation" or "example", without being explicitly asked to do so.
+
+**Correct approach**: Do not create new files for data preparation or documentation purposes without explicit instruction. Do not create config files outside of `config/ephemeral/` unless explicitly asked. Write observations and workflow notes to `.github/MEMORY.md` instead of creating README files. L009 covers ephemeral configs specifically.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:

@@ -12,7 +12,7 @@ from src.config import (
     get_checkpoint_config_versions,
     validate_checkpoint_config_compatibility,
 )
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import DecoderLM
 from src.training.train import load_checkpoint, save_checkpoint
 from tests.conftest import build_model_config
 
@@ -35,7 +35,7 @@ class TestConfigVersioning:
     def test_checkpoint_includes_config_versions(self, tmp_path):
         """save_checkpoint should include config versions."""
         config = build_model_config()
-        model = SimpleLM.from_config(config)
+        model = DecoderLM.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters())
 
         checkpoint_path = save_checkpoint(model, optimizer, step=100, output_dir=tmp_path)
@@ -56,13 +56,13 @@ class TestConfigVersioning:
     def test_load_checkpoint_validates_versions(self, tmp_path):
         """load_checkpoint should validate config versions."""
         config = build_model_config()
-        model = SimpleLM.from_config(config)
+        model = DecoderLM.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters())
 
         checkpoint_path = save_checkpoint(model, optimizer, step=100, output_dir=tmp_path)
 
         # Should load successfully with matching versions
-        model2 = SimpleLM.from_config(config)
+        model2 = DecoderLM.from_config(config, attention_backend="standard")
         optimizer2 = torch.optim.Adam(model2.parameters())
         step = load_checkpoint(checkpoint_path, model2, optimizer2, strict_version_check=True)
         assert step == 100
@@ -70,7 +70,7 @@ class TestConfigVersioning:
     def test_load_checkpoint_version_mismatch_raises(self, tmp_path):
         """load_checkpoint should raise on version mismatch."""
         config = build_model_config()
-        model = SimpleLM.from_config(config)
+        model = DecoderLM.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters())
 
         checkpoint_path = save_checkpoint(model, optimizer, step=100, output_dir=tmp_path)
@@ -81,7 +81,7 @@ class TestConfigVersioning:
         torch.save(checkpoint, checkpoint_path)
 
         # Should raise on version mismatch
-        model2 = SimpleLM.from_config(config)
+        model2 = DecoderLM.from_config(config, attention_backend="standard")
         optimizer2 = torch.optim.Adam(model2.parameters())
         with pytest.raises(ValueError, match="Config version mismatch"):
             load_checkpoint(checkpoint_path, model2, optimizer2, strict_version_check=True)
@@ -89,7 +89,7 @@ class TestConfigVersioning:
     def test_load_checkpoint_version_mismatch_warns_if_not_strict(self, tmp_path):
         """load_checkpoint should warn but not raise if strict=False."""
         config = build_model_config()
-        model = SimpleLM.from_config(config)
+        model = DecoderLM.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters())
 
         checkpoint_path = save_checkpoint(model, optimizer, step=100, output_dir=tmp_path)
@@ -100,7 +100,7 @@ class TestConfigVersioning:
         torch.save(checkpoint, checkpoint_path)
 
         # Should warn but not raise
-        model2 = SimpleLM.from_config(config)
+        model2 = DecoderLM.from_config(config, attention_backend="standard")
         optimizer2 = torch.optim.Adam(model2.parameters())
         with pytest.warns(UserWarning, match="Config version mismatch"):
             step = load_checkpoint(checkpoint_path, model2, optimizer2, strict_version_check=False)
@@ -109,7 +109,7 @@ class TestConfigVersioning:
     def test_validate_checkpoint_config_compatibility(self, tmp_path):
         """validate_checkpoint_config_compatibility should validate versions."""
         config = build_model_config()
-        model = SimpleLM.from_config(config)
+        model = DecoderLM.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters())
 
         checkpoint_path = save_checkpoint(model, optimizer, step=100, output_dir=tmp_path)
@@ -121,7 +121,7 @@ class TestConfigVersioning:
     def test_validate_checkpoint_config_compatibility_raises_on_mismatch(self, tmp_path):
         """validate_checkpoint_config_compatibility should raise on mismatch."""
         config = build_model_config()
-        model = SimpleLM.from_config(config)
+        model = DecoderLM.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters())
 
         checkpoint_path = save_checkpoint(model, optimizer, step=100, output_dir=tmp_path)
@@ -137,7 +137,7 @@ class TestConfigVersioning:
     def test_get_checkpoint_config_versions(self, tmp_path):
         """get_checkpoint_config_versions should return version dict."""
         config = build_model_config()
-        model = SimpleLM.from_config(config)
+        model = DecoderLM.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters())
 
         checkpoint_path = save_checkpoint(model, optimizer, step=100, output_dir=tmp_path)

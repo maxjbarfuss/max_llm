@@ -16,7 +16,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, env notes |
 | **2** | ✅ Done | Skeleton & Reproducibility | M | Low (scope clarity) | TinyStories + WikiText-103 (1–10M tokens) | Tokenizer, data pipeline, training loop, checkpointing, seed control, overfit test |
-| **3** | ✅ Done | Decoder + BPE + Stability + Optimizations | L | Low (validated) | WikiText BPE (442K tokens), 10–50M tokens | **COMPLETE**: DecoderLM 4L proven on 50K vocab (4.31 loss, 49% vs SimpleLM). All optimizations validated: Flash Attention, BF16, early stopping, label smoothing, torch.compile. Convergence run 15K+ steps. [Phase 2 Closeout](PHASE_2_CLOSEOUT.md) |
+| **3** | ✅ Done | Decoder + Unigram + Stability + Optimizations | L | Low (validated) | Mixed corpus (TinyStories/FineWeb-Edu/WikiText-103), Unigram 8K tokenizer | **COMPLETE**: DecoderLM proven. All optimizations validated: Flash Attention, BF16, early stopping, label smoothing, torch.compile. BPE plateau confirmed (7.92 loss after 1600 steps); switched to Unigram 8K (6.85 loss at step 80). [Phase 2 Closeout](PHASE_2_CLOSEOUT.md) |
 | **4** | — | Llama Architecture + Scale-Up Training | XL | High (scale + stability) | OpenWebText/FineWeb 10–500M tokens with staged curriculum | Architecture A/B report, curriculum manifest, throughput benchmarks |
 | **5** | — | Post-Training | XL | High (forgetting + alignment) | SFT, grounding, preference data | LoRA adapters, grounding benchmark, reward-model card, safety evaluation |
 | **6** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + preference with curriculum | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
@@ -209,7 +209,7 @@ Evaluation and quality:
 - ✅ Generated 100-token samples verified (ephemeral BPE run, 5000 steps, ppl ~65–83; word-level BPE tokens confirmed in output)
 - ✅ All shape/dtype tests pass; causal mask verified (no future token leakage)
 - ✅ Integration test: AttentionLM end-to-end training + inference validated
-- ✅ Tokenizer benchmark complete: BPE selected — 4.608 chars/token (+14.7% compression), 7.28M toks/sec (+50% speed) vs Unigram; report `outputs/p3_tokenizer_benchmark_20260227_local.json`
+- ✅ Tokenizer benchmark complete: BPE initially selected (4.608 chars/token, 7.28M toks/sec); later superseded — Unigram 8K reaches lower loss faster (6.85 at step 80 vs BPE 7.92); Unigram is now canonical
 - ✅ BPE tokenizer integrated and verified on Phase 2 datasets (WikiText-103 BPE: 442K tokens, gpt2 encoding)
 - ✅ Long-run stability check: 3000-step quality run (~24M token-steps) with no NaN/Inf; gradients remained stable under clipping
 - ✅ Loss curve smooth: 5000-step BPE convergence run — 0 spike violations of 3× running-avg criterion; CSV at `outputs/ephemeral/p3-bpe-convergence/loss_curve.csv` (ephemeral/gitignored)
@@ -226,7 +226,7 @@ Evaluation and quality:
 
 **Goal**: Llama components (RMSNorm, RoPE, SwiGLU, GQA), FSDP for 300M+ params, scale to 100–500M tokens with curriculum.
 
-**Dependencies**: Phase 3 single-GPU training stability established with BPE tokenizer.
+**Dependencies**: Phase 3 single-GPU training stability established with Unigram 8K tokenizer.
 **Artifacts**: Architecture A/B report, curriculum manifest, per-stage training curves, memory/perf summary, distributed training logs, throughput benchmark report.
 **Kill Criteria**: Stop if Llama architecture degrades perplexity vs Phase 3 baseline OR if multi-GPU loss diverges from single-GPU by >5% at same seed after 100 steps.
 **Out of Scope**: Fine-tuning, RL alignment, MoE/MLA upgrades.
@@ -442,4 +442,4 @@ Training (Phase 7b — Feedback loop + bootstrap):
 - [CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow) (workflow and validation gates)
 - [config/*.toml](../config) (authoritative runtime values)
 - [Makefile](../Makefile) (build, test, lint targets)
-- [scripts/data/README.md](../scripts/data/README.md) (data prep workflow, config reference, size guide)
+

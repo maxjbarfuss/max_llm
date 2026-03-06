@@ -30,6 +30,7 @@ class DataConfig:
     validation_split: float | int
     validation_dataset_path: str | None = None
     test_dataset_path: str | None = None
+    tokenizer_vocab_path: str | None = None
     seed: int = 42
 
     def _validate_split(self) -> None:
@@ -46,7 +47,9 @@ class DataConfig:
         if self.num_workers < 0:
             raise ValueError("num_workers must be non-negative")
         if self.tokenizer_backend not in {"gpt2_bpe", "unigram", "char", "char_utf8"}:
-            raise ValueError("tokenizer_backend must be 'gpt2_bpe', 'unigram', 'char', or 'char_utf8'")
+            raise ValueError(
+                "tokenizer_backend must be 'gpt2_bpe', 'unigram', 'char', or 'char_utf8'"
+            )
         if not self.tokenizer_name:
             raise ValueError("tokenizer_name cannot be empty")
         if self.tokenizer_mode not in {"codepoint", "utf8", "utf16", "utf32"}:
@@ -64,6 +67,8 @@ class DataConfig:
         # TOML has no null; coerce empty string to None
         if not str(data.get("unigram_model_path", "")).strip():
             data["unigram_model_path"] = None
+        if not str(data.get("tokenizer_vocab_path", "")).strip():
+            data["tokenizer_vocab_path"] = None
         if not str(data.get("validation_dataset_path", "")).strip():
             data["validation_dataset_path"] = None
         if not str(data.get("test_dataset_path", "")).strip():

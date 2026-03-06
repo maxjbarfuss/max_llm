@@ -37,6 +37,7 @@ class TrainingConfig:
     early_stopping_min_delta: float = 0.0
     label_smoothing: float = 0.0
     eval_on_test: bool = False
+    eval_max_batches: int = 0  # 0 = no limit; set to cap expensive eval on large val sets
 
     def __post_init__(self) -> None:
         """Validate training configuration."""

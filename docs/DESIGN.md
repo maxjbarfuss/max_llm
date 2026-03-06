@@ -304,7 +304,7 @@ New fields automatically get sensible test defaults; no test refactoring on conf
 ## See Also
 
 - [PLAN.md](PLAN.md) — Phase execution with exit criteria
-- [CONFIG_API.md](CONFIG_API.md) — Config system API reference
+- [CONFIG.md](CONFIG.md) — Config system API reference
 - [.github/AGENTS.md](../.github/AGENTS.md) — Development standard (principles, discipline, workflow for all contributors)
 - [.github/SKILLS.md](../.github/SKILLS.md) — Detailed workflows (tool use, session bootstrap, commit procedure)
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — Contributor entry point

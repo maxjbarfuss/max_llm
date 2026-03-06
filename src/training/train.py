@@ -20,7 +20,7 @@ from src.config.inference import InferenceConfig
 from src.config.model import ModelConfig
 from src.config.training import TrainingConfig
 from src.inference.utils import resolve_device
-from src.models.learning_model import AttentionLM, BaseLearningModel, DecoderLM, SimpleLM
+from src.models.learning_model import BaseLearningModel, DecoderLM
 from src.tokenizer import TokenizerFactory
 from src.training.distributed import (
     cleanup_distributed,
@@ -140,21 +140,23 @@ def save_checkpoint(
     optimizer: torch.optim.Optimizer,
     step: int,
     output_dir: str | Path,
+    filename: str = "checkpoint.pt",
 ) -> Path:
-    """Save model and optimizer state to output_dir/checkpoint.pt.
+    """Save model and optimizer state to output_dir/filename.
 
     Args:
         model: The model to checkpoint.
         optimizer: The optimizer to checkpoint.
         step: Current training step (stored for resumability).
         output_dir: Directory to write checkpoint into (created if absent).
+        filename: Filename for the checkpoint (default: checkpoint.pt).
 
     Returns:
         Path to the written checkpoint file.
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    path = out / "checkpoint.pt"
+    path = out / filename
     torch.save(
         {
             "model_state": model.state_dict(),
@@ -489,16 +491,12 @@ def main() -> None:  # noqa: C901
     attention_backend = config.training.attention_backend
     if attention_backend != "standard":
         print_once(f"Attention backend: {attention_backend}")
-    if config.model.model_type == "simple_lm":
-        model = SimpleLM.from_config(config.model)
-    elif config.model.model_type == "attention_lm":
-        model = AttentionLM.from_config(config.model, attention_backend=attention_backend)
-    elif config.model.model_type == "decoder_lm":
+    if config.model.model_type == "decoder_lm":
         model = DecoderLM.from_config(config.model, attention_backend=attention_backend)
     else:
         raise ValueError(
             f"Unknown model_type: {config.model.model_type}. "
-            "Supported types: simple_lm, attention_lm, decoder_lm"
+            "Supported types: decoder_lm"
         )
 
     # Move model to device
@@ -525,14 +523,30 @@ def main() -> None:  # noqa: C901
         print_once("Wrapping model with DistributedDataParallel")
         model = wrap_model_ddp(model, device_ids=[distributed_info["local_rank"]])  # type: ignore[assignment]
 
+    # Apply gradient checkpointing if enabled (reduces activation memory ~4×)
+    if config.training.selective_checkpointing:
+        if hasattr(model, "gradient_checkpointing_enable"):
+            model.gradient_checkpointing_enable()  # type: ignore[operator]
+            print_once("Gradient checkpointing: Enabled")
+        else:
+            print_once(
+                "Warning: selective_checkpointing=true but model has no checkpointing API. "
+                "Implement gradient_checkpointing_enable() on the model to activate this."
+            )
+
     # Apply torch.compile if enabled (Phase 3+)
-    # Note: torch.compile should be applied AFTER DDP wrapping
-    if config.training.use_torch_compile:
-        print_once("torch.compile: Enabled (mode=max-autotune)")
+    # Note: torch.compile should be applied AFTER DDP wrapping.
+    # IMPORTANT: max-autotune uses CUDA graphs which deadlock DDP on
+    # heterogeneous GPUs (RTX 4090 + RTX 3090 Ti).  Use mode="default" for DDP.
+    use_torch_compile = config.training.use_torch_compile
+    if use_torch_compile:
+        compile_mode = "default" if args.distributed else "max-autotune"
+        print_once(f"torch.compile: Enabled (mode={compile_mode})")
         try:
-            model = torch.compile(model, mode="max-autotune")  # type: ignore[assignment]
+            model = torch.compile(model, mode=compile_mode)  # type: ignore[assignment]
         except Exception as e:
             print_once(f"Warning: torch.compile failed ({e}), continuing without compilation")
+            use_torch_compile = False
 
     # Configure optimizer with parameter groups (selective weight decay)
     if config.training.weight_decay > 0:
@@ -599,10 +613,34 @@ def main() -> None:  # noqa: C901
     tb_writer = None
     if is_main_process():
         from torch.utils.tensorboard import SummaryWriter
+
         tb_log_dir = Path(config.output_dir) / "tensorboard"
         tb_writer = SummaryWriter(log_dir=str(tb_log_dir))
         print_once(f"TensorBoard: {tb_log_dir}")
         print_once(f"             tensorboard --logdir {tb_log_dir}")
+
+    # Build periodic checkpoint callback (rotating, keeps last N)
+    _saved_checkpoints: list[Path] = []
+
+    def _periodic_checkpoint(step: int) -> None:
+        if not is_main_process():
+            return
+        model_to_save = model.module if args.distributed else model  # type: ignore[union-attr]
+        ckpt_path = save_checkpoint(
+            model_to_save,  # type: ignore[arg-type]
+            optimizer,
+            step=step,
+            output_dir=config.output_dir,
+            filename=f"checkpoint_step_{step}.pt",
+        )
+        _saved_checkpoints.append(ckpt_path)
+        # Rotate: remove oldest if we exceed keep_last_n
+        keep_n = config.training.keep_last_n_checkpoints
+        while len(_saved_checkpoints) > keep_n:
+            old = _saved_checkpoints.pop(0)
+            if old.exists():
+                old.unlink()
+        print_once(f"Checkpoint : {ckpt_path}")
 
     # Train
     csv_log_path = Path(config.output_dir) / "loss_curve.csv"
@@ -626,6 +664,10 @@ def main() -> None:  # noqa: C901
         early_stopping_min_delta=config.training.early_stopping_min_delta,
         label_smoothing=config.training.label_smoothing,
         tb_writer=tb_writer,
+        use_torch_compile=use_torch_compile,
+        checkpoint_interval=config.training.checkpoint_interval,
+        checkpoint_fn=_periodic_checkpoint,
+        eval_max_batches=config.training.eval_max_batches,
     )
     if tb_writer is not None:
         tb_writer.close()

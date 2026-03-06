@@ -1,7 +1,0 @@
-device = "auto"
-max_new_tokens = 256
-temperature = 0.8
-top_p = 0.9
-top_k = 50
-use_kv_cache = true
-kv_cache_dtype = "fp8"

@@ -10,6 +10,7 @@ Supports:
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import math
 import time
@@ -75,6 +76,7 @@ def evaluate(
     dataloader: DataLoader,
     use_amp: bool = False,
     label_smoothing: float = 0.0,
+    max_batches: int | None = None,
 ) -> float:
     """Evaluate model on a dataset.
 
@@ -83,6 +85,7 @@ def evaluate(
         dataloader: DataLoader for evaluation dataset.
         use_amp: Whether to use automatic mixed precision.
         label_smoothing: Label smoothing factor for loss computation.
+        max_batches: If set, stop after this many batches (for large val sets).
 
     Returns:
         Average loss over the dataset.
@@ -91,6 +94,7 @@ def evaluate(
     device = next(model.parameters()).device
     total_loss = 0.0
     total_tokens = 0
+    num_batches = 0
 
     with torch.no_grad():
         for batch in dataloader:
@@ -108,6 +112,10 @@ def evaluate(
 
             total_loss += loss.item() * y.numel()
             total_tokens += y.numel()
+            num_batches += 1
+
+            if max_batches is not None and num_batches >= max_batches:
+                break
 
     model.train()
     return total_loss / total_tokens if total_tokens > 0 else float("inf")
@@ -123,6 +131,7 @@ def train_step(
     gradient_clip_norm: float | None = None,
     accumulate_grad: bool = False,
     label_smoothing: float = 0.0,
+    gradient_accumulation_steps: int = 1,
 ) -> float:
     """Single forward + backward step with optional AMP and gradient clipping.
 
@@ -136,9 +145,12 @@ def train_step(
         gradient_clip_norm: Max gradient norm for clipping (None = no clipping).
         accumulate_grad: If True, skip zero_grad (for gradient accumulation).
         label_smoothing: Label smoothing factor (0.0 = no smoothing).
+        gradient_accumulation_steps: Number of micro-steps per optimizer step.
+            The loss is divided by this before backward so that accumulated
+            gradients equal the full-batch gradient regardless of accum count.
 
     Returns:
-        Scalar cross-entropy loss for this batch.
+        Scalar cross-entropy loss for this batch (unscaled, for logging).
     """
     model.train()
     device = next(model.parameters()).device
@@ -157,13 +169,20 @@ def train_step(
         logits = model(x)  # (B, T, V)
         loss = compute_loss_with_smoothing(logits, y, label_smoothing)
 
+    # Scale loss before backward so accumulated gradients equal the full-batch
+    # gradient.  Without this, accum_steps × too-large gradients cause the
+    # gradient clip to fire too aggressively early in training, and once
+    # gradients shrink below the clip threshold (mid-to-late training) the
+    # optimizer takes accum_steps × too-large steps, causing oscillation.
+    loss_scaled = loss / gradient_accumulation_steps
+
     # Backward pass with optional AMP scaling
     if use_amp and scaler is not None:
-        scaler.scale(loss).backward()
+        scaler.scale(loss_scaled).backward()
     else:
-        loss.backward()
+        loss_scaled.backward()
 
-    return loss.item()
+    return loss.item()  # Return unscaled loss for logging
 
 
 def optimizer_step(
@@ -218,6 +237,10 @@ def train(  # noqa: C901
     early_stopping_min_delta: float = 0.0,
     label_smoothing: float = 0.0,
     tb_writer: Any | None = None,
+    use_torch_compile: bool = False,
+    checkpoint_interval: int = 0,
+    checkpoint_fn: Any | None = None,
+    eval_max_batches: int = 0,
 ) -> dict[str, list[float]]:
     """Train for exactly max_steps gradient steps with modern training features.
 
@@ -321,24 +344,35 @@ def train(  # noqa: C901
             batch_tokens = x.numel()
             tokens_in_step += batch_tokens
 
-            # Mark CUDA graph step begin at the start of each accumulation cycle
-            # (only once per accumulation cycle, not on every forward pass)
-            if torch.cuda.is_available() and (micro_step % gradient_accumulation_steps == 0):
+            is_last_micro_step = (micro_step + 1) % gradient_accumulation_steps == 0
+            accumulate_grad = not is_last_micro_step
+
+            # Mark CUDA graph step begin only when using torch.compile, once per
+            # accumulation cycle.  Calling this unconditionally can deadlock DDP.
+            if use_torch_compile and torch.cuda.is_available() and not accumulate_grad:
                 torch.compiler.cudagraph_mark_step_begin()
 
-            # Forward + backward
-            accumulate_grad = micro_step % gradient_accumulation_steps != 0
-            loss = train_step(
-                model=model,
-                x=x,
-                y=y,
-                optimizer=optimizer,
-                scaler=scaler,
-                use_amp=use_amp,
-                gradient_clip_norm=gradient_clip_norm if not accumulate_grad else None,
-                accumulate_grad=accumulate_grad,
-                label_smoothing=label_smoothing,
-            )
+            # For DDP: suppress gradient sync on all but the last micro-batch so
+            # NCCL all_reduce fires once per optimizer step instead of N times.
+            # model.no_sync() is a no-op for non-DDP models.
+            if accumulate_grad and hasattr(model, "no_sync"):
+                ctx = model.no_sync()  # type: ignore[operator]
+            else:
+                ctx = contextlib.nullcontext()
+
+            with ctx:
+                loss = train_step(
+                    model=model,
+                    x=x,
+                    y=y,
+                    optimizer=optimizer,
+                    scaler=scaler,
+                    use_amp=use_amp,
+                    gradient_clip_norm=gradient_clip_norm if not accumulate_grad else None,
+                    accumulate_grad=accumulate_grad,
+                    label_smoothing=label_smoothing,
+                    gradient_accumulation_steps=gradient_accumulation_steps,
+                )
             accumulated_loss += loss
             micro_step += 1
 
@@ -382,8 +416,9 @@ def train(  # noqa: C901
                 val_loss = None
                 test_loss = None
                 if eval_interval and (step + 1) % eval_interval == 0:
+                    _max_b = eval_max_batches if eval_max_batches > 0 else None
                     if val_loader is not None:
-                        val_loss = evaluate(model, val_loader, use_amp, label_smoothing)
+                        val_loss = evaluate(model, val_loader, use_amp, label_smoothing, _max_b)
                         val_losses.append(val_loss)
 
                         # Early stopping check
@@ -405,7 +440,7 @@ def train(  # noqa: C901
                                 should_stop_early = True
 
                     if test_loader is not None:
-                        test_loss = evaluate(model, test_loader, use_amp, label_smoothing)
+                        test_loss = evaluate(model, test_loader, use_amp, label_smoothing, _max_b)
                         test_losses.append(test_loss)
 
                 # Write to CSV (every step)
@@ -459,6 +494,14 @@ def train(  # noqa: C901
                     if test_loss is not None:
                         log_msg += f"  test={test_loss:.4f}"
                     print(log_msg)
+
+                # Periodic checkpoint
+                if (
+                    checkpoint_interval > 0
+                    and checkpoint_fn is not None
+                    and (step + 1) % checkpoint_interval == 0
+                ):
+                    checkpoint_fn(step + 1)
 
                 # Reset for next step
                 accumulated_loss = 0.0

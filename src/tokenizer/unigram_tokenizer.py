@@ -26,14 +26,27 @@ class UnigramTokenizer(Tokenizer):
         if not loaded:
             raise ValueError(f"Failed to load unigram model: {self._model_path}")
 
+    # Token ID reserved for end-of-document when eos_id=1 is used during training.
+    EOS_TOKEN_ID: int = 1
+
     @staticmethod
     def train_model(
         input_path: str | Path,
         model_prefix: str | Path,
         vocab_size: int = 8000,
         character_coverage: float = 1.0,
+        add_eos: bool = True,
     ) -> Path:
-        """Train a SentencePiece unigram model and return the model file path."""
+        """Train a SentencePiece unigram model and return the model file path.
+
+        Args:
+            input_path: Path to training corpus text file.
+            model_prefix: Output prefix for .model and .vocab files.
+            vocab_size: Target vocabulary size.
+            character_coverage: Fraction of characters covered (1.0 = all).
+            add_eos: If True (default), reserve token ID 1 as <EOS>. Set to
+                False only when loading an older model trained without EOS.
+        """
         input_file = Path(input_path)
         if not input_file.exists():
             raise FileNotFoundError(f"Training corpus not found: {input_file}")
@@ -49,7 +62,7 @@ class UnigramTokenizer(Tokenizer):
             character_coverage=character_coverage,
             hard_vocab_limit=False,
             bos_id=-1,
-            eos_id=-1,
+            eos_id=UnigramTokenizer.EOS_TOKEN_ID if add_eos else -1,
             pad_id=-1,
             unk_id=0,
         )
