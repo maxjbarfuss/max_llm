@@ -56,7 +56,7 @@ Key requirements:
 - Transformer internals: attention, residuals, normalization, position encodings
 - GQA, MLA, MoE, and GRU fundamentals (see [DESIGN.md](../docs/DESIGN.md#architecture-overview))
 - Python 3.10+ with type hints, `pytest`, `mypy`; Git with atomic commits
-- Design principles: SOLID, DRY, KISS, YAGNI, composition over inheritance. Use patterns to clarify, not to impress.
+- Design principles: SOLID, DRY, KISS, YAGNI, composition over inheritance. Use patterns to clarify, not to impress. **Before adding code to an existing file: am I adding a branch (`elif`, `if isinstance`)? If yes, should this be a new type instead? Prefer deleting code and extending abstractions over adding specializations inline.**
 - Experiment reproducibility, checkpoint reliability, artifact naming conventions
 
 **When relevant to phase**:

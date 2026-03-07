@@ -114,6 +114,14 @@
 
 ---
 
+## L014 — Data-Prep Configs Are Ephemeral Until a Dataset Is Validated
+
+**Observed behavior**: Agent committed a data-preparation config (JSON/YAML/TOML) to `config/data_prep/` for an experiment that was still in progress. The dataset had not been built, validated, or confirmed by the user.
+
+**Correct approach**: Data-prep configs are experiments. They live in `config/ephemeral/` (gitignored) until the resulting dataset is built, verified, and the user explicitly says it is the canonical dataset for a phase. Only then does the config get promoted to `config/data_prep/`. This applies to mixing ratios, source paths, and tokenizer settings — all of which change during experimentation.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:
