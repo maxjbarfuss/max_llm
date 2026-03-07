@@ -106,6 +106,14 @@
 
 ---
 
+## L013 — Never Promote a Training Config to `config/milestones/` Until the User Confirms
+
+**Observed behavior**: Agent added a training config (e.g. `p3_unigram.toml`) to `config/milestones/` while the experiment was still in progress and results were unvalidated. This pollutes the milestone directory with premature artifacts and causes snapshot tests to break every time hyperparameters are tuned.
+
+**Correct approach**: Use `config/ephemeral/` for all in-progress training configs. Only move a config to `config/milestones/` after the user explicitly confirms the results are good and the config represents a true milestone. Do not write snapshot tests that pin mutable hyperparameters like `max_steps` — these always break during tuning.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:

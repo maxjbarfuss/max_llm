@@ -538,26 +538,3 @@ seed = 42
 
 class TestMilestoneToml:
     """Smoke tests for on-disk milestone TOML configs."""
-
-    def test_p3_unigram_toml_loads(self):
-        """config/milestones/p3_unigram.toml loads and reflects expected values."""
-        config_path = Path(__file__).parents[2] / "config" / "milestones" / "p3_unigram.toml"
-        config = ExperimentConfig.from_toml(config_path)
-        assert config.name == "p3-unigram"
-        assert config.model.hidden_size == 768
-        assert config.model.vocab_size == 8192
-        assert config.model.num_layers == 8
-
-    def test_p3_unigram_toml_training_values(self):
-        """P3 Unigram training config reflects scale hyperparameters."""
-        config_path = Path(__file__).parents[2] / "config" / "milestones" / "p3_unigram.toml"
-        config = ExperimentConfig.from_toml(config_path)
-        assert config.training.max_steps == 3000
-        assert config.training.use_torch_compile is False
-        assert config.training.attention_backend == "flash"
-
-    def test_p3_unigram_toml_data_seq_length(self):
-        """P3 data max_length is within model max_seq_length."""
-        config_path = Path(__file__).parents[2] / "config" / "milestones" / "p3_unigram.toml"
-        config = ExperimentConfig.from_toml(config_path)
-        assert config.data.max_length <= config.model.max_seq_length

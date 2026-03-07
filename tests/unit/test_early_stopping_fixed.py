@@ -90,28 +90,6 @@ class TestEarlyStoppingLogic:
 class TestConfigPresence:
     """Test that config has correct early stopping values."""
 
-    def test_config_has_high_patience(self):
-        """Verify p3_unigram config has early_stopping_patience set."""
-        from pathlib import Path
-
-        import tomllib
-
-        config_path = Path(__file__).parent.parent.parent / "config/milestones/p3_unigram.toml"
-
-        assert config_path.exists(), f"Config not found: {config_path}"
-
-        with open(config_path, "rb") as f:
-            config = tomllib.load(f)
-
-        patience = config["training"].get("early_stopping_patience")
-
-        print(f"\n✓ Config early_stopping_patience: {patience}")
-
-        assert patience is not None, "early_stopping_patience must be set"
-        assert patience > 0, f"Patience must be positive, got {patience}"
-
-        print(f"✓ Config patience={patience} is set")
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

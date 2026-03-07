@@ -46,6 +46,9 @@ class TokenizerConfig:
     # Sampling for training
     max_corpus_mb: float | None = None  # Limit corpus size for tokenizer training
 
+    # Pre-trained tokenizer: if set, skip training and load this model instead
+    model_path: str | None = None
+
 
 @dataclass
 class DataSource:
@@ -212,7 +215,16 @@ class TokenizerFactory:
 
     @staticmethod
     def train(corpus_path: str, config: TokenizerConfig, output_prefix: str) -> tuple:
-        """Train tokenizer on corpus."""
+        """Train tokenizer on corpus, or load a pre-trained model if model_path is set."""
+        if config.model_path:
+            logging.info(f"Loading pre-trained {config.type} tokenizer from {config.model_path}")
+            if config.type == "unigram":
+                tokenizer = UnigramTokenizer(config.model_path)
+                logging.info(f"✓ Loaded: vocab_size={tokenizer.vocab_size}")
+                return tokenizer, config.model_path
+            else:
+                raise ValueError(f"Pre-trained loading not supported for type: {config.type}")
+
         logging.info(f"Training {config.type} tokenizer...")
         logging.info(f"  Vocab: {config.vocab_size}, Coverage: {config.character_coverage}")
 
@@ -280,6 +292,22 @@ class DataLoader:
     """Load data from various formats."""
 
     @staticmethod
+    def _iter_text_docs(file_path: Path, delimiter: str = "\n\n"):
+        """Stream documents from a text file without loading it all into memory."""
+        buffer = ""
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                buffer += line
+                while delimiter in buffer:
+                    idx = buffer.index(delimiter)
+                    doc = buffer[:idx].strip()
+                    buffer = buffer[idx + len(delimiter):]
+                    if doc:
+                        yield doc
+        if buffer.strip():
+            yield buffer.strip()
+
+    @staticmethod
     def load_as_text(source: DataSource) -> str:
         """Load any format as raw text."""
         path = Path(source.path)
@@ -316,36 +344,50 @@ class DataLoader:
         documents = []
 
         if source.format == "text":
-            with open(path, encoding="utf-8", errors="ignore") as f:
-                text = f.read()
+            # Support directory of .txt files (e.g. FineWeb shards) or single file
+            if path.is_dir():
+                files = sorted(path.glob("*.txt"))
+                logging.info(f"  {source.name}: directory with {len(files)} shard(s)")
+            else:
+                files = [path]
 
-            docs = [d.strip() for d in text.split(source.delimiter) if d.strip()]
+            docs_before = len(documents)
+            for file_path in files:
+                # Stream documents to avoid loading multi-GB files into memory
+                for doc in DataLoader._iter_text_docs(file_path, source.delimiter):
+                    if len(doc) < source.min_length:
+                        continue
+                    tokens = tokenizer.encode(doc)
+                    if not tokens:
+                        continue
+                    if source.max_length and len(tokens) > source.max_length:
+                        tokens = tokens[: source.max_length]
+                    tokens = np.array(tokens, dtype=np.uint16 if max(tokens) < 65536 else np.uint32)
+                    if len(tokens) < source.min_length:
+                        continue
+                    documents.append((source.name, tokens))
 
-            for doc in docs:
-                tokens = tokenizer.encode(doc)
-                tokens = np.array(tokens, dtype=np.uint16 if max(tokens) < 65536 else np.uint32)
-
-                if len(tokens) < source.min_length:
-                    continue
-                if source.max_length and len(tokens) > source.max_length:
-                    tokens = tokens[: source.max_length]
-
-                documents.append((source.name, tokens))
-
-            logging.info(f"  {source.name}: {len(documents):,} documents")
+            logging.info(f"  {source.name}: {len(documents) - docs_before:,} documents")
 
         elif source.format == "utf8_tokens":
-            utf8_tokens = np.load(path)
-            text = "".join(chr(int(t)) for t in utf8_tokens)
-            tokens = tokenizer.encode(text)
+            # Memory-map the file and process in 10M-byte chunks to avoid OOM
+            utf8_tokens = np.load(path, mmap_mode="r")
+            total = len(utf8_tokens)
+            stream_chunk = 10_000_000  # 10M bytes per encode call
+            doc_chunk = source.chunk_size or 512
+            docs_before = len(documents)
 
-            for i in range(0, len(tokens), source.chunk_size):
-                chunk = tokens[i : i + source.chunk_size]
-                if len(chunk) >= source.min_length:
-                    arr = np.array(chunk, dtype=np.uint16 if max(chunk) < 65536 else np.uint32)
-                    documents.append((source.name, arr))
+            for start in range(0, total, stream_chunk):
+                raw = utf8_tokens[start : start + stream_chunk]
+                text = raw.astype(np.uint8).tobytes().decode("utf-8", errors="ignore")
+                tokens = tokenizer.encode(text)
+                for i in range(0, len(tokens), doc_chunk):
+                    chunk = tokens[i : i + doc_chunk]
+                    if len(chunk) >= source.min_length:
+                        dtype = np.uint16 if max(chunk) < 65536 else np.uint32
+                        documents.append((source.name, np.array(chunk, dtype=dtype)))
 
-            logging.info(f"  {source.name}: {len(documents):,} chunks")
+            logging.info(f"  {source.name}: {len(documents) - docs_before:,} chunks")
 
         elif source.format == "jsonl":
             with open(path, encoding="utf-8") as f:
@@ -911,8 +953,11 @@ def main():
         output_dir.mkdir(parents=True, exist_ok=True)
         tokenizer_prefix = str(output_dir / f"{config.output.prefix}_tokenizer")
 
-        # Train tokenizer
-        corpus_path = TokenizerFactory.create_corpus(config.datasets, config.tokenizer)
+        # Train tokenizer (or load pre-trained if model_path is set)
+        if config.tokenizer.model_path:
+            corpus_path = None
+        else:
+            corpus_path = TokenizerFactory.create_corpus(config.datasets, config.tokenizer)
         tokenizer, tokenizer_path = TokenizerFactory.train(
             corpus_path, config.tokenizer, tokenizer_prefix
         )
@@ -983,10 +1028,11 @@ def main():
         # Save
         OutputManager.save(splits, tokenizer_path, config)
 
-        # Cleanup
+        # Cleanup temporary corpus file (only exists if tokenizer was trained fresh)
         import os
 
-        os.unlink(corpus_path)
+        if corpus_path:
+            os.unlink(corpus_path)
 
     except Exception as e:
         logging.error(f"Pipeline failed: {e}", exc_info=True)
