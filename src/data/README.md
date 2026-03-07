@@ -6,6 +6,11 @@ Production data infrastructure for preprocessing, tokenizing, and serving traini
 
 ```
 src/data/
+├── preparation/      First-class dataset preparation framework
+│   ├── config.py     Config types + JSON/TOML loading + defaults
+│   ├── strategies.py Readers/mixers/curriculum/split strategies
+│   ├── pipeline.py   Orchestration + outputs/stats/manifest
+│   └── __main__.py   CLI entrypoint
 ├── pipeline/          Common, dataset-agnostic pipeline steps
 │   ├── tokenize.py    Text → cached .npy token array
 │   ├── extract_tokens.py  Slice a token subset from a .npy cache
@@ -15,11 +20,17 @@ src/data/
     └── tinystories/   TinyStories (Phase 2 placeholder)
 ```
 
-For end-to-end invocation see [scripts/data/README.md](../../../scripts/data/README.md). The scripts layer drives these tools via YAML configs; the modules here are the implementation.
+For end-to-end dataset preparation, run:
+
+```bash
+python -m src.data.preparation --config <config.json|config.toml>
+```
+
+The `pipeline/` modules below remain useful as focused building blocks for tokenization and extraction workflows.
 
 ## Pipeline Tools
 
-Each tool runs standalone or is called by `scripts/data/run_data_prep.py`.
+Each tool runs standalone.
 
 ### tokenize.py
 

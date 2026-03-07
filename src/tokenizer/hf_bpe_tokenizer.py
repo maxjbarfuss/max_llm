@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tokenizers import Tokenizer as HFTokenizer
+from tokenizers import Tokenizer as HFTokenizer  # type: ignore[import-untyped]
 
 from .tokenizer import Tokenizer
 

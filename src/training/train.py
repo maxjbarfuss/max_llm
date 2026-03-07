@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -624,9 +624,10 @@ def main() -> None:  # noqa: C901
     def _periodic_checkpoint(step: int) -> None:
         if not is_main_process():
             return
-        model_to_save = model.module if args.distributed else model  # type: ignore[union-attr]
+        raw_model = getattr(model, "module", model) if args.distributed else model
+        model_to_save = cast(BaseLearningModel, raw_model)
         ckpt_path = save_checkpoint(
-            model_to_save,  # type: ignore[arg-type]
+            model_to_save,
             optimizer,
             step=step,
             output_dir=config.output_dir,
@@ -690,9 +691,13 @@ def main() -> None:  # noqa: C901
     # Save checkpoint only on main process
     if is_main_process():
         # Unwrap model if DDP
-        model_to_save = model.module if args.distributed else model
+        raw_model = getattr(model, "module", model) if args.distributed else model
+        model_to_save = cast(BaseLearningModel, raw_model)
         ckpt_path = save_checkpoint(
-            model_to_save, optimizer, step=config.training.max_steps, output_dir=config.output_dir  # type: ignore[arg-type]
+            model_to_save,
+            optimizer,
+            step=config.training.max_steps,
+            output_dir=config.output_dir,
         )
         print(f"Checkpoint : {ckpt_path}")
 

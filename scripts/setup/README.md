@@ -90,7 +90,9 @@ Then read [CONTRIBUTING.md](../../CONTRIBUTING.md), [.github/AGENTS.md](../../.g
 
 ## Dataset Tooling
 
-Dataset preparation scripts live under `scripts/data/`. See [scripts/data/README.md](../data/README.md) for Quick Start, config reference, and size guide.
+Dataset preparation is first-class in `src/data/preparation/`. Use
+`python -m src.data.preparation --config <config.json|config.toml>` and see
+[src/data/README.md](../../src/data/README.md) for data tooling details.
 
 For higher download rate limits, place a Hugging Face token in `.huggingface/.hf_token` (ignored by git) or export `HF_TOKEN`.
 
