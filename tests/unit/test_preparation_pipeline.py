@@ -75,3 +75,14 @@ def test_pipeline_manifest_and_stats_are_valid_json(tmp_path):
     assert "train" in stats
     assert "output_paths" in manifest
     assert "tokenizer_path" in manifest
+
+
+def test_load_source_as_text_decodes_utf8_token_bytes(tmp_path):
+    utf8_path = tmp_path / "utf8_tokens.npy"
+    expected = "cafe cafe\ncafe"
+    np.save(utf8_path, np.frombuffer(expected.encode("utf-8"), dtype=np.uint8))
+
+    source = DataSource(name="utf8", path=str(utf8_path), format="utf8_tokens", min_length=1)
+    decoded = PreparationPipeline()._load_source_as_text(source)
+
+    assert decoded == expected

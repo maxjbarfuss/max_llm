@@ -11,6 +11,7 @@ from src.data.preparation.strategies import (
     ConcatenateMixer,
     InterleaveMixer,
     NoCurriculum,
+    NpyReader,
     SimpleSplitter,
     StratifiedSplitter,
     TextFormatReader,
@@ -105,3 +106,26 @@ def test_simple_splitter_and_stratified_splitter_shapes():
 
     assert len(simple["train"]) + len(simple["val"]) + len(simple["test"]) == 4
     assert len(strat["train"]) + len(strat["val"]) + len(strat["test"]) == 4
+
+
+def test_npy_reader_uses_uint32_for_large_token_ids(tmp_path):
+    path = tmp_path / "tokens.npy"
+    np.save(path, np.array([10, 65535, 70000], dtype=np.int64))
+
+    source = DataSource(name="npy", path=str(path), format="npy", min_length=1, chunk_size=0)
+    docs = NpyReader().read_documents(source, _DummyTokenizer())
+
+    assert len(docs) == 1
+    _, arr = docs[0]
+    assert arr.dtype == np.uint32
+    assert int(arr[-1]) == 70000
+
+
+def test_npy_reader_rejects_negative_token_ids(tmp_path):
+    path = tmp_path / "tokens.npy"
+    np.save(path, np.array([1, -1, 2], dtype=np.int64))
+
+    source = DataSource(name="npy", path=str(path), format="npy", min_length=1, chunk_size=0)
+
+    with np.testing.assert_raises_regex(ValueError, "non-negative"):
+        NpyReader().read_documents(source, _DummyTokenizer())

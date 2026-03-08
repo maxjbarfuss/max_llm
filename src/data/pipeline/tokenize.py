@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 from rich.console import Console
 
-from src.tokenizer import TokenizerFactory
+from src.tokenizer import create_configured_tokenizer
 
 console = Console()
 
@@ -54,20 +54,13 @@ def _create_tokenizer(
     model_path: str | None,
 ):
     """Create tokenizer based on configuration."""
-    if tokenizer_name == "bpe":
-        return TokenizerFactory.create(tokenizer_name, encoding=encoding)
-    elif tokenizer_name == "unigram":
-        if not model_path:
-            raise ValueError("--model-path is required when --tokenizer unigram")
-        return TokenizerFactory.create(tokenizer_name, model_path=model_path)
-    elif tokenizer_mode == "codepoint":
-        return TokenizerFactory.create(
-            tokenizer_name,
-            mode=tokenizer_mode,
-            vocab_size=vocab_size,
-        )
-    else:
-        return TokenizerFactory.create(tokenizer_name, mode=tokenizer_mode)
+    return create_configured_tokenizer(
+        tokenizer_name=tokenizer_name,
+        tokenizer_mode=tokenizer_mode,
+        tokenizer_vocab_size=vocab_size,
+        unigram_model_path=model_path,
+        bpe_encoding=encoding,
+    )
 
 
 def tokenize_dataset(

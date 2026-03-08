@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 import torch
@@ -21,7 +21,7 @@ from src.config.model import ModelConfig
 from src.config.training import TrainingConfig
 from src.inference.utils import resolve_device
 from src.models.learning_model import BaseLearningModel, DecoderLM
-from src.tokenizer import TokenizerFactory
+from src.tokenizer import create_configured_tokenizer
 from src.training.distributed import (
     cleanup_distributed,
     init_distributed,
@@ -82,6 +82,7 @@ def load_tokens(
     tokenizer_mode: str | None = None,
     tokenizer_vocab_size: int | None = None,
     unigram_model_path: str | None = None,
+    tokenizer_vocab_path: str | None = None,
     use_mmap: bool = True,
 ) -> np.ndarray | torch.Tensor:
     """Load tokens from a dataset path (either .npy or .txt).
@@ -97,6 +98,7 @@ def load_tokens(
         tokenizer_mode: Mode for char tokenizer (utf8, utf16, utf32, codepoint)
         tokenizer_vocab_size: Vocab size for char tokenizer
         unigram_model_path: Path to unigram model file
+        tokenizer_vocab_path: Optional path to custom BPE vocab json
         use_mmap: If True (default), memory-map .npy files so only accessed
             pages are loaded into RAM.  Ignored for text files.
 
@@ -119,19 +121,14 @@ def load_tokens(
         with open(dataset_path, encoding="utf-8") as f:
             corpus_text = f.read()
 
-        tokenizer_kwargs: dict[str, Any] = {}
-        if tokenizer_name == "bpe" or tokenizer_backend == "gpt2_bpe":
-            tokenizer_kwargs = {"encoding": "gpt2"}
-        elif tokenizer_name == "unigram" or tokenizer_backend == "unigram":
-            if not unigram_model_path:
-                raise ValueError("unigram_model_path is required for unigram tokenizer")
-            tokenizer_kwargs = {"model_path": unigram_model_path}
-        else:
-            tokenizer_kwargs = {"mode": tokenizer_mode or "utf8"}
-            if tokenizer_mode == "codepoint":
-                tokenizer_kwargs["vocab_size"] = tokenizer_vocab_size or 256
-
-        tokenizer = TokenizerFactory.create(tokenizer_name, **tokenizer_kwargs)
+        tokenizer = create_configured_tokenizer(
+            tokenizer_name=tokenizer_name,
+            tokenizer_mode=tokenizer_mode,
+            tokenizer_vocab_size=tokenizer_vocab_size,
+            tokenizer_backend=tokenizer_backend,
+            unigram_model_path=unigram_model_path,
+            tokenizer_vocab_path=tokenizer_vocab_path,
+        )
         return torch.tensor(tokenizer.encode(corpus_text), dtype=torch.long)
 
 
@@ -248,6 +245,7 @@ def create_simple_loaders(
     validation_split: float = 0.1,
     seed: int = 42,
     device: torch.device | None = None,
+    pin_memory: bool | None = None,
     num_workers: int = 0,
     prefetch_factor: int = 2,
     persistent_workers: bool = False,
@@ -286,7 +284,9 @@ def create_simple_loaders(
     generator.manual_seed(seed)
 
     # Determine pin_memory setting based on device
-    pin_memory = device is not None and device.type == "cuda"
+    use_pin_memory = (
+        pin_memory if pin_memory is not None else device is not None and device.type == "cuda"
+    )
 
     total_samples = len(train_tokens) // (seq_len + 1)
     if total_samples == 0:
@@ -327,7 +327,7 @@ def create_simple_loaders(
             shuffle=shuffle,
             generator=generator if shuffle else None,
             worker_init_fn=seed_worker if shuffle else None,
-            pin_memory=pin_memory,
+            pin_memory=use_pin_memory,
             num_workers=num_workers,
             prefetch_factor=prefetch_factor if num_workers > 0 else None,
             persistent_workers=persistent_workers if num_workers > 0 else False,
@@ -419,6 +419,7 @@ def main() -> None:  # noqa: C901
         tokenizer_mode=config.data.tokenizer_mode,
         tokenizer_vocab_size=config.data.tokenizer_vocab_size,
         unigram_model_path=config.data.unigram_model_path,
+        tokenizer_vocab_path=config.data.tokenizer_vocab_path,
     )
 
     # Load optional validation dataset
@@ -435,6 +436,7 @@ def main() -> None:  # noqa: C901
             tokenizer_mode=config.data.tokenizer_mode,
             tokenizer_vocab_size=config.data.tokenizer_vocab_size,
             unigram_model_path=config.data.unigram_model_path,
+            tokenizer_vocab_path=config.data.tokenizer_vocab_path,
         )
 
     # Load optional test dataset
@@ -451,6 +453,7 @@ def main() -> None:  # noqa: C901
             tokenizer_mode=config.data.tokenizer_mode,
             tokenizer_vocab_size=config.data.tokenizer_vocab_size,
             unigram_model_path=config.data.unigram_model_path,
+            tokenizer_vocab_path=config.data.tokenizer_vocab_path,
         )
 
     if len(train_tokens) < config.data.max_length + 1:
@@ -469,6 +472,7 @@ def main() -> None:  # noqa: C901
         validation_split=config.data.validation_split,
         seed=config.data.seed,
         device=device,
+        pin_memory=config.data.pin_memory,
         num_workers=config.data.num_workers,
         prefetch_factor=config.data.prefetch_factor,
         persistent_workers=config.data.persistent_workers,

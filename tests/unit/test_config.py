@@ -266,12 +266,9 @@ class TestDataConfig:
             make_data_config(validation_split=1.5)
 
     def test_validation_split_absolute(self):
-        """Validation split can be absolute number."""
-        config = make_data_config(validation_split=1000)
-        assert config.validation_split == 1000
-
-        with pytest.raises(ValueError, match="validation_split must be non-negative"):
-            make_data_config(validation_split=-100)
+        """Validation split must be a float ratio, not an absolute count."""
+        with pytest.raises(ValueError, match="validation_split must be a float ratio"):
+            make_data_config(validation_split=1000)
 
 
 class TestExperimentConfig:

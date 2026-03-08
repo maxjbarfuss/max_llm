@@ -134,6 +134,15 @@ class JsonlReader(FormatReader):
 
 
 class NpyReader(FormatReader):
+    @staticmethod
+    def _coerce_token_dtype(tokens: np.ndarray) -> np.ndarray:
+        if tokens.size == 0:
+            return tokens.astype(np.uint16)
+        if int(tokens.min()) < 0:
+            raise ValueError("Token arrays must contain non-negative IDs")
+        dtype = np.uint16 if int(tokens.max()) < 65536 else np.uint32
+        return tokens.astype(dtype, copy=False)
+
     def read_documents(
         self, source: DataSource, tokenizer: TokenizerLike
     ) -> list[tuple[str, np.ndarray]]:
@@ -147,9 +156,9 @@ class NpyReader(FormatReader):
             for i in range(0, len(tokens), source.chunk_size):
                 chunk = tokens[i : i + source.chunk_size]
                 if len(chunk) >= source.min_length:
-                    documents.append((source.name, chunk.astype(np.uint16)))
+                    documents.append((source.name, self._coerce_token_dtype(chunk)))
         else:
-            documents.append((source.name, tokens.astype(np.uint16)))
+            documents.append((source.name, self._coerce_token_dtype(tokens)))
 
         return documents
 

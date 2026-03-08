@@ -229,6 +229,19 @@ class TestCreateSimpleLoaders:
         assert x.shape == (4, seq_len)
         assert y.shape == (4, seq_len)
 
+    def test_pin_memory_override_is_honored(self):
+        """Explicit pin_memory should be used even on CPU device."""
+        seq_len = 8
+        tokens = self._tokens(200)
+        train_loader, _, _ = create_simple_loaders(
+            tokens,
+            seq_len,
+            batch_size=4,
+            device=torch.device("cpu"),
+            pin_memory=True,
+        )
+        assert train_loader.pin_memory is True
+
 
 class TestEnhancedTrainingFeatures:
     """Tests for Phase 3 training loop enhancements."""

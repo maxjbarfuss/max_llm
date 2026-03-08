@@ -160,6 +160,8 @@ Tokenizer:
 - ✅ Update `scripts/data/` configs — BPE support added to pipeline; `wikitext-103_bpe_gpt2_small.yaml`
 
 Data:
+- ✅ Token ingestion hardening: `utf8_tokens` corpus decoding now uses proper byte decode (`uint8 -> bytes -> utf-8`) with out-of-range guard
+- ✅ NPY token safety: data-prep `NpyReader` now preserves `uint32` for token IDs > 65535 and rejects negative IDs (prevents silent truncation for high-vocab runs)
 - ✅ Phase 3 convergence milestone run: 5000 steps on interleaved TinyStories+WikiText BPE dataset (70/30 mix, 2.15M train / 0.38M val tokens); loss 10.89→4.31, best ppl 67.9; checkpoint `outputs/p3-bpe-convergence/`; config `config/milestones/p3_bpe_convergence.toml` *(archived)*; throughput ~140–160K tokens/sec
 - ✅ Memory-mapped data reads: `load_tokens()` returns `np.memmap` for .npy files; `TokenDataset` yields (x,y) pairs lazily — O(1) RAM regardless of dataset size; backward-compatible with TensorDataset tests
 - ✅ Re-tokenize TinyStories with BPE: 70M docs → 18.2M BPE tokens → 5M subset artifact `data/fast/tinystories_5m_tokens_bpe_gpt2.npy` (4.04 chars/token, gpt2 encoding)
@@ -167,6 +169,7 @@ Data:
 - ✅ Phase 3 data ramp validation: 5000-step convergence run on 10M WikiText BPE (single-split, 90% train / 10% val auto-split); loss 10.89→7.22, ppl 53772→1362; checkpoint `outputs/p3-wikitext-10m-validation/`; config `config/milestones/p3_wikitext_10m_validation.toml` *(archived)*; stable training; demonstrates larger-scale convergence
 
 Components:
+- ✅ Tokenizer construction unified: shared `create_configured_tokenizer()` helper now drives training, inference, and data-pipeline tokenization paths (reduced drift and duplicate branch logic)
 - ✅ Token embedding (vocab_size × d_model) — `src/models/embeddings/token_embedding.py`; N(0,0.02) init; 7 tests
 - ✅ Learned position embedding (max_seq_len × d_model) — `src/models/position/learned_position.py`; N(0,0.02) init; 6 tests
 - ✅ Multi-head causal self-attention — `src/models/attention/causal_mha.py`: Q/K/V project, scaled dot-product, upper-triangular mask, Xavier uniform init; 15 tests
@@ -179,6 +182,7 @@ Components:
 - ✅ Hyperparameters: 2–4 layers, 128–256 d_model, 4 heads, 128–512 context
 
 Training infrastructure:
+- ✅ DataConfig semantics tightened: `validation_split` standardized to ratio float in `[0, 1)`; loader now honors explicit `pin_memory` config override
 - ✅ Cross-entropy loss (next-token prediction)
 - ✅ Greedy generation (argmax sampling)
 - ✅ Temperature + top-k + top-p sampling (Phase 2 complete)

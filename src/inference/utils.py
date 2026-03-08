@@ -2,20 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
-
 import torch
 
 from src.config.experiment import DataConfig
 from src.models.learning_model import BaseLearningModel
-from src.tokenizer import Tokenizer, TokenizerFactory
-from src.tokenizer.hf_bpe_tokenizer import HFBPETokenizer
-
-# Tiktoken encodings all have large vocabularies (≥ 50 000).
-# If tokenizer_vocab_size is below this threshold the model was trained with
-# a custom HuggingFace-tokenizers vocab file, not a tiktoken encoding.
-_TIKTOKEN_MIN_VOCAB = 10_000
+from src.tokenizer import Tokenizer, create_configured_tokenizer
 
 
 def resolve_device(device_spec: str) -> torch.device:
@@ -94,25 +85,11 @@ def create_tokenizer_from_data_config(data_config: DataConfig) -> Tokenizer:
         >>> config = ExperimentConfig.from_toml("config/milestones/<experiment>.toml")
         >>> tokenizer = create_tokenizer_from_data_config(config.data)
     """
-    tokenizer_kwargs: dict[str, Any]
-    if data_config.tokenizer_name == "bpe":
-        if data_config.tokenizer_vocab_size < _TIKTOKEN_MIN_VOCAB:
-            # Custom small-vocab BPE — load the HuggingFace vocab file.
-            # Convention: data/fast/bpe_vocab_{vocab_size}.json
-            vocab_path = Path("data/fast") / f"bpe_vocab_{data_config.tokenizer_vocab_size}.json"
-            if not vocab_path.exists():
-                raise FileNotFoundError(
-                    f"Custom BPE vocab file not found: {vocab_path}. "
-                    "Run the appropriate tokenization script first."
-                )
-            return HFBPETokenizer(str(vocab_path))
-        tokenizer_kwargs = {"encoding": "gpt2"}
-    elif data_config.tokenizer_name == "unigram":
-        if not data_config.unigram_model_path:
-            raise ValueError("unigram_model_path is required for unigram tokenizer")
-        tokenizer_kwargs = {"model_path": data_config.unigram_model_path}
-    else:
-        tokenizer_kwargs = {"mode": data_config.tokenizer_mode}
-        if data_config.tokenizer_mode == "codepoint":
-            tokenizer_kwargs["vocab_size"] = data_config.tokenizer_vocab_size
-    return TokenizerFactory.create(data_config.tokenizer_name, **tokenizer_kwargs)
+    return create_configured_tokenizer(
+        tokenizer_name=data_config.tokenizer_name,
+        tokenizer_mode=data_config.tokenizer_mode,
+        tokenizer_vocab_size=getattr(data_config, "tokenizer_vocab_size", None),
+        tokenizer_backend=getattr(data_config, "tokenizer_backend", None),
+        unigram_model_path=getattr(data_config, "unigram_model_path", None),
+        tokenizer_vocab_path=getattr(data_config, "tokenizer_vocab_path", None),
+    )

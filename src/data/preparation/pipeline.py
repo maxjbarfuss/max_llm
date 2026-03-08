@@ -153,7 +153,14 @@ class PreparationPipeline:
 
         if source.format == "utf8_tokens":
             tokens = np.load(path)
-            return "".join(chr(int(t)) for t in tokens)
+            byte_tokens = np.asarray(tokens)
+            if byte_tokens.size and (int(byte_tokens.min()) < 0 or int(byte_tokens.max()) > 255):
+                raise ValueError(
+                    f"utf8_tokens source contains out-of-byte-range values: {source.path}"
+                )
+            return (
+                byte_tokens.astype(np.uint8, copy=False).tobytes().decode("utf-8", errors="ignore")
+            )
 
         if source.format == "jsonl":
             lines: list[str] = []

@@ -27,18 +27,17 @@ class DataConfig:
     streaming: bool
     cache_dir: str
     num_shards: int
-    validation_split: float | int
+    validation_split: float
     validation_dataset_path: str | None = None
     test_dataset_path: str | None = None
     tokenizer_vocab_path: str | None = None
     seed: int = 42
 
     def _validate_split(self) -> None:
-        if isinstance(self.validation_split, float):
-            if not (0.0 <= self.validation_split < 1):
-                raise ValueError("validation_split fraction must be in [0, 1)")
-        elif self.validation_split < 0:
-            raise ValueError("validation_split must be non-negative")
+        if not isinstance(self.validation_split, float):
+            raise ValueError("validation_split must be a float ratio in [0, 1)")
+        if not (0.0 <= self.validation_split < 1.0):
+            raise ValueError("validation_split fraction must be in [0, 1)")
 
     def __post_init__(self) -> None:
         """Validate data configuration."""
