@@ -24,6 +24,7 @@ from src.models.learning_model import BaseLearningModel, LearningModel
 from src.tokenizer import create_configured_tokenizer
 from src.training.distributed import (
     cleanup_distributed,
+    create_distributed_sampler,
     init_distributed,
     is_main_process,
     print_once,
@@ -321,11 +322,17 @@ def create_simple_loaders(
         return TensorDataset(torch.stack(inputs), torch.stack(targets))
 
     def _create_loader(dataset: Dataset, shuffle: bool) -> DataLoader:
+        # Use DistributedSampler in distributed mode for proper data sharding
+        sampler = create_distributed_sampler(dataset, shuffle=shuffle, seed=seed)
+        # When using sampler, DataLoader's shuffle must be False
+        use_shuffle = shuffle if sampler is None else False
+        use_generator = generator if (use_shuffle and sampler is None) else None
         return DataLoader(
             dataset,
             batch_size=batch_size,
-            shuffle=shuffle,
-            generator=generator if shuffle else None,
+            sampler=sampler,
+            shuffle=use_shuffle,
+            generator=use_generator,
             worker_init_fn=seed_worker if shuffle else None,
             pin_memory=use_pin_memory,
             num_workers=num_workers,
