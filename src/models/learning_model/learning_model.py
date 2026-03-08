@@ -1,4 +1,7 @@
-"""Phase 3 model: GPT-style decoder with transformer blocks."""
+"""Universal learning model: token embeddings + optional transformer layers + LM head.
+
+Supports Phase 2 (embedding-only, num_layers=0) through Phase 4+ (transformer-based).
+"""
 
 from __future__ import annotations
 
@@ -17,13 +20,15 @@ from src.models.transformer.transformer_block import TransformerBlock
 from .base import BaseLearningModel
 
 
-class DecoderLM(BaseLearningModel):
-    """GPT-style decoder-only language model with causal self-attention.
+class LearningModel(BaseLearningModel):
+    """Universal language model supporting Phase 2–7 configurations.
 
     Architecture:
         1. Token embedding + Learned positional embedding
         2. Stack of N transformer blocks (pre-norm attention + FFN with residuals)
-        3. Final layer norm
+           - When num_layers=0: skips transformer blocks (Phase 2 embedding-only mode)
+           - When num_layers>0: applies N transformer blocks (Phase 3+ transformer mode)
+        3. Optional final layer norm (skipped when num_layers=0)
         4. LM head (weight-tied to token embedding)
 
     Weight tying: lm_head shares its weight matrix with token_embedding,
@@ -115,8 +120,8 @@ class DecoderLM(BaseLearningModel):
                 len(self.blocks) == num_layers
             ), "share_layer_weights=False must create one block per layer"
 
-        # Final layer norm (standard for GPT-style models)
-        self.final_norm = nn.LayerNorm(d_model)
+        # Final layer norm (standard for GPT-style models, skipped for num_layers=0 to support Phase 2)
+        self.final_norm = nn.LayerNorm(d_model) if num_layers > 0 else None
 
         # LM head with weight tying (only when not using factorized embeddings)
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
@@ -133,8 +138,8 @@ class DecoderLM(BaseLearningModel):
         Returns:
             Logits of shape (batch_size, seq_len, vocab_size).
         """
-        assert x.ndim == 2, f"DecoderLM expects 2-D input (batch, seq_len), got shape {x.shape}"
-        assert x.dtype == torch.long, f"DecoderLM expects dtype=torch.long, got {x.dtype}"
+        assert x.ndim == 2, f"LearningModel expects 2-D input (batch, seq_len), got shape {x.shape}"
+        assert x.dtype == torch.long, f"LearningModel expects dtype=torch.long, got {x.dtype}"
         B, T = x.shape
 
         # Token and position embeddings
@@ -157,8 +162,9 @@ class DecoderLM(BaseLearningModel):
             for block in self.blocks:
                 h = block(h)
 
-        # Final layer norm
-        h = self.final_norm(h)
+        # Final layer norm (skipped for num_layers=0 to support Phase 2 MLP-only models)
+        if self.final_norm is not None:
+            h = self.final_norm(h)
 
         # LM head
         logits = self.lm_head(h)
@@ -167,7 +173,7 @@ class DecoderLM(BaseLearningModel):
             B,
             T,
             self.vocab_size,
-        ), f"DecoderLM output shape mismatch: expected {(B, T, self.vocab_size)}, got {logits.shape}"
+        ), f"LearningModel output shape mismatch: expected {(B, T, self.vocab_size)}, got {logits.shape}"
         return logits
 
     def load_state_dict(
@@ -184,7 +190,7 @@ class DecoderLM(BaseLearningModel):
 
     @classmethod
     def from_config(cls, config: ModelConfig, attention_backend: str = "flash") -> Self:
-        """Construct a DecoderLM from a ModelConfig.
+        """Construct a LearningModel from a ModelConfig.
 
         Args:
             config: ModelConfig instance.
@@ -192,7 +198,7 @@ class DecoderLM(BaseLearningModel):
                 Options: "flash", "sage", "xformers", "standard"
 
         Returns:
-            DecoderLM instance.
+            LearningModel instance.
         """
         return cls(
             vocab_size=config.vocab_size,

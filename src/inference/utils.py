@@ -49,7 +49,7 @@ def load_checkpoint_into_model(
         ValueError: If checkpoint format is unsupported
 
     Example:
-        >>> model = DecoderLM.from_config(config.model)
+        >>> model = LearningModel.from_config(config.model)
         >>> device = torch.device("cuda")
         >>> load_checkpoint_into_model(model, "checkpoint.pt", device)
     """

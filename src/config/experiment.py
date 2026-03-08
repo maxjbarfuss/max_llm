@@ -40,7 +40,7 @@ class ExperimentConfig:
         experiment_raw = require_section(raw, "experiment")
         model_raw = require_section(raw, "model")
         training_raw = require_section(raw, "training")
-        inference_raw = require_section(raw, "inference")
+        inference_raw = raw.get("inference", {})  # Optional: use defaults if missing
         data_raw = require_section(raw, "data")
 
         return cls(

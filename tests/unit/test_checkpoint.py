@@ -5,13 +5,12 @@ import torch
 
 from src.config.model import ModelConfig
 from src.inference.utils import load_checkpoint_into_model
-from src.models.learning_model import DecoderLM
+from src.models.learning_model import LearningModel
 from src.training.train import save_checkpoint
 
 
-def _make_model() -> DecoderLM:
+def _make_model() -> LearningModel:
     config = ModelConfig(
-        model_type="decoder_lm",
         hidden_size=64,
         num_layers=1,
         num_heads=4,
@@ -26,10 +25,10 @@ def _make_model() -> DecoderLM:
         gru_hidden_size=None,
         dropout=0.0,
     )
-    return DecoderLM.from_config(config, attention_backend="standard")
+    return LearningModel.from_config(config, attention_backend="standard")
 
 
-def _make_optimizer(model: DecoderLM) -> torch.optim.Optimizer:
+def _make_optimizer(model: LearningModel) -> torch.optim.Optimizer:
     return torch.optim.Adam(model.parameters(), lr=1e-3)
 
 

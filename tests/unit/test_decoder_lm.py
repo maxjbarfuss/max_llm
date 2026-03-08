@@ -6,14 +6,14 @@ import pytest
 import torch
 
 from src.config.model import ModelConfig
-from src.models.learning_model.decoder_lm import DecoderLM
+from src.models.learning_model import LearningModel
 from src.models.position.learned_position import LearnedPositionEmbedding
 
 
-class TestDecoderLM:
+class TestLearningModel:
     def test_output_shape_training(self) -> None:
         """Output should be (batch, seq_len, vocab_size) in training mode."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256,
             d_model=64,
             num_layers=2,
@@ -26,7 +26,7 @@ class TestDecoderLM:
 
     def test_output_dtype_float32(self) -> None:
         """Output should be float32."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256,
             d_model=128,
             num_layers=2,
@@ -39,7 +39,7 @@ class TestDecoderLM:
 
     def test_has_embeddings(self) -> None:
         """Must have token and position embeddings."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
         )
         assert hasattr(model, "token_embedding")
@@ -47,7 +47,7 @@ class TestDecoderLM:
 
     def test_has_transformer_blocks(self) -> None:
         """Must have transformer blocks."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256, d_model=64, num_layers=3, num_heads=4, attention_backend="standard"
         )
         assert hasattr(model, "blocks")
@@ -55,7 +55,7 @@ class TestDecoderLM:
 
     def test_has_lm_head(self) -> None:
         """Must have an LM head for output projection."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
         )
         assert hasattr(model, "lm_head")
@@ -63,7 +63,7 @@ class TestDecoderLM:
 
     def test_weight_tied_embeddings(self) -> None:
         """LM head should share weights with token embedding (weight tying)."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
         )
         # Check that LM head weight is tied (same data pointer)
@@ -71,7 +71,7 @@ class TestDecoderLM:
 
     def test_single_token(self) -> None:
         """Should handle single token input."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
         )
         x = torch.tensor([[42]])  # Single token
@@ -80,7 +80,7 @@ class TestDecoderLM:
 
     def test_long_sequence(self) -> None:
         """Should handle longer sequences."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256,
             d_model=64,
             num_layers=2,
@@ -95,7 +95,7 @@ class TestDecoderLM:
     def test_different_vocab_sizes(self) -> None:
         """Should work with different vocabulary sizes."""
         for vocab_size in [128, 256, 512, 1000]:
-            model = DecoderLM(
+            model = LearningModel(
                 vocab_size=vocab_size,
                 d_model=64,
                 num_layers=2,
@@ -109,7 +109,7 @@ class TestDecoderLM:
     def test_different_depths(self) -> None:
         """Should work with different numbers of layers."""
         for num_layers in [1, 2, 4, 8]:
-            model = DecoderLM(
+            model = LearningModel(
                 vocab_size=256,
                 d_model=64,
                 num_layers=num_layers,
@@ -123,7 +123,7 @@ class TestDecoderLM:
 
     def test_gradient_flow(self) -> None:
         """Gradients should flow through the entire model."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256, d_model=32, num_layers=2, num_heads=4, attention_backend="standard"
         )
         x = torch.randint(0, 256, (1, 4))
@@ -139,7 +139,7 @@ class TestDecoderLM:
 
     def test_output_changes_with_different_inputs(self) -> None:
         """Different inputs should produce different outputs."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
         )
         x1 = torch.randint(0, 256, (1, 8))
@@ -151,7 +151,7 @@ class TestDecoderLM:
     def test_token_in_valid_range(self) -> None:
         """Should handle all valid token IDs."""
         vocab_size = 100
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=vocab_size,
             d_model=32,
             num_layers=2,
@@ -164,7 +164,7 @@ class TestDecoderLM:
 
     def test_batch_size_variation(self) -> None:
         """Should work with different batch sizes."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
         )
         for batch_size in [1, 2, 4, 8]:
@@ -174,7 +174,7 @@ class TestDecoderLM:
 
     def test_final_layer_norm(self) -> None:
         """Should have final layer norm before LM head."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
         )
         assert hasattr(model, "final_norm")
@@ -183,7 +183,7 @@ class TestDecoderLM:
     def test_d_model_divisible_by_num_heads(self) -> None:
         """d_model must be divisible by num_heads."""
         with pytest.raises(AssertionError):
-            DecoderLM(
+            LearningModel(
                 vocab_size=256,
                 d_model=63,
                 num_layers=2,
@@ -193,7 +193,7 @@ class TestDecoderLM:
 
     def test_logits_can_be_sampled(self) -> None:
         """Output logits should be suitable for sampling (finite values)."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
         )
         model.eval()
@@ -211,14 +211,14 @@ class TestDecoderLM:
         x = torch.randint(0, 256, (1, 4))
 
         torch.manual_seed(42)
-        model1 = DecoderLM(
+        model1 = LearningModel(
             vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
         )
         model1.eval()
         out1 = model1(x)
 
         torch.manual_seed(42)
-        model2 = DecoderLM(
+        model2 = LearningModel(
             vocab_size=256, d_model=64, num_layers=2, num_heads=4, attention_backend="standard"
         )
         model2.eval()
@@ -229,7 +229,7 @@ class TestDecoderLM:
 
     def test_phase3_pre_layernorm_architecture(self) -> None:
         """Phase 3 minimal transformer should use learned positions + pre-LN blocks."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256,
             d_model=64,
             num_layers=2,
@@ -243,7 +243,7 @@ class TestDecoderLM:
 
     def test_cross_layer_parameter_sharing_reuses_one_block(self) -> None:
         """When enabled, one block should be reused across all logical layers."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256,
             d_model=64,
             num_layers=4,
@@ -264,7 +264,7 @@ class TestDecoderLM:
 
     def test_cross_layer_parameter_sharing_reduces_parameters(self) -> None:
         """Shared-layer model should have fewer parameters than non-shared model."""
-        non_shared = DecoderLM(
+        non_shared = LearningModel(
             vocab_size=256,
             d_model=128,
             num_layers=4,
@@ -272,7 +272,7 @@ class TestDecoderLM:
             attention_backend="standard",
             share_layer_weights=False,
         )
-        shared = DecoderLM(
+        shared = LearningModel(
             vocab_size=256,
             d_model=128,
             num_layers=4,
@@ -287,7 +287,7 @@ class TestDecoderLM:
 
     def test_factorized_embeddings_create_projection_and_disable_weight_tying(self) -> None:
         """Factorized embeddings should project to d_model and not tie lm_head weights."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256,
             d_model=128,
             num_layers=2,
@@ -308,7 +308,7 @@ class TestDecoderLM:
 
     def test_non_factorized_embeddings_keep_weight_tying(self) -> None:
         """Without factorization, lm_head should be tied to token embedding."""
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=256,
             d_model=128,
             num_layers=2,
@@ -323,7 +323,6 @@ class TestDecoderLM:
     def test_from_config_wires_sharing_and_factorized_embedding(self) -> None:
         """from_config should propagate share_layer_weights and embedding_dim."""
         config = ModelConfig(
-            model_type="decoder_lm",
             hidden_size=128,
             num_layers=4,
             num_heads=8,
@@ -340,7 +339,7 @@ class TestDecoderLM:
             embedding_dim=64,
             share_layer_weights=True,
         )
-        model = DecoderLM.from_config(config, attention_backend="standard")
+        model = LearningModel.from_config(config, attention_backend="standard")
         assert model.share_layer_weights
         assert len(model.blocks) == 1
         assert model.use_factorized

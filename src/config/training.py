@@ -23,15 +23,15 @@ class TrainingConfig:
     epsilon: float
     gradient_clip_norm: float
     precision_schedule: list[tuple[int, int, str]]
-    moe_balance_loss_weight: float
-    distributed_backend: Literal["ddp", "fsdp"]
-    checkpoint_interval: int
-    eval_interval: int
-    log_interval: int
-    keep_last_n_checkpoints: int
-    use_torch_compile: bool
-    attention_backend: str
-    selective_checkpointing: bool
+    moe_balance_loss_weight: float = 0.0  # No MoE by default
+    distributed_backend: Literal["ddp", "fsdp"] = "ddp"
+    checkpoint_interval: int = 1000
+    eval_interval: int = 100
+    log_interval: int = 10
+    keep_last_n_checkpoints: int = 3
+    use_torch_compile: bool = False
+    attention_backend: str = "standard"
+    selective_checkpointing: bool = False  # Disabled by default
     resume_from_checkpoint: str | None = None
     early_stopping_patience: int | None = None
     early_stopping_min_delta: float = 0.0

@@ -29,7 +29,6 @@ def build_model_config(**overrides: Any) -> ModelConfig:
     """
     # Minimal valid defaults that satisfy all validation constraints
     defaults = {
-        "model_type": "decoder_lm",
         "hidden_size": 64,  # Multiple of 64, smallest valid value
         "num_layers": 1,
         "num_heads": 4,  # 64 % 4 = 0 ✓

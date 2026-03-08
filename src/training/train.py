@@ -20,7 +20,7 @@ from src.config.inference import InferenceConfig
 from src.config.model import ModelConfig
 from src.config.training import TrainingConfig
 from src.inference.utils import resolve_device
-from src.models.learning_model import BaseLearningModel, DecoderLM
+from src.models.learning_model import BaseLearningModel, LearningModel
 from src.tokenizer import create_configured_tokenizer
 from src.training.distributed import (
     cleanup_distributed,
@@ -490,17 +490,12 @@ def main() -> None:  # noqa: C901
     if len(val_loader.dataset) == 0:  # type: ignore[arg-type]
         raise ValueError("Validation split is empty")
 
-    # Create model based on model_type
+    # Create model from config (always LearningModel; num_layers determines phase)
     model: BaseLearningModel
     attention_backend = config.training.attention_backend
     if attention_backend != "standard":
         print_once(f"Attention backend: {attention_backend}")
-    if config.model.model_type == "decoder_lm":
-        model = DecoderLM.from_config(config.model, attention_backend=attention_backend)
-    else:
-        raise ValueError(
-            f"Unknown model_type: {config.model.model_type}. " "Supported types: decoder_lm"
-        )
+    model = LearningModel.from_config(config.model, attention_backend=attention_backend)
 
     # Move model to device
     model = model.to(device)

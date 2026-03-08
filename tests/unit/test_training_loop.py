@@ -4,14 +4,13 @@ import pytest
 import torch
 
 from src.config.model import ModelConfig
-from src.models.learning_model import DecoderLM
+from src.models.learning_model import LearningModel
 from src.training.loop import optimizer_step, train, train_step
 from src.training.train import create_simple_loaders
 
 
-def _make_model() -> DecoderLM:
+def _make_model() -> LearningModel:
     config = ModelConfig(
-        model_type="decoder_lm",
         hidden_size=64,
         num_layers=1,
         num_heads=4,
@@ -26,7 +25,7 @@ def _make_model() -> DecoderLM:
         gru_hidden_size=None,
         dropout=0.0,
     )
-    return DecoderLM.from_config(config, attention_backend="standard")
+    return LearningModel.from_config(config, attention_backend="standard")
 
 
 def _make_batch(batch_size: int = 4, seq_len: int = 8) -> tuple[torch.Tensor, torch.Tensor]:
@@ -35,7 +34,7 @@ def _make_batch(batch_size: int = 4, seq_len: int = 8) -> tuple[torch.Tensor, to
     return x, y
 
 
-def _make_optimizer(model: DecoderLM) -> torch.optim.Optimizer:
+def _make_optimizer(model: LearningModel) -> torch.optim.Optimizer:
     return torch.optim.Adam(model.parameters(), lr=1e-3)
 
 

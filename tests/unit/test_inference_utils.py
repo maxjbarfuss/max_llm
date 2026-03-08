@@ -15,7 +15,7 @@ from src.inference.utils import (
     load_checkpoint_into_model,
     resolve_device,
 )
-from src.models.learning_model import DecoderLM
+from src.models.learning_model import LearningModel
 
 
 class TestResolveDevice:
@@ -53,7 +53,7 @@ class TestLoadCheckpointIntoModel:
         from tests.conftest import build_model_config
 
         config = build_model_config()
-        return DecoderLM.from_config(config, attention_backend="standard")
+        return LearningModel.from_config(config, attention_backend="standard")
 
     def test_load_checkpoint_with_model_state_key(self, model):
         """Test loading checkpoint with 'model_state' key."""

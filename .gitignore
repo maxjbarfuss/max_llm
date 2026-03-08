@@ -53,6 +53,11 @@ artifacts/
 # Training outputs (checkpoints, generated text, experiment artifacts)
 /outputs/
 
+# Checkpoints and training artifacts (never commit large model files)
+*.pt
+checkpoint_step_*.pt
+tensorboard/
+
 # Ephemeral experiment configs (intentionally local/untracked)
 /config/ephemeral/
 

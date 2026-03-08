@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from src.config.model import ModelConfig
 from src.inference.sampler import sample_token
 from src.inference.utils import load_checkpoint_into_model
-from src.models.learning_model import DecoderLM
+from src.models.learning_model import LearningModel
 from src.training.loop import train
 from src.training.train import create_simple_loaders, save_checkpoint
 from tests.conftest import build_model_config
@@ -31,7 +31,7 @@ class TestPhase2Integration:
     def test_train_returns_metrics_dict_with_perplexities(self, tmp_path):
         """train() returns dict with losses and perplexities (not just list)."""
         config = _make_model_config()
-        model = DecoderLM.from_config(config, attention_backend="standard")
+        model = LearningModel.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 
         # Create synthetic data
@@ -52,7 +52,7 @@ class TestPhase2Integration:
     def test_perplexities_computed_from_losses(self):
         """Perplexities are exp(loss) for each loss value."""
         config = _make_model_config()
-        model = DecoderLM.from_config(config, attention_backend="standard")
+        model = LearningModel.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 
         x = torch.randint(0, 128, (20, 32))
@@ -73,7 +73,7 @@ class TestPhase2Integration:
     def test_loss_decreases_over_training(self):
         """Loss should generally decrease; verify first loss > final loss."""
         config = _make_model_config()
-        model = DecoderLM.from_config(config, attention_backend="standard")
+        model = LearningModel.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 
         x = torch.randint(0, 128, (20, 32))
@@ -90,7 +90,7 @@ class TestPhase2Integration:
     def test_checkpoint_and_inference_roundtrip(self, tmp_path):
         """Save checkpoint → load → generate: full roundtrip."""
         config = _make_model_config()
-        model = DecoderLM.from_config(config, attention_backend="standard")
+        model = LearningModel.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 
         x = torch.randint(0, 128, (20, 32))
@@ -104,7 +104,7 @@ class TestPhase2Integration:
         assert ckpt_path.exists()
 
         # Load fresh model
-        model2 = DecoderLM.from_config(config, attention_backend="standard")
+        model2 = LearningModel.from_config(config, attention_backend="standard")
         load_checkpoint_into_model(model2, str(ckpt_path), torch.device("cpu"))
         model2.eval()
 
@@ -144,7 +144,7 @@ class TestPhase2Integration:
         )
 
         # Train
-        model = DecoderLM.from_config(config, attention_backend="standard")
+        model = LearningModel.from_config(config, attention_backend="standard")
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
         metrics = train(model, train_loader, optimizer, max_steps=20, log_interval=0)
 
@@ -157,7 +157,7 @@ class TestPhase2Integration:
         ckpt_path = save_checkpoint(model, optimizer, step=20, output_dir=tmp_path)
 
         # Inference
-        model2 = DecoderLM.from_config(config, attention_backend="standard")
+        model2 = LearningModel.from_config(config, attention_backend="standard")
         load_checkpoint_into_model(model2, str(ckpt_path), torch.device("cpu"))
         model2.eval()
 

@@ -94,6 +94,21 @@ Dataset preparation is first-class in `src/data/preparation/`. Use
 `python -m src.data.preparation --config <config.json|config.toml>` and see
 [src/data/README.md](../../src/data/README.md) for data tooling details.
 
+For fast local source discovery (without broad filesystem scans), use:
+
+```bash
+/home/max/dev/max_llm/.venv/bin/python scripts/setup/locate_dataset.py --dataset tinystories-gpt4-clean
+```
+
+To inspect all ranked candidates under specific roots:
+
+```bash
+/home/max/dev/max_llm/.venv/bin/python scripts/setup/locate_dataset.py \
+	--dataset tinystories-gpt4-clean \
+	--root /mnt/d/dev/data \
+	--all
+```
+
 For higher download rate limits, place a Hugging Face token in `.huggingface/.hf_token` (ignored by git) or export `HF_TOKEN`.
 
 ---

@@ -1,17 +1,17 @@
-"""Integration test for DecoderLM: complete training pipeline."""
+"""Integration test for LearningModel: complete training pipeline."""
 
 from __future__ import annotations
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.models.learning_model.decoder_lm import DecoderLM
+from src.models.learning_model import LearningModel
 from src.training.loop import train
 
 
-class TestDecoderLMIntegration:
+class TestLearningModelIntegration:
     def test_end_to_end_training_on_small_dataset(self) -> None:
-        """Train DecoderLM on a tiny dataset and verify loss decreases.
+        """Train LearningModel on a tiny dataset and verify loss decreases.
 
         This is a vertical slice integration test that covers:
         1. Model instantiation
@@ -45,7 +45,7 @@ class TestDecoderLMIntegration:
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
         # Create model
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=vocab_size,
             d_model=64,
             num_layers=2,
@@ -76,7 +76,7 @@ class TestDecoderLMIntegration:
         assert loss_decrease > 0.1, f"Loss should decrease by at least 10%, got {loss_decrease:.2%}"
 
     def test_overfitting_on_tiny_dataset(self) -> None:
-        """Train DecoderLM to near-zero loss on a single batch (overfitting test).
+        """Train LearningModel to near-zero loss on a single batch (overfitting test).
 
         This verifies that the model can learn and that all gradients flow correctly.
         """
@@ -95,7 +95,7 @@ class TestDecoderLMIntegration:
         loader = DataLoader(dataset, batch_size=1, shuffle=False)
 
         # Create model
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=vocab_size,
             d_model=32,
             num_layers=1,
@@ -149,7 +149,7 @@ class TestDecoderLMIntegration:
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
         # Create and train model
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=vocab_size,
             d_model=64,
             num_layers=2,
@@ -196,7 +196,7 @@ class TestDecoderLMIntegration:
         loader = DataLoader(dataset, batch_size=1, shuffle=False)
 
         # Create small model
-        model = DecoderLM(
+        model = LearningModel(
             vocab_size=vocab_size,
             d_model=16,
             num_layers=1,

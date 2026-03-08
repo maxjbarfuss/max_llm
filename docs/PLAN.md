@@ -103,7 +103,7 @@ Data:
 - ✅ Download TinyStories; create `scripts/data/tinystories/default_utf8.yaml`; compare tokenization stats
 
 Components:
-- ✅ Fill `config/milestones/p2_baseline.toml` with all sections (P2 values: `hidden_size=128`, `vocab_size=128/256/512`, tokenizer_mode); wire into `src.training.train` entrypoint
+- ✅ Fill Phase 2 config with all sections (P2 values: `hidden_size=1024`, `vocab_size=128`, ASCII-127 tokenizer); wire into `src.training.train` entrypoint
 - ✅ Character-level tokenizer (`src/tokenizer/char_tokenizer.py`): multi-mode (codepoint/utf8/utf16/utf32), encode/decode with roundtrip tests
 - ✅ TokenizerFactory (`src/tokenizer/tokenizer.py`): **kwargs-based parameterization for mode and vocab_size
 - ✅ `BaseLearningModel` ABC (`src/models/learning_model/base.py`): `forward` and factory interface; evolves across phases
@@ -120,21 +120,20 @@ Training and evaluation:
 Quality:
 - ✅ Unit tests: 240 passing — end-to-end Phase 2 loop covered (tokenizer → data pipeline → training → checkpoint → inference → seed hardening → overfit test)
 
-**Exit Criteria** (status updated 2026-02-25 — Phase 2 100% complete):
-- ✅ `python -m src.training.train --config config/milestones/p2_baseline.toml` trains end-to-end on WikiText-103 100k tokens, loss decreases (16.01→2.61)
+**Exit Criteria** (status updated 2026-03-07 — Phase 2 100% complete):
+- ✅ `python -m src.training.train --config config/milestones/p2_ascii127.toml` trains end-to-end on TinyStories 100M tokens, loss converges (4.85→2.92 @ 2000 steps)
 - ✅ TinyStories end-to-end training path validated (verified: 2.74 convergence)
 - ✅ Save/restore checkpoint with same seed produces bit-identical loss at step N+1 (seed hardening complete with 8 unit tests)
 - ✅ 240 unit tests passing — end-to-end Phase 2 loop (tokenizer → data pipeline → training → checkpoint → inference → seed hardening → overfit)
 - ✅ WikiText-103 subset (100K tokens) downloaded, tokenized, and validated (on disk)
 - ✅ TinyStories subset (100K tokens) downloaded, tokenized, and validated (on disk with boundary detection)
 - ✅ Overfit test achieves train loss < 0.1 on a 10K-token subset within 500 steps (verified: 3 tests passing)
-- ✅ Inference: `python -m src.inference.run --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` generates text from a trained checkpoint
-- ✅ Evaluation: `python -m src.inference.run --config config/milestones/p2_baseline.toml --checkpoint <path> --prompt "Hello"` generates text and reports perplexity *(evaluate_p2.py removed in Phase 3 consolidation)*
-- ✅ Final draft closeout re-verified (System V): E2E integration test pass + side-by-side interactive chat (early workable vs final best-in-class) documented in `docs/PHASE_2_CLOSEOUT.md`
+- ✅ Inference: `python -m src.inference.run --config config/milestones/p2_ascii127.toml --checkpoint <path> --prompt "Hello"` generates text from a trained checkpoint
+- ✅ Evaluation: `python -m src.inference.run --config config/milestones/p2_ascii127.toml --checkpoint <path> --prompt "Hello"` generates text and reports perplexity *(evaluate_p2.py removed in Phase 3 consolidation)*
+- ✅ Final draft closeout re-verified (2026-03-07): Embedding-only baseline with 100M token corpus documented in `docs/PHASE_2_CLOSEOUT.md`
 
-Canonical Phase 2 milestone configs for reference:
-- `config/milestones/p2_baseline.toml` (first working baseline)
-- `config/milestones/p2_final.toml` (final archived baseline)
+Canonical Phase 2 milestone config:
+- `config/milestones/p2_ascii127.toml` (final production baseline, 2026-03-07)
 
 ---
 

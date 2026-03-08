@@ -1,0 +1,41 @@
+# Phase 2 pure baseline for verification
+# num_layers=0 (default) → LearningModel embedding-only (no transformer blocks, no LayerNorm)
+# Architecture: Token Emb + Pos Emb → LM Head (weight-tied)
+# Minimal config: only essentials. Everything else uses sane defaults.
+
+[experiment]
+name = "maxllm-p2-pure-ascii127-2000-20260307c"
+output_dir = "./outputs/ephemeral/p2-pure-ascii127-2000-20260307c"
+
+[model]
+hidden_size = 1024
+vocab_size = 128
+max_seq_length = 1024
+
+[training]
+batch_size = 128
+gradient_accumulation_steps = 4
+max_steps = 2000
+warmup_steps = 100
+learning_rate = 0.015
+weight_decay = 0.0
+betas = [0.9, 0.95]
+epsilon = 1e-8
+gradient_clip_norm = 1.0
+precision_schedule = [[0, -1, "bf16"]]
+checkpoint_interval = 500
+eval_interval = 100
+log_interval = 20
+use_torch_compile = false
+
+[inference]
+temperature = 1.0
+max_new_tokens = 100
+
+[data]
+dataset_path = "data/fast/p2_tinystories_100m_20260307b_ascii127_tokens.npy"
+tokenizer_name = "char"
+tokenizer_mode = "codepoint"
+tokenizer_vocab_size = 128
+max_length = 1024
+prefetch_factor = 4

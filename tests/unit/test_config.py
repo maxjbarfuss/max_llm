@@ -216,7 +216,10 @@ class TestInferenceConfig:
     def test_sampling_validation(self):
         """Sampling parameters should be validated."""
         with pytest.raises(ValueError, match="top_p must be in"):
-            make_inference_config(top_p=0)
+            make_inference_config(top_p=-0.1)
+
+        with pytest.raises(ValueError, match="top_p must be in"):
+            make_inference_config(top_p=1.5)
 
         with pytest.raises(ValueError, match="max_new_tokens must be positive"):
             make_inference_config(max_new_tokens=0)
@@ -348,7 +351,6 @@ name = "toml-test"
 output_dir = "./tmp-outputs"
 
 [model]
-model_type = "decoder_lm"
 hidden_size = 768
 num_layers = 12
 num_heads = 12
@@ -436,7 +438,6 @@ seed = 42
         model_file.write_text(
             "\n".join(
                 [
-                    'model_type = "decoder_lm"',
                     "hidden_size = 768",
                     "num_layers = 12",
                     "num_heads = 12",

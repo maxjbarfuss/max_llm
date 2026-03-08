@@ -17,17 +17,17 @@ class DataConfig:
     tokenizer_name: str
     tokenizer_mode: Literal["codepoint", "utf8", "utf16", "utf32"]
     tokenizer_vocab_size: int
-    tokenizer_backend: Literal["gpt2_bpe", "unigram", "char", "char_utf8"]
-    unigram_model_path: str | None
-    max_length: int
-    num_workers: int
-    prefetch_factor: int
-    pin_memory: bool
-    persistent_workers: bool
-    streaming: bool
-    cache_dir: str
-    num_shards: int
-    validation_split: float
+    tokenizer_backend: Literal["gpt2_bpe", "unigram", "char", "char_utf8"] = "char"
+    unigram_model_path: str | None = None
+    max_length: int = 512
+    num_workers: int = 4
+    prefetch_factor: int = 2
+    pin_memory: bool = True
+    persistent_workers: bool = True
+    streaming: bool = False
+    cache_dir: str = "./data/cache"
+    num_shards: int = 1
+    validation_split: float = 0.1
     validation_dataset_path: str | None = None
     test_dataset_path: str | None = None
     tokenizer_vocab_path: str | None = None

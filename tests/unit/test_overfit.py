@@ -1,21 +1,20 @@
 """Overfit tests — verify models can memorize small datasets.
 
-Phase 2: Small DecoderLM overfits 10K-token char-level dataset.
-Phase 3: DecoderLM overfits 1K-token char-level dataset (exit criterion).
+Phase 2: Small LearningModel overfits 10K-token char-level dataset.
+Phase 3: LearningModel overfits 1K-token char-level dataset (exit criterion).
 """
 
 import torch
 
 from src.config.model import ModelConfig
-from src.models.learning_model import DecoderLM
+from src.models.learning_model import LearningModel
 from src.training.loop import train
 from src.training.train import create_simple_loaders
 
 
-def _make_model() -> DecoderLM:
+def _make_model() -> LearningModel:
     """Create a small model for Phase 2 overfitting."""
     config = ModelConfig(
-        model_type="decoder_lm",
         hidden_size=128,
         num_layers=1,
         num_heads=4,
@@ -30,7 +29,7 @@ def _make_model() -> DecoderLM:
         gru_hidden_size=128,
         dropout=0.0,
     )
-    return DecoderLM.from_config(config, attention_backend="standard")
+    return LearningModel.from_config(config, attention_backend="standard")
 
 
 class TestOverfit:
@@ -178,10 +177,9 @@ class TestOverfit:
         print(f"✓ Loss < 0.1 achieved at step {step_threshold}")
 
 
-def _make_decoder_model() -> DecoderLM:
-    """Create a small DecoderLM for Phase 3 overfitting."""
+def _make_decoder_model() -> LearningModel:
+    """Create a small LearningModel for Phase 3 overfitting."""
     config = ModelConfig(
-        model_type="decoder_lm",
         hidden_size=128,
         num_layers=2,
         num_heads=4,
@@ -196,15 +194,15 @@ def _make_decoder_model() -> DecoderLM:
         gru_hidden_size=128,
         dropout=0.0,
     )
-    return DecoderLM.from_config(config, attention_backend="standard")
+    return LearningModel.from_config(config, attention_backend="standard")
 
 
-class TestDecoderLMOverfit:
-    """Phase 3 exit criterion: DecoderLM overfits 1K-token subset to loss < 0.5 within 1000 steps."""
+class TestLearningModelOverfit:
+    """Phase 3 exit criterion: LearningModel overfits 1K-token subset to loss < 0.5 within 1000 steps."""
 
-    def test_decoder_lm_overfits_1k_tokens(self):
+    def test_learning_model_overfit_1k_tokens(self) -> None:
         """
-        DecoderLM overfits 1K-token subset: train loss < 0.5 within 1000 steps.
+        LearningModel overfits 1K-token subset: train loss < 0.5 within 1000 steps.
 
         Phase 3 exit criterion: model_type=decoder_lm, perplexity < 2.0.
         """
@@ -245,8 +243,10 @@ class TestDecoderLMOverfit:
         min_ppl = 2.718281828**min_loss  # e^loss
 
         assert min_loss < 0.5, (
-            f"DecoderLM overfit failed: min_loss={min_loss:.4f} (need < 0.5), "
+            f"LearningModel overfit failed: min_loss={min_loss:.4f} (need < 0.5), "
             f"final_loss={final_loss:.4f}, steps={len(losses)}"
         )
-        assert min_ppl < 2.0, f"DecoderLM overfit failed: min_ppl={min_ppl:.4f} (need < 2.0)"
-        print(f"✓ DecoderLM loss < 0.5 achieved: min_loss={min_loss:.4f}, min_ppl={min_ppl:.4f}")
+        assert min_ppl < 2.0, f"LearningModel overfit failed: min_ppl={min_ppl:.4f} (need < 2.0)"
+        print(
+            f"✓ LearningModel loss < 0.5 achieved: min_loss={min_loss:.4f}, min_ppl={min_ppl:.4f}"
+        )

@@ -13,13 +13,13 @@ class InferenceConfig:
 
     __version__: ClassVar[int] = 1
 
-    device: Literal["auto", "cpu", "cuda"]
-    max_new_tokens: int
-    temperature: float
-    top_p: float
-    top_k: int
-    use_kv_cache: bool
-    kv_cache_dtype: Literal["fp8", "bf16"]
+    device: Literal["auto", "cpu", "cuda"] = "auto"
+    max_new_tokens: int = 64
+    temperature: float = 0.0  # Greedy by default
+    top_p: float = 0.0  # Disabled by default
+    top_k: int = 0  # Disabled by default
+    use_kv_cache: bool = True
+    kv_cache_dtype: Literal["fp8", "bf16"] = "bf16"
 
     def __post_init__(self) -> None:
         """Validate inference configuration."""
@@ -31,8 +31,8 @@ class InferenceConfig:
             raise ValueError("max_new_tokens must be positive")
         if not (0 <= self.temperature <= 2.0):
             raise ValueError("temperature must be in [0, 2.0]")
-        if not (0 < self.top_p <= 1.0):
-            raise ValueError("top_p must be in (0, 1]")
+        if not (0 <= self.top_p <= 1.0):
+            raise ValueError("top_p must be in [0, 1]")
         if self.top_k < 0:
             raise ValueError("top_k must be >= 0")
 
