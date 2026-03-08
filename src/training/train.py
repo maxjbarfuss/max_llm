@@ -526,7 +526,11 @@ def main() -> None:  # noqa: C901
     if args.distributed:
         assert distributed_info is not None, "distributed_info should be set when distributed=True"
         print_once("Wrapping model with DistributedDataParallel")
-        model = wrap_model_ddp(model, device_ids=[distributed_info["local_rank"]])  # type: ignore[assignment]
+        model = wrap_model_ddp(
+            model,
+            device_ids=[distributed_info["local_rank"]],
+            find_unused_parameters=(config.training.attention_backend == "sage"),
+        )  # type: ignore[assignment]
 
     # Apply gradient checkpointing if enabled (reduces activation memory ~4×)
     if config.training.selective_checkpointing:

@@ -22,6 +22,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from src.models.learning_model import BaseLearningModel
+from src.training.distributed import get_world_size
 
 
 def compute_perplexity(loss: float) -> float:
@@ -468,7 +469,10 @@ def train(  # noqa: C901
                     tb_writer.add_scalar("train/perplexity", perplexity, step + 1)
                     tb_writer.add_scalar("train/lr", current_lr, step + 1)
                     if log_tokens_per_sec and tokens_per_sec > 0:
-                        tb_writer.add_scalar("train/tokens_per_sec", tokens_per_sec, step + 1)
+                        # In DDP mode, report total system throughput (all ranks combined)
+                        world_size = get_world_size()
+                        total_tokens_per_sec = tokens_per_sec * world_size
+                        tb_writer.add_scalar("train/tokens_per_sec", total_tokens_per_sec, step + 1)
                     if log_gpu_memory and device.type == "cuda":
                         tb_writer.add_scalar("train/gpu_memory_mb", memory_mb, step + 1)
                     if val_loss is not None:
