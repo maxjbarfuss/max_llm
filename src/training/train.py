@@ -507,8 +507,9 @@ def main() -> None:  # noqa: C901
     # Move model to device
     model = model.to(device)
 
-    # Track loaded step for scheduler initialization
+    # Track loaded step/checkpoint for scheduler and optimizer resume.
     loaded_step = 0
+    resume_path: Path | None = None
 
     # Optional: initialize model from an existing checkpoint
     if config.training.resume_from_checkpoint:
@@ -579,6 +580,18 @@ def main() -> None:  # noqa: C901
             eps=config.training.epsilon,
             weight_decay=0.0,
         )
+
+    # Resume optimizer state after optimizer construction.
+    if resume_path is not None and loaded_step > 0:
+        _resume_ckpt = torch.load(resume_path, map_location="cpu")
+        optimizer_state = _resume_ckpt.get("optimizer_state")
+        if optimizer_state is not None:
+            optimizer.load_state_dict(optimizer_state)
+        # LambdaLR with last_epoch >= 0 requires initial_lr in every param group.
+        # Use loaded optimizer lr when resuming so extending max_steps does not
+        # cause an artificial LR jump relative to the checkpoint state.
+        for group in optimizer.param_groups:
+            group["initial_lr"] = group.get("lr", config.training.learning_rate)
 
     # Create learning rate scheduler
     # If resuming from checkpoint, initialize scheduler at the loaded step

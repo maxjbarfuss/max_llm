@@ -122,6 +122,14 @@
 
 ---
 
+## L015 — Log Files and Runtime Outputs Belong in `outputs/ephemeral/`, Not Project Root
+
+**Observed behavior**: Agent (or human during verification) created `.log` files, benchmark results, or other runtime outputs directly in the project root folder. These files clutter the workspace and are not gitignored by default at the root level.
+
+**Correct approach**: All runtime outputs — logs, benchmark results, debug traces, profiling data, or any other ephemeral file produced during execution — must be placed in `outputs/ephemeral/` (which is gitignored). Never write logs to the project root. If you need to create a log file during debugging or verification, place it in `outputs/ephemeral/` from the start. The project root should contain only permanent artifacts: source code, docs, configs, build system files, and the repository's canonical structure.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:
