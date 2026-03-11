@@ -38,6 +38,7 @@ class TransformerBlock(nn.Module):
         dropout: float = 0.0,
         ff_expansion_ratio: int = 4,
         attention_backend: str = "flash",
+        num_layers: int = 1,
     ) -> None:
         super().__init__()
         assert (
@@ -51,9 +52,11 @@ class TransformerBlock(nn.Module):
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
 
-        # Attention and feedforward
-        self.attention = CausalMultiHeadAttention(d_model, num_heads, dropout, attention_backend)
-        self.feedforward = FeedForward(d_model, ff_expansion_ratio, dropout)
+        # Attention and feedforward (num_layers for scaled residual init)
+        self.attention = CausalMultiHeadAttention(
+            d_model, num_heads, dropout, attention_backend, num_layers=num_layers
+        )
+        self.feedforward = FeedForward(d_model, ff_expansion_ratio, dropout, num_layers=num_layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Apply transformer block.

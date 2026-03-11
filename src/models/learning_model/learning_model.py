@@ -96,6 +96,7 @@ class LearningModel(BaseLearningModel):
                         dropout=dropout,
                         ff_expansion_ratio=ff_expansion_ratio,
                         attention_backend=attention_backend,
+                        num_layers=num_layers,
                     )
                 ]
             )
@@ -108,6 +109,7 @@ class LearningModel(BaseLearningModel):
                         dropout=dropout,
                         ff_expansion_ratio=ff_expansion_ratio,
                         attention_backend=attention_backend,
+                        num_layers=num_layers,
                     )
                     for _ in range(num_layers)
                 ]

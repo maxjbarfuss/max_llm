@@ -129,12 +129,11 @@ def train_step(
     optimizer: torch.optim.Optimizer,
     scaler: torch.amp.GradScaler | None = None,
     use_amp: bool = False,
-    gradient_clip_norm: float | None = None,
     accumulate_grad: bool = False,
     label_smoothing: float = 0.0,
     gradient_accumulation_steps: int = 1,
 ) -> float:
-    """Single forward + backward step with optional AMP and gradient clipping.
+    """Single forward + backward step with optional AMP.
 
     Args:
         model: The model to train.
@@ -143,7 +142,6 @@ def train_step(
         optimizer: Optimizer to step.
         scaler: GradScaler for mixed precision (required if use_amp=True).
         use_amp: Whether to use automatic mixed precision.
-        gradient_clip_norm: Max gradient norm for clipping (None = no clipping).
         accumulate_grad: If True, skip zero_grad (for gradient accumulation).
         label_smoothing: Label smoothing factor (0.0 = no smoothing).
         gradient_accumulation_steps: Number of micro-steps per optimizer step.
@@ -192,7 +190,7 @@ def optimizer_step(
     use_amp: bool = False,
     gradient_clip_norm: float | None = None,
     model: BaseLearningModel | None = None,
-) -> None:
+) -> float:
     """Perform optimizer step with optional gradient clipping and AMP unscaling.
 
     Args:
@@ -200,15 +198,21 @@ def optimizer_step(
         scaler: GradScaler for mixed precision (required if use_amp=True).
         use_amp: Whether to use automatic mixed precision.
         gradient_clip_norm: Max gradient norm for clipping (None = no clipping).
-        model: Model for gradient clipping (required if gradient_clip_norm is set).
+        model: Model for gradient clipping / norm logging.
+
+    Returns:
+        Gradient norm before clipping (0.0 if model is None).
     """
+    grad_norm = 0.0
+
     # Unscale gradients if using AMP
     if use_amp and scaler is not None:
         scaler.unscale_(optimizer)
 
-    # Gradient clipping
-    if gradient_clip_norm is not None and model is not None:
-        torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
+    # Compute grad norm (and optionally clip)
+    if model is not None:
+        clip = gradient_clip_norm if gradient_clip_norm is not None else float("inf")
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), clip).item()
 
     # Optimizer step
     if use_amp and scaler is not None:
@@ -216,6 +220,8 @@ def optimizer_step(
         scaler.update()
     else:
         optimizer.step()
+
+    return grad_norm
 
 
 def train(  # noqa: C901
@@ -322,6 +328,7 @@ def train(  # noqa: C901
             "loss",
             "perplexity",
             "lr",
+            "grad_norm",
             "tokens_per_sec",
             "gpu_memory_mb",
             "val_loss",
@@ -332,18 +339,27 @@ def train(  # noqa: C901
 
     step = 0
     micro_step = 0
+    epoch = 0
     accumulated_loss = 0.0
     step_start_time = time.time()
     tokens_in_step = 0
 
     while step < max_steps and not should_stop_early:
+        # Per-epoch setup: randomize TokenDataset sequence offsets so successive
+        # passes see different document boundary cuts, and advance DistributedSampler
+        # shuffle so each rank gets a different shard order each epoch.
+        if hasattr(getattr(train_loader, "dataset", None), "set_epoch"):
+            train_loader.dataset.set_epoch(epoch)  # type: ignore[attr-defined]
+        if hasattr(getattr(train_loader, "sampler", None), "set_epoch"):
+            train_loader.sampler.set_epoch(epoch)  # type: ignore[attr-defined]
+
         for batch in train_loader:
             if step >= max_steps or should_stop_early:
                 break
 
             x, y = batch
-            batch_tokens = x.numel()
-            tokens_in_step += batch_tokens
+            if log_tokens_per_sec:
+                tokens_in_step += x.numel()
 
             is_last_micro_step = (micro_step + 1) % gradient_accumulation_steps == 0
             accumulate_grad = not is_last_micro_step
@@ -369,7 +385,6 @@ def train(  # noqa: C901
                     optimizer=optimizer,
                     scaler=scaler,
                     use_amp=use_amp,
-                    gradient_clip_norm=gradient_clip_norm if not accumulate_grad else None,
                     accumulate_grad=accumulate_grad,
                     label_smoothing=label_smoothing,
                     gradient_accumulation_steps=gradient_accumulation_steps,
@@ -382,8 +397,8 @@ def train(  # noqa: C901
                 # Average loss over accumulated micro-batches
                 avg_loss = accumulated_loss / gradient_accumulation_steps
 
-                # Optimizer step with gradient clipping
-                optimizer_step(
+                # Optimizer step with gradient clipping (returns grad norm)
+                grad_norm = optimizer_step(
                     optimizer=optimizer,
                     scaler=scaler,
                     use_amp=use_amp,
@@ -452,6 +467,7 @@ def train(  # noqa: C901
                         "loss": f"{avg_loss:.6f}",
                         "perplexity": f"{perplexity:.4f}",
                         "lr": f"{current_lr:.6e}",
+                        "grad_norm": f"{grad_norm:.4f}",
                         "tokens_per_sec": f"{tokens_per_sec:.0f}" if log_tokens_per_sec else "",
                         "gpu_memory_mb": (
                             f"{memory_mb:.1f}" if (log_gpu_memory and device.type == "cuda") else ""
@@ -468,6 +484,7 @@ def train(  # noqa: C901
                     tb_writer.add_scalar("train/loss", avg_loss, step + 1)
                     tb_writer.add_scalar("train/perplexity", perplexity, step + 1)
                     tb_writer.add_scalar("train/lr", current_lr, step + 1)
+                    tb_writer.add_scalar("train/grad_norm", grad_norm, step + 1)
                     if log_tokens_per_sec and tokens_per_sec > 0:
                         # In DDP mode, report total system throughput (all ranks combined)
                         world_size = get_world_size()
@@ -512,6 +529,8 @@ def train(  # noqa: C901
                 tokens_in_step = 0
                 step_start_time = time.time()
                 step += 1
+
+        epoch += 1
 
     if csv_file is not None:
         csv_file.close()

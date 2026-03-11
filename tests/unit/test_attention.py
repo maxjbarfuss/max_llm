@@ -100,11 +100,9 @@ class TestCausalMultiHeadAttention:
         assert out.shape == (16, 8, 32)
 
     def test_projection_layer_exists(self) -> None:
-        """Should have Q, K, V projection layers."""
+        """Should have fused QKV projection layer."""
         mha = CausalMultiHeadAttention(d_model=64, num_heads=4, attention_backend="standard")
-        assert hasattr(mha, "q_proj")
-        assert hasattr(mha, "k_proj")
-        assert hasattr(mha, "v_proj")
+        assert hasattr(mha, "qkv_proj")
 
     def test_output_projection_exists(self) -> None:
         """Should have an output projection layer."""
@@ -141,9 +139,9 @@ class TestCausalMultiHeadAttention:
         # Forward pass to trigger any internal caching
         _ = mha(x)
 
-        # Manually compute Q, K
-        q = mha.q_proj(x)  # (B, T, d_model)
-        k = mha.k_proj(x)  # (B, T, d_model)
+        # Manually compute Q, K via fused projection
+        qkv = mha.qkv_proj(x)  # (B, T, 3*d_model)
+        q, k, _ = qkv.chunk(3, dim=-1)  # each (B, T, d_model)
 
         B, T, d_model = x.shape
         head_dim = d_model // mha.num_heads

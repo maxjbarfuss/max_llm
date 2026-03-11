@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 
@@ -64,6 +66,7 @@ class CausalMultiHeadAttention(nn.Module):
         num_heads: int,
         dropout: float = 0.0,
         attention_backend: str = "flash",
+        num_layers: int = 1,
     ) -> None:
         super().__init__()
         assert (
@@ -74,6 +77,7 @@ class CausalMultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = d_model // num_heads
         self.dropout_p = dropout
+        self.num_layers = num_layers
 
         # Validate and select attention backend
         valid_backends = {"flash", "sage", "xformers", "standard"}
@@ -84,10 +88,8 @@ class CausalMultiHeadAttention(nn.Module):
         # Try to use requested backend, fall back to standard if unavailable
         self.attention_backend = self._select_attention_backend(attention_backend)
 
-        # Q, K, V projections
-        self.q_proj = nn.Linear(d_model, d_model, bias=True)
-        self.k_proj = nn.Linear(d_model, d_model, bias=True)
-        self.v_proj = nn.Linear(d_model, d_model, bias=True)
+        # Fused QKV projection (no bias — modern practice for Q/K/V)
+        self.qkv_proj = nn.Linear(d_model, 3 * d_model, bias=False)
 
         # Output projection
         self.out_proj = nn.Linear(d_model, d_model, bias=True)
@@ -95,7 +97,7 @@ class CausalMultiHeadAttention(nn.Module):
         # Dropout (applied to attention weights or in Flash Attention)
         self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
 
-        # Initialize weights with Xavier uniform (PyTorch default for Linear)
+        # Initialize weights
         self._reset_parameters()
 
     def _select_attention_backend(self, requested: str) -> str:
@@ -144,18 +146,13 @@ class CausalMultiHeadAttention(nn.Module):
             return "standard"
 
     def _reset_parameters(self) -> None:
-        """Initialize weights using Xavier uniform initialization."""
-        nn.init.xavier_uniform_(self.q_proj.weight)
-        nn.init.xavier_uniform_(self.k_proj.weight)
-        nn.init.xavier_uniform_(self.v_proj.weight)
-        nn.init.xavier_uniform_(self.out_proj.weight)
+        """Initialize weights: Xavier for fused QKV, GPT-2 scaled residual for out_proj."""
+        nn.init.xavier_uniform_(self.qkv_proj.weight)
 
-        if self.q_proj.bias is not None:
-            nn.init.zeros_(self.q_proj.bias)
-        if self.k_proj.bias is not None:
-            nn.init.zeros_(self.k_proj.bias)
-        if self.v_proj.bias is not None:
-            nn.init.zeros_(self.v_proj.bias)
+        # GPT-2 scaled residual init: out_proj feeds directly into the residual stream.
+        # Scale down by 1/sqrt(2 * num_layers) to prevent variance growth with depth.
+        residual_std = 0.02 / math.sqrt(2 * self.num_layers)
+        nn.init.normal_(self.out_proj.weight, mean=0.0, std=residual_std)
         if self.out_proj.bias is not None:
             nn.init.zeros_(self.out_proj.bias)
 
@@ -173,10 +170,8 @@ class CausalMultiHeadAttention(nn.Module):
             d_model == self.d_model
         ), f"Input d_model ({d_model}) does not match module d_model ({self.d_model})"
 
-        # Project to Q, K, V: (B, T, d_model)
-        q = self.q_proj(x)
-        k = self.k_proj(x)
-        v = self.v_proj(x)
+        # Fused QKV projection: (B, T, 3*d_model) -> split into Q, K, V
+        q, k, v = self.qkv_proj(x).chunk(3, dim=-1)  # each (B, T, d_model)
 
         if self.attention_backend == "flash":
             # Flash Attention path: expects (B, T, num_heads, head_dim)

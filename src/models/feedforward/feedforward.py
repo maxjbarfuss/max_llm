@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 
@@ -24,9 +26,12 @@ class FeedForward(nn.Module):
         linear2: Second linear layer (4*d_model -> d_model).
     """
 
-    def __init__(self, d_model: int, expansion_ratio: int = 4, dropout: float = 0.0) -> None:
+    def __init__(
+        self, d_model: int, expansion_ratio: int = 4, dropout: float = 0.0, num_layers: int = 1
+    ) -> None:
         super().__init__()
         self.d_model = d_model
+        self.num_layers = num_layers
         hidden_dim = d_model * expansion_ratio
 
         self.linear1 = nn.Linear(d_model, hidden_dim, bias=True)
@@ -34,13 +39,17 @@ class FeedForward(nn.Module):
         self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
         self.linear2 = nn.Linear(hidden_dim, d_model, bias=True)
 
-        # Initialize weights with Xavier uniform (PyTorch default for Linear)
+        # Initialize weights
         self._reset_parameters()
 
     def _reset_parameters(self) -> None:
-        """Initialize weights using Xavier uniform initialization."""
+        """Initialize weights: Xavier for linear1, GPT-2 scaled residual for linear2."""
         nn.init.xavier_uniform_(self.linear1.weight)
-        nn.init.xavier_uniform_(self.linear2.weight)
+
+        # GPT-2 scaled residual init: linear2 feeds directly into the residual stream.
+        # Scale down by 1/sqrt(2 * num_layers) to prevent variance growth with depth.
+        residual_std = 0.02 / math.sqrt(2 * self.num_layers)
+        nn.init.normal_(self.linear2.weight, mean=0.0, std=residual_std)
 
         if self.linear1.bias is not None:
             nn.init.zeros_(self.linear1.bias)
