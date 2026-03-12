@@ -13,6 +13,7 @@ try:
 
     FLASH_ATTN_AVAILABLE = True
 except ImportError:
+    flash_attn_func = None  # type: ignore[assignment, unused-ignore]
     FLASH_ATTN_AVAILABLE = False
 
 # Try to import xformers attention
@@ -22,6 +23,8 @@ try:
 
     XFORMERS_AVAILABLE = True
 except ImportError:
+    memory_efficient_attention = None  # type: ignore[assignment, unused-ignore]
+    LowerTriangularMask = None  # type: ignore[assignment, unused-ignore]
     XFORMERS_AVAILABLE = False
 
 # Try to import Sage Attention
@@ -30,6 +33,7 @@ try:
 
     SAGE_ATTN_AVAILABLE = True
 except ImportError:
+    sage_attn_func = None  # type: ignore[assignment, unused-ignore]
     SAGE_ATTN_AVAILABLE = False
 
 
@@ -180,6 +184,7 @@ class CausalMultiHeadAttention(nn.Module):
             v = v.view(B, T, self.num_heads, self.head_dim)
 
             # Flash Attention handles causal masking internally
+            assert flash_attn_func is not None
             attn_output = flash_attn_func(
                 q,
                 k,
@@ -189,6 +194,7 @@ class CausalMultiHeadAttention(nn.Module):
                 causal=True,
             )
             # Output shape: (B, T, num_heads, head_dim)
+            assert attn_output is not None
             attn_output = attn_output.view(B, T, self.d_model)
 
         elif self.attention_backend == "sage":
@@ -199,6 +205,7 @@ class CausalMultiHeadAttention(nn.Module):
 
             # Sage Attention handles causal masking internally
             # tensor_layout="NHD": (B, T, num_heads, head_dim); sm_scale replaces softmax_scale
+            assert sage_attn_func is not None
             attn_output = sage_attn_func(
                 q,
                 k,
@@ -219,6 +226,7 @@ class CausalMultiHeadAttention(nn.Module):
 
             # Use xFormers' efficient LowerTriangularMask for causal masking
             # This avoids creating a large [B, num_heads, T, T] tensor
+            assert LowerTriangularMask is not None and memory_efficient_attention is not None
             attn_bias = LowerTriangularMask()
 
             attn_output = memory_efficient_attention(

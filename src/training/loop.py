@@ -110,7 +110,7 @@ def evaluate(
 
             # Forward pass with optional AMP
             if use_amp and device.type == "cuda":
-                with torch.amp.autocast(device_type="cuda"):
+                with torch.autocast(device_type="cuda"):
                     logits = model(x)
                     loss = compute_loss_with_smoothing(logits, y, label_smoothing)
             else:
@@ -133,7 +133,7 @@ def train_step(
     x: torch.Tensor,
     y: torch.Tensor,
     optimizer: torch.optim.Optimizer,
-    scaler: torch.amp.GradScaler | None = None,
+    scaler: torch.GradScaler | None = None,
     use_amp: bool = False,
     accumulate_grad: bool = False,
     label_smoothing: float = 0.0,
@@ -167,7 +167,7 @@ def train_step(
 
     # Forward pass with optional AMP
     if use_amp and device.type == "cuda":
-        with torch.amp.autocast(device_type="cuda"):
+        with torch.autocast(device_type="cuda"):
             logits = model(x)  # (B, T, V)
             loss = compute_loss_with_smoothing(logits, y, label_smoothing)
     else:
@@ -192,7 +192,7 @@ def train_step(
 
 def optimizer_step(
     optimizer: torch.optim.Optimizer,
-    scaler: torch.amp.GradScaler | None = None,
+    scaler: torch.GradScaler | None = None,
     use_amp: bool = False,
     gradient_clip_norm: float | None = None,
     model: BaseLearningModel | None = None,
@@ -303,9 +303,9 @@ def train(  # noqa: C901
     device = next(model.parameters()).device
 
     # Initialize GradScaler for AMP if needed
-    scaler: torch.amp.GradScaler | None = None
+    scaler: torch.GradScaler | None = None
     if use_amp and device.type == "cuda":
-        scaler = torch.amp.GradScaler("cuda")
+        scaler = torch.GradScaler("cuda")
     if use_amp and device.type != "cuda":
         print("Warning: AMP requested but CUDA not available. Falling back to FP32.")
         use_amp = False
