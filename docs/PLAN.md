@@ -16,7 +16,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, env notes |
 | **2** | ✅ Done | Skeleton & Reproducibility | M | Low (scope clarity) | TinyStories + WikiText-103 (1–10M tokens) | Tokenizer, data pipeline, training loop, checkpointing, seed control, overfit test |
-| **3** | 🔄 In Progress | Capable GPT-2-like model (~60M params, coherent output) | L | Medium (dataset rebuild needed) | 21.5B token mixed corpus (10% TinyStories / 60% FineWeb-Edu / 30% WikiText-103), Unigram 8K tokenizer | Architecture + optimization stack complete. Dataset rebuild required (prior run: no EOS, broken doc boundaries). Goal not yet met: coherent text generation at scale. [Phase 3 BPE Validation](PHASE_3_CLOSEOUT.md) |
+| **3** | 🔄 In Progress | Capable GPT-2-like model (~60M params, coherent output) | L | Medium | Mixed corpus: TinyStories (~10%), WikiText-103 (full), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K tokenizer | Architecture + optimization stack complete. Dataset rebuilt with EOS + NFKC filtering. Training active: ~4500 steps, val loss ~3.59, ppl ~36. Goal not yet met: coherent output gate. [Phase 3 BPE Validation](PHASE_3_CLOSEOUT.md) |
 | **4** | — | Llama Architecture + Scale-Up Training | XL | High (scale + stability) | OpenWebText/FineWeb 10–500M tokens with staged curriculum | Architecture A/B report, curriculum manifest, throughput benchmarks |
 | **5** | — | Post-Training | XL | High (forgetting + alignment) | SFT, grounding, preference data | LoRA adapters, grounding benchmark, reward-model card, safety evaluation |
 | **6** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + preference with curriculum | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
@@ -139,7 +139,7 @@ Canonical Phase 2 milestone config:
 
 ### Phase 3: Capable GPT-2-like Model
 
-**Goal**: Train a ~60M parameter decoder model (8L/768H/12H, Unigram 8K, 1024 ctx) on a clean 21.5B token mixed corpus to produce coherent text. Architecture + optimization stack are complete (BPE experiments validate all components). Remaining work: rebuild dataset with correct document boundaries and EOS tokens, then run.
+**Goal**: Train a ~60M–105M parameter decoder model (8–10L/1024H/16H, Unigram 8K, 2048 ctx) on a clean mixed corpus to produce coherent text. Architecture + optimization stack complete. Dataset rebuilt (TinyStories ~10%, WikiText-103 full, OpenWebText ~12%, FineWeb-Edu partial; EOS + NFKC). Training active at ~4500/12000 steps.
 
 **Dependencies**: Phase 2 reproducibility and checkpointing completed.
 **Artifacts**: Trained ~60M param checkpoint producing coherent output; tokenizer benchmark; training stability diagnostics; optimization benchmark.
@@ -182,22 +182,28 @@ Components:
 
 Training infrastructure:
 - ✅ DataConfig semantics tightened: `validation_split` standardized to ratio float in `[0, 1)`; loader now honors explicit `pin_memory` config override
-- ✅ Cross-entropy loss (next-token prediction)
+- ✅ Cross-entropy loss (next-token prediction); **chunked CE loss** (P3.9): iterates (B·T, V) in chunks of 4096 to save ~800 MB at large vocab + long context
 - ✅ Greedy generation (argmax sampling)
 - ✅ Temperature + top-k + top-p sampling (Phase 2 complete)
-- ✅ Learning rate scheduler (linear warmup → cosine decay)
-- ✅ Gradient clipping (global norm ≤ 1.0)
-- ✅ Weight decay on all params except bias and LayerNorm
+- ✅ Learning rate scheduler: cosine (warmup → cosine decay); **WSD** (Warmup-Stable-Decay) with sqrt/linear/lowered-linear decay shapes (P3)
+- ✅ Optimizer: AdamW with fused CUDA kernel (`fused=True`, β=(0.9, 0.95)) — replaces Adam; fused kernel saves optimizer step time (P3)
+- ✅ Gradient clipping (global norm ≤ 1.0); correct order: AMP unscale → clip → step (P3)
+- ✅ Gradient norm logging: `grad_norm` column in CSV and TensorBoard `train/grad_norm` (P3.8)
+- ✅ Weight decay on all params except bias/LayerNorm (ndim < 2 criterion) (P3)
 - ✅ Mixed precision: `torch.cuda.amp` autocast + GradScaler (fallback to fp32)
-- ✅ Gradient accumulation over M micro-batches
+- ✅ Gradient accumulation over M micro-batches; loss normalized by accum steps before backward (P3)
+- ✅ Random sequence offset augmentation: `TokenDataset.set_epoch(epoch)` randomizes start boundary each epoch (P3)
 - ✅ Basic logging: tokens/sec, GPU memory, eval every N steps
-- ✅ Loss curves to CSV: `{output_dir}/loss_curve.csv` (step, loss, perplexity, lr, tokens_per_sec, gpu_memory_mb)
+- ✅ Loss curves to CSV: `{output_dir}/loss_curve.csv` (step, loss, perplexity, lr, grad_norm, tokens_per_sec, gpu_memory_mb)
+- ✅ Resume hardening: restores optimizer state + sets `initial_lr` per param group for stable LR continuation (P3.7)
 
 Training optimizations (advanced from Phase 4 to accelerate experimentation):
 - ✅ Multi-backend attention support: Flash Attention 2, Sage Attention, xFormers, Standard PyTorch (automatic fallback; config-selectable via `attention_backend`)
+- ✅ Fused QKV projection: single `nn.Linear(d, 3d)` replaces separate Q/K/V; bias removed on QKV; `out_proj` retains bias; GPT-2 scaled residual init on `out_proj` + FFN `linear2` (P3.8)
 - ✅ DataLoader optimization: parallel workers (`num_workers`), prefetching (`prefetch_factor`), pinned memory, persistent workers; eliminates CPU data loading bottleneck
 - ✅ torch.compile support: kernel fusion for 30-40% speedup (compatible with xFormers/standard, incompatible with Flash/Sage)
-- ✅ Multi-GPU (DDP): tested with 2 GPUs, ~1.8x throughput (30-35% sync overhead) *(train_ddp.sh removed; use `torchrun` directly)*
+- ✅ Multi-GPU (DDP): tested with 2 GPUs, ~1.8x throughput (30-35% sync overhead) with DistributedSampler + `set_epoch` per epoch *(train_ddp.sh removed; use `torchrun` directly)*
+- ✅ FSDP support: model sharding wired alongside DDP (P3.9, advanced from P4)
 - ✅ Profiling utilities: model size logging, GPU memory tracking, throughput monitoring (`--profile` flag)
 - ✅ Optimization guide: [OPTIMIZATION.md](OPTIMIZATION.md) with backend selection matrix, config recommendations, troubleshooting
 
@@ -222,8 +228,8 @@ Evaluation and quality:
 - ✅ Re-tokenized TinyStories with BPE: 5M token artifact created; configs added to pipeline
 - ✅ Scaled WikiText BPE to 10–50M tokens: both artifacts prepared and validated
 - ✅ Data ramp validation: 10M WikiText BPE run successful (5000 steps, loss 10.89→7.22, ppl 1362); demonstrates stable convergence at larger scale; 419 unit tests passing
-- ☐ **[REMAINING]** Rebuild Unigram 8K dataset: proper document splitting, EOS token between docs (`eos_token_id=1`), retrain tokenizer with `add_eos=True`
-- ☐ **[REMAINING]** Train ~60M param Unigram run to convergence (config: `p3_unigram.toml`, 2 GPUs, 3000+ steps, 21.5B token corpus)
+- ✅ Rebuild Unigram 8K dataset: proper document splitting, EOS token between docs, NFKC normalization + unk filtering; corpus = TinyStories (~10%) + WikiText-103 (full) + OpenWebText (~12%) + FineWeb-Edu (partial); artifact `data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_{train,val}.npy`
+- 🔄 **[IN PROGRESS]** Train ~60M param Unigram run (config: `config/ephemeral/p3_final.toml`, 2 GPUs, 12000 steps); currently step ~4500/12000, val loss ~3.59, ppl ~36; stable phase, decay not yet started
 - ☐ **[REMAINING — GATE]** Coherent output: generated text shows real word sequences, sentence structure, narrative fragments — not degenerate repetition
 
 ---

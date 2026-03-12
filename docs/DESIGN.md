@@ -16,13 +16,13 @@
 |-------|------|--------------|----------------|
 | **1** | Foundation | Design, repo setup, config system, build tools, CI, test scaffolding | Setup; no training data |
 | **2** | Skeleton & Reproducibility | Config, seed control, char tokenizer, training loop, checkpointing, metrics | TinyStories + WikiText-103 (1–10M tokens); overfit test |
-| **3** | Capable GPT-2-like model (~60M params, coherent output) | Decoder architecture (8L/768H/12H, Unigram 8K vocab, 1024 ctx); full optimization stack (Flash Attn, BF16, DDP, torch.compile, early stopping, label smoothing); training run to coherent text generation | Mixed corpus 21.5B tokens: 10% TinyStories / 60% FineWeb-Edu / 30% WikiText-103; Unigram 8K tokenizer with EOS |
+| **3** | Capable GPT-2-like model (~60M params, coherent output) | Decoder architecture (8–10L/1024H/16H, Unigram 8K vocab, 2048 ctx); full optimization stack (Flash Attn, BF16, DDP, FSDP, WSD scheduler, AdamW fused, fused QKV, scaled residual init, chunked CE loss, early stopping, label smoothing); training run to coherent text generation | Mixed corpus: TinyStories (~10%), WikiText-103 (full ~100M tokens), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K tokenizer with EOS and NFKC/unk filtering |
 | **4** | Llama Architecture + Scale-Up Training | RMSNorm, RoPE, SwiGLU, GQA, FSDP for 300M+ params, chunked token caching, data filters, A/B comparison vs Phase 3; multi-phase curriculum pretraining | OpenWebText/FineWeb 10–500M tokens with staged ramp (10–50M, 50–100M, 100–500M curriculum stages) |
 | **5** | Post-Training | KV-cache, SFT, LoRA, grounding (math/logic/world-model/games), DPO or PPO/GRPO, continual learning | 1–5M SFT pairs, 50K–500K grounding (GSM8K, MATH, ARC), 10K–100K preference pairs (HH-RLHF, UltraFeedback) + 5–10% harmful, 5K–10K reward labels |
 | **6** | MoE + MLA | MLA (latent KV compression), sparse MoE, top-k gating, load-balance loss, continual expert specialization | Partitioned SFT + preference (1–5M pairs) with curriculum; expert utilization tracking |
 | **7** | Dual-Stream Reasoning | GRU Reasoning Stream + GRU Combiner (gated fusion); scheduled teacher forcing (100%→0%); STaR bootstrap; reasoning accuracy delta | 50K–500K (input, trace, answer) triples (GSM8K, MATH, ARC-Challenge, OpenOrca); STaR traces; 60% reasoned / 40% direct |
 
-**Status**: Phase 3 in progress — architecture + optimization stack complete; dataset rebuild in progress (EOS + doc boundaries); training run pending.
+**Status**: Phase 3 in progress — architecture + optimization stack complete; dataset rebuilt with EOS and NFKC filtering; training run active (~4500 steps, val loss ~3.59, ppl ~36).
 
 ---
 
@@ -51,20 +51,20 @@ graph TD
 title: Phase 3 – Minimal Transformer + Tokenizer Upgrade
 ---
 graph TD
-    A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
+    A[Text]:::io --> B[Unigram Tokenizer 8K]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
-        D[LayerNorm]:::p3 --> E[Multi-Head Attn]:::p3 --> F[+ Residual]:::p3 --> G[LayerNorm]:::p3 --> H[GELU FFN]:::p3 --> I[+ Residual]:::p3
+        D[LayerNorm]:::p3 --> E[Multi-Head Attn<br/>Fused QKV]:::p3 --> F[+ Residual]:::p3 --> G[LayerNorm]:::p3 --> H[GELU FFN]:::p3 --> I[+ Residual]:::p3
     end
     Block --> J[LM Head]:::p3 --> K[Logits]:::io
-    K -->|training| L[Cross-Entropy Loss]:::io
+    K -->|training| L[Chunked CE Loss]:::p3
     K -->|inference| M[Sampler<br/>temp/top-k/top-p]:::p3 --> N[Text]:::io
     classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
     classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
     classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
 ```
 
-- **Phase 3**: Text → **BPE** → Token Emb + Pos → [**LayerNorm** → **Multi-Head Attn** → **GELU FFN**] × N → **LM Head** → **Sampler** → Text
+- **Phase 3**: Text → **Unigram 8K** → Token Emb + Pos → [**LayerNorm** → **Multi-Head Attn (Fused QKV)** → **GELU FFN**] × N → **LM Head** → **Chunked CE Loss** / **Sampler** → Text
 
 ---
 
@@ -73,7 +73,7 @@ graph TD
 title: Phase 4 – Llama-Style Upgrades
 ---
 graph TD
-    A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
+    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
         D[RMSNorm]:::p4 --> E[GQA]:::p4 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[SwiGLU FFN]:::p4 --> I[+ Residual]:::p3
@@ -88,7 +88,7 @@ graph TD
     classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
 ```
 
-- **Phase 4**: Text → BPE → Token Emb + **RoPE** → [**RMSNorm** → **GQA** → **SwiGLU**] × N → LM Head → Sampler → Text
+- **Phase 4**: Text → Tokenizer → Token Emb + **RoPE** → [**RMSNorm** → **GQA** → **SwiGLU**] × N → LM Head → Sampler → Text
 
 ---
 
@@ -97,7 +97,7 @@ graph TD
 title: Phase 5 – Post-Training (Inference + Fine-tuning + Grounding + Alignment)
 ---
 graph TD
-    A[Text]:::io --> B[BPE Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
+    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
         D[RMSNorm]:::p4 --> E[GQA + KV-Cache]:::p4 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[SwiGLU FFN]:::p4 --> I[+ Residual]:::p3
@@ -124,7 +124,7 @@ graph TD
 title: Phase 6 – MoE + MLA
 ---
 graph TD
-    A[Text]:::io --> B[BPE/Unigram Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
+    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
         D[RMSNorm]:::p4 --> E[MLA]:::p6 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[MoE Sparse SwiGLU]:::p6 --> I[+ Residual]:::p3
@@ -152,7 +152,7 @@ graph TD
 title: Phase 7 – Dual-Stream Reasoning
 ---
 graph TD
-    A[Text]:::io --> B[BPE/Unigram Tokenizer]:::p3 --> C[Token Emb]:::p2
+    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2
     C --> TStream
     C --> RGRU[GRU Reasoning Stream]:::p7
 
@@ -182,11 +182,11 @@ graph TD
 
 ---
 
-**Diagram notes**: Bold = new in phase. Tokenizer: Char (P2) → BPE (P3+) → optional Unigram if better.
+**Diagram notes**: Bold = new in phase. Tokenizer: Char (P2) → Unigram 8K (P3); BPE benchmarked and superseded (Unigram reached lower loss faster at equal scale).
 
 | Component | Phase | Phases Used | Notes |
 |-----------|-------|-------------|-------|
-| Tokenizer | 2 | 2–7 | Char (P2), BPE (P3+), optional Unigram if benchmarked |
+| Tokenizer | 2 | 2–7 | Char (P2), Unigram 8K (P3+); BPE benchmarked but Unigram wins on convergence speed |
 | Embeddings | 2 | 2–7 | Token + positional (learned in P2–3, RoPE in P4+) |
 | Transformer block | 3 | 3–7 | Pre-norm, causal attention, residual FFN |
 | RoPE | 4 | 4–7 | Replaces learned positional |
@@ -208,7 +208,7 @@ graph TD
 
 - **Data**: Streaming; RAM LRU + SSD token cache
 - **Dataloader**: Parallel workers, prefetch, pinned memory, persistent workers
-- **Distributed**: DDP (P3+); FSDP for 300M+ params (P4+)
+- **Distributed**: DDP (P3+); FSDP (P3+, advanced from P4)
 - **Attention**: Multi-backend (Flash/Sage/xFormers/standard) with automatic fallback (P3+)
 - **Compilation**: torch.compile (P3+)
 - **Scale**: Microbatching + gradient accumulation
@@ -218,7 +218,8 @@ graph TD
 **Philosophy**: Pre-train on unrestricted data (P2–4); apply safety via post-training (P5).
 
 **By phase**:
-- **P2–3**: TinyStories, WikiText-103 (1–50M tokens)
+- **P2**: TinyStories, WikiText-103 (1–10M tokens)
+- **P3**: TinyStories (~10%), WikiText-103 (full ~100M), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K with EOS per doc, NFKC normalization
 - **P4**: OpenWebText/FineWeb (10–500M tokens); 75% neutral + 20% controversial + 5% harmful; curriculum stages at 10M/50M/100–500M
 - **P5**: 1–5M instruction pairs, 50K–500K grounding (GSM8K, MATH, ARC), 10K–100K preference pairs + 5–10% harmful
 - **P6**: Partitioned SFT + preference (1–5M) for expert specialization
@@ -257,12 +258,18 @@ flowchart LR
 
 Attention/MoE/embeddings always BF16. Rollback on divergence.
 
-**Optimizations**:
+**Optimizations** (P3 stack, validated on RTX 4090 dual-GPU):
 1. Multi-backend attention (Flash/Sage/xFormers) — 2–4× memory reduction (P3)
 2. torch.compile — ~20–30% throughput (P3)
-3. Gradient checkpointing (P4+)
-4. FP8 linear/FFN (P4+)
-5. Activation offloading (P4+)
+3. Fused QKV projection — single `nn.Linear(d, 3d)` with `.chunk(3)` split; removes 3→1 kernel launches (P3.8)
+4. Scaled residual init — `out_proj` + FFN `linear2` use `N(0, 0.02/√(2·L))` (GPT-2 style) to prevent variance growth with depth (P3.8)
+5. Chunked cross-entropy — iterates (B·T, V) in chunks of 4096; saves ~800 MB at B=24, T=2048, V=8192 (P3.9)
+6. FSDP — model sharding for larger configs; integrated alongside DDP (P3.9, advanced from P4)
+7. AdamW with fused CUDA kernel (`fused=True`, β=(0.9, 0.95)) — replaces vanilla Adam (P3)
+8. WSD (Warmup-Stable-Decay) scheduler — sqrt-decay shape; supports multi-phase continuation (P3)
+9. Gradient checkpointing (P4+)
+10. FP8 linear/FFN (P4+)
+11. Activation offloading (P4+)
 
 ---
 
@@ -304,7 +311,7 @@ New fields automatically get sensible test defaults; no test refactoring on conf
 ## See Also
 
 - [PLAN.md](PLAN.md) — Phase execution with exit criteria
-- [CONFIG.md](CONFIG.md) — Config system API reference
+- [config/README.md](../config/README.md) — Full field reference and config system API (versioning, checkpoints, test fixtures)
 - [.github/AGENTS.md](../.github/AGENTS.md) — Development standard (principles, discipline, workflow for all contributors)
 - [.github/SKILLS.md](../.github/SKILLS.md) — Detailed workflows (tool use, session bootstrap, commit procedure)
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — Contributor entry point

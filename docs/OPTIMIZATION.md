@@ -8,19 +8,25 @@
 [training]
 attention_backend = "flash"           # flash|sage|xformers|standard
 use_torch_compile = false            # incompatible with flash/sage
-batch_size = 8
-gradient_accumulation_steps = 2
+batch_size = 12
+gradient_accumulation_steps = 10     # effective batch = 12 × 10 = 120
+scheduler_type = "wsd"               # cosine|wsd
+wsd_stable_fraction = 0.55
+wsd_decay_fraction = 0.35
+wsd_decay_shape = "sqrt"             # linear|sqrt|lowered_linear
 precision_schedule = [[0, -1, "bf16"]]
+use_distributed = true               # enables DDP/FSDP via torchrun
+distributed_backend = "ddp"          # ddp|fsdp
 
 [data]
 num_workers = 4                      # 8 for dual-GPU
-prefetch_factor = 2
+prefetch_factor = 4
 pin_memory = true
 persistent_workers = false           # false for single-pass LLM training
 ```
 
 **Single-GPU**: `python -m src.training.train --config config/your_config.toml`
-**Multi-GPU**: `./scripts/train_ddp.sh config/your_config.toml 2`
+**Multi-GPU**: `torchrun --standalone --nnodes=1 --nproc_per_node=2 -m src.training.train --config config/your_config.toml --distributed`
 
 ## Attention Backends
 
@@ -58,23 +64,24 @@ python scripts/benchmark_attention.py \
   --backends flash,xformers,standard
 ```
 
-## Multi-GPU Training (DDP)
+## Multi-GPU Training (DDP / FSDP)
 
-**Status**: ✅ Implemented, tested with 2 GPUs
+**Status**: ✅ DDP implemented and production-tested with 2 GPUs; FSDP integrated (P3.9)
 
 Enables near-linear scaling via data parallelism. Expected: ~1.8x throughput (30-35% sync overhead).
+Use FSDP (`distributed_backend = "fsdp"`) for models too large to fit per-GPU with DDP.
 
 ### Usage
 
 ```bash
-# Using launcher script (short DDP test, 200 steps)
-./scripts/train_ddp.sh config/tests/p3/p3_ddp.toml 2
-
-# Full production run
-./scripts/train_ddp.sh config/milestones/p2_ascii127.toml 2
-
-# Or manually with torchrun
+# DDP (default, recommended for P3 model sizes)
 source .venv/bin/activate
+torchrun --standalone --nnodes=1 --nproc_per_node=2 \
+    -m src.training.train \
+    --config config/your_config.toml \
+    --distributed
+
+# FSDP (for larger models — set distributed_backend = "fsdp" in config)
 torchrun --standalone --nnodes=1 --nproc_per_node=2 \
     -m src.training.train \
     --config config/your_config.toml \
@@ -84,6 +91,10 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 \
 ### Config Adjustments
 
 ```toml
+[training]
+use_distributed = true
+distributed_backend = "ddp"  # or "fsdp"
+
 [data]
 num_workers = 8  # 4 per GPU (2 × 4)
 ```
@@ -150,6 +161,38 @@ use_torch_compile = true
 - Adds ~10-30s compilation overhead on first step
 - Requires PyTorch 2.x
 
+## Learning Rate Schedulers
+
+Two schedules are supported via `scheduler_type`.
+
+### Cosine (default)
+
+```toml
+[training]
+scheduler_type = "cosine"
+warmup_steps = 200
+min_lr_ratio = 0.1   # decay floor = 10% of peak lr
+```
+
+Linear warmup → cosine decay to `min_lr_ratio * lr`.
+
+### WSD (Warmup-Stable-Decay) — recommended for long runs
+
+```toml
+[training]
+scheduler_type = "wsd"
+warmup_steps = 500
+wsd_stable_fraction = 0.55   # 55% of steps at peak lr
+wsd_decay_fraction = 0.35    # 35% of steps decaying
+wsd_decay_shape = "sqrt"     # linear | sqrt | lowered_linear
+min_lr_ratio = 0.05
+```
+
+WSD holds LR at peak during the stable phase, then decays. This makes long runs more predictable and allows resuming from a checkpoint mid-decay by adjusting `wsd_stable_fraction`. Decay shapes:
+- `sqrt`: fast initial drop, slower tail (recommended)
+- `linear`: uniform decay
+- `lowered_linear`: stays high longer, drops sharply at end (`wsd_lowered_linear_alpha` controls shape)
+
 ## Gradient Accumulation
 
 **Purpose**: Simulate larger batch sizes without OOM.
@@ -177,35 +220,49 @@ precision_schedule = [[0, -1, "bf16"]]  # bf16 from step 0 to end
 
 ## Recommended Configurations
 
-### Phase 3: Single-GPU Training
+### Phase 3: Production Run (~100M params, 2-GPU DDP)
+```toml
+[training]
+attention_backend = "flash"
+use_torch_compile = false
+use_distributed = true
+distributed_backend = "ddp"
+batch_size = 12
+gradient_accumulation_steps = 10   # effective batch = 120
+scheduler_type = "wsd"
+wsd_stable_fraction = 0.55
+wsd_decay_fraction = 0.35
+wsd_decay_shape = "sqrt"
+learning_rate = 0.004
+betas = [0.9, 0.95]
+weight_decay = 0.05
+gradient_clip_norm = 0.5
+precision_schedule = [[0, -1, "bf16"]]
+
+[data]
+num_workers = 4
+prefetch_factor = 4
+pin_memory = true
+persistent_workers = false
+```
+**Expected**: ~58K tok/s per GPU × 2 GPUs = ~116K tok/s effective (RTX 4090 + RTX 3090Ti, 1024H, 8-10L, seq_len=2048)
+
+### Phase 3: Small-Model Debug Run (single GPU, fast iteration)
 ```toml
 [training]
 attention_backend = "flash"
 use_torch_compile = false
 batch_size = 8
 gradient_accumulation_steps = 2
+scheduler_type = "cosine"
 precision_schedule = [[0, -1, "bf16"]]
 
 [data]
 num_workers = 4
 prefetch_factor = 2
 pin_memory = true
-persistent_workers = false
 ```
-**Expected**: ~150-180k tokens/sec (RTX 4090, 256 dim, 4 layers)
-
-### Phase 4: Multi-GPU Training
-```toml
-[training]
-attention_backend = "flash"
-distributed_backend = "ddp"
-batch_size = 16
-gradient_accumulation_steps = 2
-
-[data]
-num_workers = 8  # 4 per GPU
-```
-**Expected**: ~270-300k tokens/sec total (2 GPUs)
+**Expected**: ~150-180K tok/s (RTX 4090, 256H, 4L, seq_len=256)
 
 ### Alternative: torch.compile Path
 ```toml
@@ -229,14 +286,19 @@ Output: Model size, parameter count, memory usage per layer
 
 ## Performance Hierarchy
 
-Measured on RTX 4090 (256 hidden, 4 layers, seq_len=256):
+**Small model** (RTX 4090, 256H, 4L, seq_len=256):
 
 1. **Flash Attention + Workers**: ~175k tokens/sec ⚡⚡⚡
 2. **xFormers + compile + Workers**: ~145k tokens/sec ⚡⚡
 3. **Standard + compile + Workers**: ~110k tokens/sec ⚡
 4. **Baseline (no optimizations)**: ~80k tokens/sec ⚫
 
-*Speedups increase with larger models and longer sequences*
+**Phase 3 production** (RTX 4090 + RTX 3090Ti, 1024H, 8-10L, seq_len=2048, BF16, Flash):
+
+- **Per GPU**: ~58K tokens/sec
+- **2-GPU DDP total**: ~116K tokens/sec effective (both GPUs combined)
+
+*Throughput decreases with larger models and longer sequences; FSDP reduces this further but enables larger-than-VRAM models.*
 
 ## Common Issues
 
@@ -262,9 +324,10 @@ Measured on RTX 4090 (256 hidden, 4 layers, seq_len=256):
 
 ## Future Optimizations
 
-- [ ] Memory-mapped datasets (100M+ tokens, Phase 4)
-- [ ] FSDP for model sharding (1B+ params, Phase 5)
-- [ ] KV-cache for inference
+- [ ] Gradient checkpointing — trade compute for memory at 300M+ params (Phase 4)
+- [ ] FP8 linear layers — RTX 4090 supports FP8 matmuls (Phase 4)
+- [ ] Activation offloading (Phase 4)
+- [ ] KV-cache for autoregressive inference (Phase 5)
 - [ ] Automatic backend selection based on hardware
 
 ## References

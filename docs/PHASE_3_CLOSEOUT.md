@@ -1,6 +1,6 @@
 # Phase 3: DecoderLM & Stability — Closeout Report
 
-**Date**: 2026-03-03 | **Status**: 🔄 BPE validation complete — Unigram training in progress
+**Date**: 2026-03-12 | **Status**: 🔄 BPE validation complete — Unigram training active (~4500/12000 steps, val loss ~3.59, ppl ~36)
 **Goal**: Validate DecoderLM on BPE tokenization, prove stability with full optimization stack; achieve coherent output via Unigram 8K tokenizer on clean mixed corpus
 
 ---
@@ -106,12 +106,22 @@ early stopping patience=5) confirms all safety infrastructure works.
 |---|---|---|
 | Flash Attention 2 | ✅ | Throughput 50K → 165K tok/s |
 | BF16 mixed precision | ✅ | Stable 15K+ steps, no NaN/Inf |
-| Gradient accumulation | ✅ | Eff. batch 16–32, smooth convergence |
+| Gradient accumulation | ✅ | Eff. batch up to 120 (12×10), smooth convergence |
 | Early stopping | ✅ | Patience counter working (triggers at plateau) |
 | Label smoothing ε=0.1 | ✅ | Smoother loss curves, no sudden jumps |
-| Selective weight decay | ✅ | Bias/LayerNorm excluded; works with DDP |
+| Selective weight decay | ✅ | Bias/LayerNorm excluded (ndim < 2); works with DDP |
 | torch.compile | ✅ | AOT compilation ready; ~126K tok/s measured |
 | Reproducibility | ✅ | Identical seeds → identical trajectories |
+| AdamW fused | ✅ | Fused CUDA kernel, β=(0.9, 0.95); replaces Adam (P3) |
+| WSD scheduler | ✅ | Warmup-Stable-Decay with sqrt/linear/lowered-linear shapes; supports run continuation (P3) |
+| Fused QKV | ✅ | Single `nn.Linear(d, 3d)` + `.chunk(3)`; no Q/K/V bias; fewer kernel launches (P3.8) |
+| Scaled residual init | ✅ | `out_proj` + FFN `linear2`: `N(0, 0.02/√(2L))` GPT-2 style; prevents variance explosion at depth (P3.8) |
+| Gradient norm logging | ✅ | `grad_norm` in CSV + TensorBoard; enables stability monitoring (P3.8) |
+| Chunked CE loss | ✅ | Iterates (B·T, V) in 4096-token chunks; saves ~800 MB at B=24, T=2048, V=8192 (P3.9) |
+| FSDP | ✅ | Model sharding integrated alongside DDP; advanced from P4 (P3.9) |
+| Random sequence offset | ✅ | `TokenDataset.set_epoch(epoch)` varies sequence boundaries each epoch (P3) |
+| NFKC/unk filtering | ✅ | Unicode normalization + unknown token filtering in data prep; cleaner corpus (P3.9) |
+| DistributedSampler | ✅ | Proper data sharding across DDP ranks; `set_epoch` called per epoch (P3) |
 
 **Root cause of Phase 2 BPE failure**: SimpleLM head is rank-128 into 50K-dim vocab — structurally
 impossible. DecoderLM's multi-head attention produces implicit high-rank representations.
@@ -126,35 +136,62 @@ impossible. DecoderLM's multi-head attention produces implicit high-rank represe
 
 ---
 
+## Unigram 8K Training Run (Phase 3 Final)
+
+**Config**: `config/ephemeral/p3_final.toml` | **Status**: 🔄 In progress
+
+```
+Architecture : 8–10L / 1024H / 16H / 2048 ctx — ~105M params
+Tokenizer    : Unigram 8K (SentencePiece) with EOS per doc, NFKC normalization
+Corpus       : TinyStories (~10%) + WikiText-103 (full) + OpenWebText (~12%) + FineWeb-Edu (partial)
+Optimizer    : AdamW fused, β=(0.9, 0.95), lr=4e-3, wd=0.05
+Scheduler    : WSD (warmup=500, stable=55%, decay=35%, sqrt shape)
+Grad clip    : 0.5 | Batch: 12 × 10 accum = eff. 120 | Precision: BF16
+Max steps    : 12,000 | Currently: ~4500 (stable phase, decay not yet started)
+
+Step 4500 : val_loss=3.59, ppl=36   — still in stable plateau, not yet decaying
+```
+
+**Tokenizer decision**: Unigram 8K supersedes BPE — reaches val loss 6.85 at step 80 vs BPE's 7.92 at same step.
+Unigram encodes denser semantic units for Wikipedia/news/story mix, leading to faster early convergence.
+
+---
+
 ## Artifacts
 
 | Artifact | Location |
 |---|---|
-| BoB checkpoint | `outputs/p3-bpe-convergence/checkpoint.pt` (193 MB) |
-| BoB loss curve | `outputs/p3-bpe-convergence/loss_curve.csv` (5K steps) |
+| BPE BoB checkpoint | `outputs/p3-bpe-convergence/checkpoint.pt` (193 MB) |
+| BPE BoB loss curve | `outputs/p3-bpe-convergence/loss_curve.csv` (5K steps) |
 | First-working checkpoint | `outputs/p3-decoder-lm-test/checkpoint.pt` (79 MB) |
-| Full-stack checkpoint | `outputs/ephemeral/p3-combined-convergence/checkpoint.pt` (193 MB) |
+| Unigram active run | `outputs/ephemeral/p3-unigram-h16-8layers-wsd-safe-20260311/` |
+| Unigram loss curve | `outputs/ephemeral/p3-unigram-h16-8layers-wsd-safe-20260311/loss_curve.csv` |
 
 ---
 
 ## Completion Checklist
 
-- [x] DecoderLM 4L/256H implemented and validated
+- [x] DecoderLM 4L/256H implemented and validated (BPE)
 - [x] BPE tokenization end-to-end (50K vocab)
 - [x] 49% improvement over SimpleLM proven (4.31 vs 8.50)
 - [x] Full optimization stack validated (Flash, BF16, grad accum, early stop, label smooth)
+- [x] Extended optimization stack: AdamW fused, WSD scheduler, fused QKV, scaled residual init, chunked CE loss, FSDP, NFKC filtering, grad norm logging
 - [x] torch.compile integration ready
 - [x] Reproducibility confirmed
-- [x] BoB checkpoint chat-tested: generates coherent English words and narrative fragments
+- [x] BPE BoB checkpoint chat-tested: generates coherent English words and narrative fragments
+- [x] Dataset rebuilt with EOS tokens + NFKC normalization (Unigram 8K)
+- [ ] Unigram training run to convergence (step ~4500/12000 — in progress)
+- [ ] **GATE**: Unigram checkpoint chat-tested: coherent output at 8K vocab scale
 
 ---
 
 ## Phase 3 → Phase 4
 
-**What Phase 3 proved**: DecoderLM scales to 50K+ vocab. Modern optimization stack
-(Flash/BF16/early-stop/label-smooth) is production-ready. Convergence dynamics smooth.
+**What Phase 3 proved**: DecoderLM scales to 50K+ vocab. Full optimization stack
+(Flash/BF16/AdamW-fused/WSD/fused-QKV/scaled-residual-init/chunked-CE/FSDP) is production-ready.
+Convergence dynamics smooth; dataset with proper EOS + NFKC filtering trains stably.
 
-**What Phase 4 adds**: Llama-style upgrades — RMSNorm, RoPE, SwiGLU FFN, GQA, FSDP
-for multi-GPU scaling to 300M+ parameters.
+**What Phase 4 adds**: Llama-style upgrades — RMSNorm, RoPE, SwiGLU FFN, GQA — and
+scale to 300M+ parameters with FSDP (infrastructure already validated in P3).
 
-**Phase 3 Status**: ✅ COMPLETE — `outputs/p3-bpe-convergence/` (loss 4.31, ppl 74.5)
+**Phase 3 Status**: 🔄 BPE validation complete (loss 4.31, ppl 74.5); Unigram run in progress (~4500/12000 steps, val ppl ~36) — awaiting coherent output gate
