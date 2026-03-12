@@ -32,9 +32,9 @@ Docs:
 
 - [.github/MEMORY.md](.github/MEMORY.md): current session working state
 - [.github/SESSION_LOG.md](.github/SESSION_LOG.md): append-only history of completed work
-- [docs/PLAN.md](docs/PLAN.md): phased roadmap and task checklists
-- [docs/PLAN.md](docs/PLAN.md): phased roadmap and exit criteria
+- [docs/PLAN.md](docs/PLAN.md): phased roadmap, task checklists, and exit criteria
 - [docs/DESIGN.md](docs/DESIGN.md): architecture, engineering constraints, data strategy
+- [config/README.md](config/README.md): TOML config field reference for all sections
 - [CONTRIBUTING.md](CONTRIBUTING.md): workflow and contributor authorization
 - [.github/AGENTS.md](.github/AGENTS.md): AI agent standard (Claude, o1, custom models)
 - [.github/SKILLS.md](.github/SKILLS.md): AI agent instructions
@@ -49,7 +49,7 @@ Docs:
 
 ```mermaid
 graph TD
-    In[Text Input]:::io --> Tok[BPE/Unigram Tokenizer]:::p3 --> Emb[Token Embedding]:::p2 --> N1
+    In[Text Input]:::io --> Tok[Unigram Tokenizer 8K]:::p3 --> Emb[Token Embedding]:::p2 --> N1
     Emb --> RGRU[GRU Reasoning Stream]:::p7
 
     subgraph Block[Transformer Stream × N]
@@ -101,7 +101,7 @@ graph TD
 |-------|-------|-----------|
 | ⬛ Black | — | I/O (Text Input, Logits, Loss, Generated Text) |
 | 🟢 Green | 2 | Token Embedding |
-| 🔵 Blue | 3 | Residual, LM Head, BPE/Unigram Tokenizer |
+| 🔵 Blue | 3 | Residual, LM Head, Unigram Tokenizer 8K |
 | 🟠 Orange | 4 | RMSNorm, RoPE, GQA (replaced by MLA in P6) |
 | 🟣 Purple | 5 | LoRA, Reward model, Sampler (top-p/temp/top-k), KV-cache, DPO/RLHF, SFT, grounding |
 | 🔴 Red | 6 | MLA (replaces GQA), MoE Sparse SwiGLU |
@@ -115,7 +115,7 @@ graph TD
 | Phase | Tokens | Data Sources & Purpose | Training Configuration |
 |-------|--------|------------------------|------------------------|
 | **2** | 1–10M | **TinyStories + WikiText-103** — reproducibility, overfit tests, seed hardening | Single-GPU, char tokenizer, learning loop validation |
-| **3** | 10–50M | **WikiText BPE (442K tokens, 4.54 chars/token)** — decoder architecture, training stability, optimizations (multi-backend attention, DataLoader, torch.compile, DDP) | Multi-backend attention (Flash/Sage/xFormers), DataLoader optimization, torch.compile, DDP (2 GPUs) |
+| **3** | 10–50M | **Custom corpus (NFKC-filtered, EOS-marked, Unigram 8K)** — decoder architecture, training stability, optimization stack (Flash Attn, WSD scheduler, fused QKV, chunked CE loss, AdamW fused, DDP + FSDP) | Flash/Sage/xFormers attention backends, WSD scheduler, fused QKV + scaled residual init, chunked CE loss, AdamW fused, DDP + FSDP (2 GPUs) |
 | **4** | 10–500M | **OpenWebText (10–50M) → FineWeb (50–100M) → Curriculum (100–500M)** — Llama architecture (RMSNorm, RoPE, SwiGLU, GQA); staged curriculum: 75% neutral, 20% controversial, 5% harmful | FSDP for 300M+ params, chunked token caching |
 | **5** | 1–5M SFT<br/>50K–500K grounding<br/>10K–100K preference | **SFT** (OpenAssistant, ShareGPT) + **grounding** (GSM8K, MATH, ARC) + **preference** (HH-RLHF, UltraFeedback) + 5–10% harmful | LoRA, KV-cache, DPO, reward modeling |
 | **6** | 1–5M pairs | **Partitioned SFT + preference** by topic/domain — expert specialization; curriculum for expert drift monitoring | MoE routing diagnostics, expert utilization tracking |
