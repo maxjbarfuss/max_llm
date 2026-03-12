@@ -7,6 +7,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
+import random
 from pathlib import Path
 from typing import cast
 
@@ -24,16 +26,18 @@ from src.models.learning_model import BaseLearningModel, LearningModel
 from src.tokenizer import create_configured_tokenizer
 from src.training.distributed import (
     cleanup_distributed,
+    collect_fsdp_state_dicts,
     create_distributed_sampler,
     init_distributed,
     is_main_process,
     print_once,
     wrap_model_ddp,
+    wrap_model_fsdp,
 )
 from src.training.loop import train
 from src.training.optimizer import configure_optimizer_param_groups
 from src.training.profiling import log_model_size
-from src.training.scheduler import get_cosine_schedule_with_warmup
+from src.training.scheduler import get_cosine_schedule_with_warmup, get_wsd_schedule
 from src.utils import seed_everything, seed_worker
 
 
@@ -46,27 +50,48 @@ class TokenDataset(Dataset):
     that are actually accessed are loaded from disk, keeping RAM usage minimal
     even for large files.
 
+    Call ``set_epoch(epoch)`` before each epoch to apply a random start offset,
+    so successive passes through the dataset see different sequence boundaries.
+    The offset is bounded by the tail tokens (``len(tokens) % (seq_len + 1)``)
+    so ``num_samples`` and ``__len__`` are stable across epochs.
+
     Args:
         tokens: Flat 1-D array of token IDs (np.ndarray or torch.Tensor).
         seq_len: Length of each input sequence.  Each sample covers
             ``seq_len + 1`` consecutive tokens: ``tokens[i:i+seq_len]`` as
             input and ``tokens[i+1:i+seq_len+1]`` as target.
+        seed: Base seed for deterministic per-epoch offset generation.
     """
 
-    def __init__(self, tokens: np.ndarray | torch.Tensor, seq_len: int) -> None:
+    def __init__(self, tokens: np.ndarray | torch.Tensor, seq_len: int, seed: int = 0) -> None:
         self.tokens = tokens
         self.seq_len = seq_len
+        self.seed = seed
+        self._offset = 0
         self.num_samples = len(tokens) // (seq_len + 1)
         if self.num_samples == 0:
             raise ValueError(
                 f"Not enough tokens ({len(tokens)}) for one sample (need {seq_len + 1})"
             )
+        # Tail tokens not consumed by the fixed windows; offset is capped here
+        # so the last sample never goes out of bounds without changing num_samples.
+        self._max_offset = len(tokens) - self.num_samples * (seq_len + 1)
+
+    def set_epoch(self, epoch: int) -> None:
+        """Randomize the sequence start offset for this epoch.
+
+        Uses ``seed + epoch`` as the RNG seed so all DDP ranks independently
+        compute the same offset without communication.  No-op when the token
+        array has no tail (i.e. length is an exact multiple of seq_len + 1).
+        """
+        if self._max_offset > 0:
+            self._offset = random.Random(self.seed + epoch).randint(0, self._max_offset)
 
     def __len__(self) -> int:
         return self.num_samples
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        start = idx * (self.seq_len + 1)
+        start = self._offset + idx * (self.seq_len + 1)
         end = start + self.seq_len + 1
         sample = self.tokens[start:end]
         if isinstance(sample, np.ndarray):
@@ -303,7 +328,7 @@ def create_simple_loaders(
             tok_start = start * (seq_len + 1)
             tok_end = end * (seq_len + 1) if end is not None else None
             sliced = tokens[tok_start:tok_end]
-            return TokenDataset(sliced, seq_len)
+            return TokenDataset(sliced, seq_len, seed=seed)
         # torch.Tensor legacy path: pre-build all pairs (backward-compatible with tests)
         if end is None:
             end = len(tokens) // (seq_len + 1)
@@ -366,7 +391,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--distributed",
         action="store_true",
-        help="Enable distributed training (DDP)",
+        help="Enable distributed training (DDP by default; set distributed_backend=fsdp in config for FSDP)",
     )
     parser.add_argument(
         "--profile",
@@ -380,17 +405,31 @@ def main() -> None:  # noqa: C901
     args = parse_args()
     config = ExperimentConfig.from_toml(args.config)
 
+    want_distributed = args.distributed or config.training.use_distributed
+
+    # If config requests distributed but we're not in a torchrun context, relaunch via torchrun.
+    if want_distributed and "RANK" not in os.environ:
+        import subprocess
+        import sys
+
+        nproc = torch.cuda.device_count()
+        if nproc < 1:
+            raise RuntimeError("use_distributed=true but no CUDA devices found")
+        cmd = [
+            "torchrun",
+            f"--nproc_per_node={nproc}",
+            "-m",
+            "src.training.train",
+        ] + sys.argv[1:]
+        sys.exit(subprocess.call(cmd))
+
     # Initialize distributed training if requested
     distributed_info = None
-    if args.distributed:
+    if want_distributed:
         distributed_info = init_distributed(backend="nccl")
         device = distributed_info["device"]
-        rank = distributed_info["rank"]
-        world_size = distributed_info["world_size"]
-        print_once(f"Distributed: Initialized with {world_size} processes")
+        print_once(f"Distributed: Initialized with {distributed_info['world_size']} processes")
     else:
-        rank = 0
-        world_size = 1
         device = resolve_device("auto")
 
     # Set all random seeds for reproducibility
@@ -399,8 +438,9 @@ def main() -> None:  # noqa: C901
     print_once(f"Experiment : {config.name}")
     print_once(f"Output dir : {config.output_dir}")
     print_once(f"Device      : {device}")
-    if args.distributed:
-        print_once(f"Distributed: Rank {rank}/{world_size}")
+    if want_distributed:
+        assert distributed_info is not None
+        print_once(f"Distributed: Rank {distributed_info['rank']}/{distributed_info['world_size']}")
     print_once(
         f"Model      : hidden_size={config.model.hidden_size}, "
         f"vocab_size={config.model.vocab_size}, "
@@ -524,14 +564,26 @@ def main() -> None:  # noqa: C901
     if args.profile and is_main_process():
         log_model_size(model)
 
-    if args.distributed:
+    want_fsdp = want_distributed and config.training.distributed_backend == "fsdp"
+
+    if want_distributed:
         assert distributed_info is not None, "distributed_info should be set when distributed=True"
-        print_once("Wrapping model with DistributedDataParallel")
-        model = wrap_model_ddp(
-            model,
-            device_ids=[distributed_info["local_rank"]],
-            find_unused_parameters=(config.training.attention_backend == "sage"),
-        )  # type: ignore[assignment]
+        if want_fsdp:
+            from src.models.transformer.transformer_block import TransformerBlock
+
+            print_once("Wrapping model with FSDP (sharding_strategy=full_shard)")
+            model = wrap_model_fsdp(
+                model,
+                transformer_layer_cls=TransformerBlock,
+                sharding_strategy="full_shard",
+            )  # type: ignore[assignment]
+        else:
+            print_once("Wrapping model with DistributedDataParallel")
+            model = wrap_model_ddp(
+                model,
+                device_ids=[distributed_info["local_rank"]],
+                find_unused_parameters=(config.training.attention_backend == "sage"),
+            )  # type: ignore[assignment]
 
     # Apply gradient checkpointing if enabled (reduces activation memory ~4×)
     if config.training.selective_checkpointing:
@@ -545,18 +597,30 @@ def main() -> None:  # noqa: C901
             )
 
     # Apply torch.compile if enabled (Phase 3+)
-    # Note: torch.compile should be applied AFTER DDP wrapping.
+    # Note: torch.compile should be applied AFTER DDP/FSDP wrapping.
     # IMPORTANT: max-autotune uses CUDA graphs which deadlock DDP on
-    # heterogeneous GPUs (RTX 4090 + RTX 3090 Ti).  Use mode="default" for DDP.
+    # heterogeneous GPUs (RTX 4090 + RTX 3090 Ti).  Use mode="default" for DDP/FSDP.
     use_torch_compile = config.training.use_torch_compile
     if use_torch_compile:
-        compile_mode = "default" if args.distributed else "max-autotune"
-        print_once(f"torch.compile: Enabled (mode={compile_mode})")
-        try:
-            model = torch.compile(model, mode=compile_mode)  # type: ignore[assignment]
-        except Exception as e:
-            print_once(f"Warning: torch.compile failed ({e}), continuing without compilation")
+        if want_fsdp:
+            print_once("Warning: torch.compile + FSDP has known issues; disabling compile")
             use_torch_compile = False
+        else:
+            compile_mode = "default" if want_distributed else "max-autotune"
+            print_once(f"torch.compile: Enabled (mode={compile_mode})")
+            try:
+                model = torch.compile(model, mode=compile_mode)  # type: ignore[assignment]
+            except Exception as e:
+                print_once(f"Warning: torch.compile failed ({e}), continuing without compilation")
+                use_torch_compile = False
+
+    # fused AdamW: single CUDA kernel for all parameter updates (PyTorch 2.0+, CUDA only).
+    # Disabled for FSDP: flat-param sharding is incompatible with the fused kernel.
+    use_fused_optimizer = device.type == "cuda" and not want_fsdp
+    if use_fused_optimizer:
+        print_once("Optimizer  : Using fused AdamW")
+    elif want_fsdp:
+        print_once("Optimizer  : Using standard AdamW (fused disabled for FSDP)")
 
     # Configure optimizer with parameter groups (selective weight decay)
     if config.training.weight_decay > 0:
@@ -570,15 +634,16 @@ def main() -> None:  # noqa: C901
             betas=config.training.betas,
             eps=config.training.epsilon,
         )
-        optimizer = torch.optim.Adam(param_groups)
+        optimizer = torch.optim.AdamW(param_groups, fused=use_fused_optimizer)
     else:
         # No weight decay: use simple parameter list
-        optimizer = torch.optim.Adam(
+        optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=config.training.learning_rate,
             betas=config.training.betas,
             eps=config.training.epsilon,
             weight_decay=0.0,
+            fused=use_fused_optimizer,
         )
 
     # Resume optimizer state after optimizer construction.
@@ -596,17 +661,38 @@ def main() -> None:  # noqa: C901
     # Create learning rate scheduler
     # If resuming from checkpoint, initialize scheduler at the loaded step
     # to avoid "scheduler.step() before optimizer.step()" warning
-    lr_scheduler = get_cosine_schedule_with_warmup(
-        optimizer=optimizer,
-        num_warmup_steps=config.training.warmup_steps,
-        num_training_steps=config.training.max_steps,
-        min_lr_ratio=0.1,
-        last_epoch=loaded_step - 1 if loaded_step > 0 else -1,
-    )
-    print_once(
-        f"Scheduler  : Warmup {config.training.warmup_steps} steps, "
-        f"cosine decay to 10% over {config.training.max_steps} steps"
-    )
+    if config.training.scheduler_type == "wsd":
+        lr_scheduler = get_wsd_schedule(
+            optimizer=optimizer,
+            num_warmup_steps=config.training.warmup_steps,
+            num_training_steps=config.training.max_steps,
+            stable_fraction=config.training.wsd_stable_fraction,
+            decay_fraction=config.training.wsd_decay_fraction,
+            decay_shape=config.training.wsd_decay_shape,
+            min_lr_ratio=config.training.min_lr_ratio,
+            lowered_linear_alpha=config.training.wsd_lowered_linear_alpha,
+            last_epoch=loaded_step - 1 if loaded_step > 0 else -1,
+        )
+        print_once(
+            f"Scheduler  : WSD warmup={config.training.warmup_steps}, "
+            f"stable={config.training.wsd_stable_fraction:.2f}, "
+            f"decay={config.training.wsd_decay_fraction:.2f}, "
+            f"shape={config.training.wsd_decay_shape}, "
+            f"min_lr_ratio={config.training.min_lr_ratio:.3f}"
+        )
+    else:
+        lr_scheduler = get_cosine_schedule_with_warmup(
+            optimizer=optimizer,
+            num_warmup_steps=config.training.warmup_steps,
+            num_training_steps=config.training.max_steps,
+            min_lr_ratio=config.training.min_lr_ratio,
+            last_epoch=loaded_step - 1 if loaded_step > 0 else -1,
+        )
+        print_once(
+            f"Scheduler  : Warmup {config.training.warmup_steps} steps, "
+            f"cosine decay to {config.training.min_lr_ratio * 100:.1f}% "
+            f"over {config.training.max_steps} steps"
+        )
     if loaded_step > 0:
         print_once(f"Scheduler  : Resuming from step {loaded_step}")
 
@@ -645,17 +731,40 @@ def main() -> None:  # noqa: C901
     _saved_checkpoints: list[Path] = []
 
     def _periodic_checkpoint(step: int) -> None:
-        if not is_main_process():
-            return
-        raw_model = getattr(model, "module", model) if args.distributed else model
-        model_to_save = cast(BaseLearningModel, raw_model)
-        ckpt_path = save_checkpoint(
-            model_to_save,
-            optimizer,
-            step=step,
-            output_dir=config.output_dir,
-            filename=f"checkpoint_step_{step}.pt",
-        )
+        # FSDP: state_dict() is a collective — all ranks must call it together
+        # before branching on is_main_process().
+        if want_fsdp:
+            model_sd, opt_sd = collect_fsdp_state_dicts(model, optimizer)
+            if not is_main_process():
+                return
+            out = Path(config.output_dir)
+            out.mkdir(parents=True, exist_ok=True)
+            ckpt_path = out / f"checkpoint_step_{step}.pt"
+            torch.save(
+                {
+                    "model_state": model_sd,
+                    "optimizer_state": opt_sd,
+                    "step": step,
+                    "config_versions": {
+                        "model": ModelConfig.__version__,
+                        "training": TrainingConfig.__version__,
+                        "data": DataConfig.__version__,
+                        "inference": InferenceConfig.__version__,
+                    },
+                },
+                ckpt_path,
+            )
+        else:
+            if not is_main_process():
+                return
+            raw_model = getattr(model, "module", model) if want_distributed else model
+            ckpt_path = save_checkpoint(
+                cast(BaseLearningModel, raw_model),
+                optimizer,
+                step=step,
+                output_dir=config.output_dir,
+                filename=f"checkpoint_step_{step}.pt",
+            )
         _saved_checkpoints.append(ckpt_path)
         # Rotate: remove oldest if we exceed keep_last_n
         keep_n = config.training.keep_last_n_checkpoints
@@ -711,10 +820,31 @@ def main() -> None:  # noqa: C901
         f"initial_ppl={perplexities[0]:.2f} final_ppl={perplexities[-1]:.2f}"
     )
 
-    # Save checkpoint only on main process
-    if is_main_process():
+    # Save final checkpoint (FSDP requires all ranks to participate in state_dict gather)
+    if want_fsdp:
+        model_sd, opt_sd = collect_fsdp_state_dicts(model, optimizer)
+        if is_main_process():
+            out = Path(config.output_dir)
+            out.mkdir(parents=True, exist_ok=True)
+            ckpt_path = out / "checkpoint.pt"
+            torch.save(
+                {
+                    "model_state": model_sd,
+                    "optimizer_state": opt_sd,
+                    "step": config.training.max_steps,
+                    "config_versions": {
+                        "model": ModelConfig.__version__,
+                        "training": TrainingConfig.__version__,
+                        "data": DataConfig.__version__,
+                        "inference": InferenceConfig.__version__,
+                    },
+                },
+                ckpt_path,
+            )
+            print(f"Checkpoint : {ckpt_path}")
+    elif is_main_process():
         # Unwrap model if DDP
-        raw_model = getattr(model, "module", model) if args.distributed else model
+        raw_model = getattr(model, "module", model) if want_distributed else model
         model_to_save = cast(BaseLearningModel, raw_model)
         ckpt_path = save_checkpoint(
             model_to_save,
@@ -725,7 +855,7 @@ def main() -> None:  # noqa: C901
         print(f"Checkpoint : {ckpt_path}")
 
     # Cleanup distributed training
-    if args.distributed:
+    if want_distributed:
         cleanup_distributed()
 
 

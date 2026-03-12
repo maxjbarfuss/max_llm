@@ -1,15 +1,18 @@
 """Distributed training utilities for multi-GPU support.
 
-Provides utilities for PyTorch Distributed Data Parallel (DDP) training:
+Provides utilities for PyTorch Distributed Data Parallel (DDP) and
+Fully Sharded Data Parallel (FSDP) training:
 - Initialization and cleanup
 - Rank/world_size management
 - Barrier synchronization
 - Distributed samplers
+- DDP and FSDP model wrapping
 """
 
 from __future__ import annotations
 
 import os
+from functools import partial
 from typing import Any
 
 import torch
@@ -230,3 +233,76 @@ def reduce_dict(data: dict[str, float]) -> dict[str, float]:
         reduced[key] = (tensor / world_size).item()
 
     return reduced
+
+
+def wrap_model_fsdp(
+    model: torch.nn.Module,
+    transformer_layer_cls: type,
+    sharding_strategy: str = "full_shard",
+) -> torch.nn.Module:
+    """Wrap a model with FullyShardedDataParallel.
+
+    Parameters are wrapped at the TransformerBlock granularity so FSDP can
+    overlap communication with the per-layer forward/backward passes.
+
+    Args:
+        model: Model to wrap (should already be on the correct device).
+        transformer_layer_cls: The class used for individual transformer blocks
+            (used by the auto-wrap policy to decide wrapping boundaries).
+        sharding_strategy: One of "full_shard" (ZeRO-3, maximum savings) or
+            "shard_grad_op" (ZeRO-2, grad+optimizer only, less communication).
+            Default: "full_shard".
+
+    Returns:
+        FSDP-wrapped model if distributed, original model otherwise.
+    """
+    if not is_distributed():
+        return model
+
+    from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+    from torch.distributed.fsdp import ShardingStrategy
+    from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+
+    _strategies = {
+        "full_shard": ShardingStrategy.FULL_SHARD,
+        "shard_grad_op": ShardingStrategy.SHARD_GRAD_OP,
+    }
+    strategy = _strategies.get(sharding_strategy, ShardingStrategy.FULL_SHARD)
+
+    wrap_policy = partial(
+        transformer_auto_wrap_policy,
+        transformer_layer_cls={transformer_layer_cls},
+    )
+    return FSDP(
+        model,
+        sharding_strategy=strategy,
+        auto_wrap_policy=wrap_policy,
+        device_id=torch.cuda.current_device(),
+    )
+
+
+def collect_fsdp_state_dicts(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Gather full (un-sharded) state dicts from an FSDP-wrapped model.
+
+    This is a **collective** — every rank must call it simultaneously.
+    With rank0_only=True, only rank 0 receives non-empty dicts; all other
+    ranks return ({}, {}).  Call barrier() before saving if needed.
+
+    Args:
+        model: FSDP-wrapped model.
+        optimizer: Optimizer whose state should also be gathered.
+
+    Returns:
+        (model_state_dict, optimizer_state_dict) — full on rank 0, empty elsewhere.
+    """
+    from torch.distributed.fsdp import FullStateDictConfig, StateDictType
+    from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+
+    cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+    with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, cfg):
+        model_sd = model.state_dict()
+        opt_sd = FSDP.full_optim_state_dict(model, optimizer, rank0_only=True)
+    return model_sd, opt_sd

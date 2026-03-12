@@ -11,15 +11,14 @@ def configure_optimizer_param_groups(
     model: nn.Module,
     weight_decay: float,
     learning_rate: float,
-    betas: tuple[float, float] = (0.9, 0.999),
+    betas: tuple[float, float] = (0.9, 0.95),
     eps: float = 1e-8,
 ) -> list[dict[str, Any]]:
     """Configure parameter groups with selective weight decay.
 
-    Excludes weight decay from:
-        - All bias parameters
-        - All LayerNorm parameters (weight and bias)
-        - All parameters with ndim < 2 (scalars, 1D vectors)
+    Excludes weight decay from all 1-D parameters (biases, LayerNorm weight/bias,
+    and any other scalar/vector parameters).  2-D+ parameters (weight matrices,
+    embeddings) receive weight decay.
 
     This is standard practice for transformer training to avoid
     degrading learned biases and normalization parameters.
@@ -32,30 +31,21 @@ def configure_optimizer_param_groups(
         eps: Adam epsilon.
 
     Returns:
-        List of parameter group dicts suitable for torch.optim.Adam.
+        List of parameter group dicts suitable for torch.optim.AdamW.
 
     Example:
         >>> param_groups = configure_optimizer_param_groups(model, weight_decay=0.1, lr=1e-3)
-        >>> optimizer = torch.optim.Adam(param_groups)
+        >>> optimizer = torch.optim.AdamW(param_groups)
     """
     # Separate parameters into decay and no-decay groups
     decay_params = []
     no_decay_params = []
 
-    for name, param in model.named_parameters():
+    for _, param in model.named_parameters():
         if not param.requires_grad:
             continue
 
-        # Exclude from weight decay if:
-        # - bias parameter (name ends with .bias)
-        # - LayerNorm parameter (name contains layernorm or layer_norm, case insensitive)
-        # - scalar or 1D parameter (ndim < 2)
-        if (
-            name.endswith(".bias")
-            or "layernorm" in name.lower()
-            or "layer_norm" in name.lower()
-            or param.ndim < 2
-        ):
+        if param.ndim < 2:
             no_decay_params.append(param)
         else:
             decay_params.append(param)

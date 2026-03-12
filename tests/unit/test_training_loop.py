@@ -5,7 +5,7 @@ import torch
 
 from src.config.model import ModelConfig
 from src.models.learning_model import LearningModel
-from src.training.loop import optimizer_step, train, train_step
+from src.training.loop import compute_loss_with_smoothing, optimizer_step, train, train_step
 from src.training.train import create_simple_loaders
 
 
@@ -483,3 +483,34 @@ class TestEnhancedTrainingFeatures:
         assert len(metrics["perplexities"]) == 10
         assert len(metrics["tokens_per_sec"]) == 10
         assert "gpu_memory_mb" not in metrics  # Not requested
+
+
+class TestChunkedLoss:
+    """compute_loss_with_smoothing chunked CE correctness."""
+
+    def test_chunked_matches_full_no_smoothing(self):
+        # Loss computed in one chunk vs many chunks should be numerically equal.
+        torch.manual_seed(0)
+        logits = torch.randn(4, 32, 256)
+        targets = torch.randint(0, 256, (4, 32))
+        full = compute_loss_with_smoothing(logits, targets, chunk_size=4 * 32)
+        chunked = compute_loss_with_smoothing(logits, targets, chunk_size=16)
+        assert torch.allclose(full, chunked, atol=1e-5)
+
+    def test_chunked_matches_full_with_smoothing(self):
+        torch.manual_seed(1)
+        logits = torch.randn(4, 32, 256)
+        targets = torch.randint(0, 256, (4, 32))
+        full = compute_loss_with_smoothing(logits, targets, label_smoothing=0.1, chunk_size=4 * 32)
+        chunked = compute_loss_with_smoothing(logits, targets, label_smoothing=0.1, chunk_size=16)
+        assert torch.allclose(full, chunked, atol=1e-5)
+
+    def test_gradients_flow_through_chunks(self):
+        torch.manual_seed(2)
+        logits = torch.randn(2, 16, 64, requires_grad=True)
+        targets = torch.randint(0, 64, (2, 16))
+        loss = compute_loss_with_smoothing(logits, targets, chunk_size=8)
+        loss.backward()
+        assert logits.grad is not None
+        assert logits.grad.shape == logits.shape
+        assert torch.isfinite(logits.grad).all()

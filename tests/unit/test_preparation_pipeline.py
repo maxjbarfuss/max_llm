@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 
@@ -86,3 +87,29 @@ def test_load_source_as_text_decodes_utf8_token_bytes(tmp_path):
     decoded = PreparationPipeline()._load_source_as_text(source)
 
     assert decoded == expected
+
+
+def test_pipeline_shards_large_split_output(tmp_path):
+    src_file = tmp_path / "docs.txt"
+    _write_text(src_file, "abcd\n\nefgh\n\nijkl\n\nmnop")
+
+    out_dir = tmp_path / "out"
+    cfg = DataPreparationConfig(
+        tokenizer=TokenizerConfig(type="char", vocab_size=256),
+        datasets=[DataSource(name="tiny", path=str(src_file), min_length=1)],
+        output=OutputConfig(
+            dir=str(out_dir),
+            prefix="sharded",
+            eos_token_id=-1,
+            shard_size_tokens=4,
+        ),
+    )
+
+    result = PreparationPipeline().run(cfg)
+
+    train_shards = result["output_shards"]["train"]
+    assert len(train_shards) >= 2
+    for shard_path in train_shards:
+        assert Path(shard_path).exists()
+        shard_tokens = np.load(shard_path)
+        assert len(shard_tokens) <= 4

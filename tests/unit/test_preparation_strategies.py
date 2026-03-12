@@ -15,6 +15,8 @@ from src.data.preparation.strategies import (
     SimpleSplitter,
     StratifiedSplitter,
     TextFormatReader,
+    _filter_unk,
+    _normalize_text,
     resolve_curriculum_strategy,
     resolve_format_reader,
     resolve_mixing_strategy,
@@ -25,6 +27,130 @@ from src.data.preparation.strategies import (
 class _DummyTokenizer:
     def encode(self, text: str) -> list[int]:
         return [ord(c) % 256 for c in text]
+
+
+class _UnkInjectingTokenizer:
+    """Tokenizer that emits unk (0) for every '?' character."""
+
+    def encode(self, text: str) -> list[int]:
+        return [0 if ch == "?" else ord(ch) % 256 for ch in text]
+
+
+# ---------------------------------------------------------------------------
+# _normalize_text
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_text_applies_nfkc():
+    # Fullwidth latin letters should collapse to ASCII equivalents.
+    assert _normalize_text("\uff41\uff42\uff43") == "abc"
+
+
+def test_normalize_text_strips_control_characters():
+    # Null byte and BEL are stripped; newline and tab are preserved.
+    assert _normalize_text("a\x00b\ac\n\t") == "abc\n\t"
+
+
+def test_normalize_text_preserves_normal_text():
+    text = "Hello, world!\nSecond line."
+    assert _normalize_text(text) == text
+
+
+def test_normalize_text_idempotent():
+    text = "café résumé naïve"
+    assert _normalize_text(_normalize_text(text)) == _normalize_text(text)
+
+
+# ---------------------------------------------------------------------------
+# _filter_unk
+# ---------------------------------------------------------------------------
+
+
+def test_filter_unk_removes_zero_below_threshold():
+    # 2/5 = 40 % > default 2 % → doc dropped
+    assert _filter_unk([1, 0, 2, 0, 3]) == []
+
+
+def test_filter_unk_strips_rare_unk():
+    # 1/100 = 1 % < 2 % threshold → strip in place
+    tokens = [1] * 99 + [0]
+    assert _filter_unk(tokens) == [1] * 99
+
+
+def test_filter_unk_no_op_when_disabled():
+    tokens = [0, 1, 0, 2]
+    assert _filter_unk(tokens, unk_id=-1) == tokens
+
+
+def test_filter_unk_empty_input():
+    assert _filter_unk([]) == []
+
+
+def test_filter_unk_all_unk():
+    # 100 % > 2 % threshold → doc dropped
+    assert _filter_unk([0, 0, 0]) == []
+
+
+def test_filter_unk_exact_threshold():
+    # Exactly at 2 % → still strip (> not >=)
+    tokens = [1] * 49 + [0]  # 1/50 = 2.0 %
+    assert _filter_unk(tokens) == [1] * 49
+
+
+def test_filter_unk_just_over_threshold():
+    # 2/99 ≈ 2.02 % > 2 % → doc dropped
+    tokens = [1] * 97 + [0, 0]
+    assert _filter_unk(tokens) == []
+
+
+def test_filter_unk_custom_max_rate():
+    # With max_unk_rate=0.5 a 40 % unk doc is stripped, not dropped
+    assert _filter_unk([1, 0, 2, 0, 3], max_unk_rate=0.5) == [1, 2, 3]
+
+
+# ---------------------------------------------------------------------------
+# Reader integration: unk tokens are stripped
+# ---------------------------------------------------------------------------
+
+
+def test_text_reader_strips_unk_tokens(tmp_path):
+    # "?" triggers unk (0) in _UnkInjectingTokenizer; those should be removed.
+    path = tmp_path / "sample.txt"
+    path.write_text("hel?o\n\nworld", encoding="utf-8")
+
+    reader = TextFormatReader()
+    source = DataSource(name="src", path=str(path), delimiter="\n\n", min_length=1)
+    docs = reader.read_documents(source, _UnkInjectingTokenizer())
+
+    for _, arr in docs:
+        assert 0 not in arr, "unk token (0) leaked into encoded array"
+
+
+def test_jsonl_reader_strips_unk_tokens(tmp_path):
+    path = tmp_path / "data.jsonl"
+    with path.open("w", encoding="utf-8") as f:
+        f.write(json.dumps({"text": "hel?o"}) + "\n")
+        f.write(json.dumps({"text": "world"}) + "\n")
+
+    source = DataSource(name="jsonsrc", path=str(path), format="jsonl", min_length=1)
+    reader = resolve_format_reader(source.format)
+    docs = reader.read_documents(source, _UnkInjectingTokenizer())
+
+    for _, arr in docs:
+        assert 0 not in arr
+
+
+def test_npy_reader_strips_unk_tokens(tmp_path):
+    path = tmp_path / "tokens.npy"
+    np.save(path, np.array([1, 0, 2, 0, 3], dtype=np.uint16))
+
+    source = DataSource(name="npy", path=str(path), format="npy", min_length=1, chunk_size=0)
+    docs = NpyReader().read_documents(source, _DummyTokenizer())
+
+    assert len(docs) == 1
+    _, arr = docs[0]
+    assert 0 not in arr
+    assert list(arr) == [1, 2, 3]
 
 
 def test_text_reader_streams_delimited_documents(tmp_path):

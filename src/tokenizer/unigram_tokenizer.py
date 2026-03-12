@@ -36,6 +36,8 @@ class UnigramTokenizer(Tokenizer):
         vocab_size: int = 8000,
         character_coverage: float = 1.0,
         add_eos: bool = True,
+        input_sentence_size: int = 2_000_000,
+        shuffle_input_sentence: bool = True,
     ) -> Path:
         """Train a SentencePiece unigram model and return the model file path.
 
@@ -46,6 +48,11 @@ class UnigramTokenizer(Tokenizer):
             character_coverage: Fraction of characters covered (1.0 = all).
             add_eos: If True (default), reserve token ID 1 as <EOS>. Set to
                 False only when loading an older model trained without EOS.
+            input_sentence_size: Maximum number of sentences sampled by
+                SentencePiece during unigram training. Prevents loading very
+                large corpora fully into memory under WSL.
+            shuffle_input_sentence: Shuffle sentence sampling before limiting
+                to input_sentence_size.
         """
         input_file = Path(input_path)
         if not input_file.exists():
@@ -60,7 +67,10 @@ class UnigramTokenizer(Tokenizer):
             model_type="unigram",
             vocab_size=vocab_size,
             character_coverage=character_coverage,
+            train_extremely_large_corpus=True,
             hard_vocab_limit=False,
+            input_sentence_size=input_sentence_size,
+            shuffle_input_sentence=shuffle_input_sentence,
             bos_id=-1,
             eos_id=UnigramTokenizer.EOS_TOKEN_ID if add_eos else -1,
             pad_id=-1,

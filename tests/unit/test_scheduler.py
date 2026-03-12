@@ -4,7 +4,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.training.scheduler import get_cosine_schedule_with_warmup
+from src.training.scheduler import get_cosine_schedule_with_warmup, get_wsd_schedule
 
 
 class DummyModel(nn.Module):
@@ -208,3 +208,53 @@ def test_scheduler_with_multiple_param_groups() -> None:
         lr_group_0 = optimizer.param_groups[0]["lr"]
         lr_group_1 = optimizer.param_groups[1]["lr"]
         assert lr_group_0 == pytest.approx(lr_group_1, rel=1e-5)
+
+
+def test_wsd_phases_behave_as_expected(optimizer: torch.optim.Optimizer) -> None:
+    """WSD should warm up, stay flat, then decay."""
+    base_lr = 1e-3
+    scheduler = get_wsd_schedule(
+        optimizer=optimizer,
+        num_warmup_steps=10,
+        num_training_steps=100,
+        stable_fraction=0.7,
+        decay_fraction=0.2,
+        decay_shape="sqrt",
+        min_lr_ratio=0.1,
+    )
+
+    # Warmup endpoint
+    for _ in range(10):
+        scheduler.step()
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(base_lr, rel=1e-5)
+
+    # Stable plateau: steps 10..79
+    for _ in range(69):
+        scheduler.step()
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(base_lr, rel=1e-5)
+
+    # Enter decay and reach end floor
+    for _ in range(21):
+        scheduler.step()
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(base_lr * 0.1, rel=1e-5)
+
+
+@pytest.mark.parametrize("shape", ["linear", "sqrt", "lowered_linear"])
+def test_wsd_decay_shapes_reach_floor(optimizer: torch.optim.Optimizer, shape: str) -> None:
+    """All WSD decay kernels should end at min_lr_ratio."""
+    base_lr = 1e-3
+    scheduler = get_wsd_schedule(
+        optimizer=optimizer,
+        num_warmup_steps=5,
+        num_training_steps=50,
+        stable_fraction=0.6,
+        decay_fraction=0.3,
+        decay_shape=shape,
+        min_lr_ratio=0.2,
+        lowered_linear_alpha=0.7,
+    )
+
+    for _ in range(60):
+        scheduler.step()
+
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(base_lr * 0.2, rel=1e-5)

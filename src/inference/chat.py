@@ -99,6 +99,7 @@ def chat_mode(
     top_p = config.inference.top_p
     top_k = config.inference.top_k
     max_new_tokens = max_tokens or config.inference.max_new_tokens
+    max_seq_len = config.model.max_seq_length
 
     print("\n🤖 Chat Mode Ready")
     print(
@@ -138,6 +139,9 @@ def chat_mode(
             # Generate
             try:
                 tokens = list(prompt_tokens)
+                if len(tokens) > max_seq_len:
+                    # Keep the most recent context window to match training behavior.
+                    tokens = tokens[-max_seq_len:]
 
                 # Use autocast so flash/xformers backends receive the expected dtype
                 # (fp16/bf16) even without an explicit AMP training loop.
@@ -148,7 +152,9 @@ def chat_mode(
                 )
                 with torch.no_grad(), autocast_ctx:
                     for _ in range(max_new_tokens):
-                        input_ids = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(
+                        # Decode with a sliding context window so we never exceed max_seq_len.
+                        window = tokens[-max_seq_len:]
+                        input_ids = torch.tensor(window, dtype=torch.long, device=device).unsqueeze(
                             0
                         )
                         logits = model(input_ids)[0, -1]

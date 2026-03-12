@@ -203,6 +203,16 @@ class TestTrainingConfig:
         with pytest.raises(ValueError, match="Invalid precision"):
             make_training_config(precision_schedule=invalid_schedule)
 
+    def test_wsd_fraction_validation(self):
+        """WSD stable + decay fractions must not exceed 1."""
+        with pytest.raises(ValueError, match=r"wsd_stable_fraction \+ wsd_decay_fraction"):
+            make_training_config(wsd_stable_fraction=0.8, wsd_decay_fraction=0.3)
+
+    def test_wsd_alpha_validation(self):
+        """Lowered-linear alpha must be in (0, 1]."""
+        with pytest.raises(ValueError, match="wsd_lowered_linear_alpha"):
+            make_training_config(wsd_lowered_linear_alpha=0.0)
+
 
 class TestInferenceConfig:
     """Tests for InferenceConfig validation."""

@@ -99,6 +99,7 @@ class OutputConfig:
     save_stats: bool = True
     save_manifest: bool = True
     eos_token_id: int = -1
+    shard_size_tokens: int = 0
 
 
 @dataclass
@@ -123,6 +124,7 @@ class DataPreparationConfig:
             assert ds.weight >= 0, f"Negative weight: {ds.name}"
 
         assert sum(ds.weight for ds in self.datasets) > 0, "All weights zero"
+        assert self.output.shard_size_tokens >= 0, "shard_size_tokens must be >= 0"
 
         if self.mixing.upsample_to_max and self.mixing.downsample_to_min:
             raise ValueError("Cannot upsample and downsample")

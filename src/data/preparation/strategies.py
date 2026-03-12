@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Protocol, TypeVar
 
@@ -40,7 +42,55 @@ def _shuffle_with_rng(items: list[T], rng: np.random.RandomState) -> None:
     items[:] = shuffled
 
 
+def _normalize_text(text: str) -> str:
+    """NFKC-normalize and strip non-printable control characters.
+
+    NFKC collapses compatibility variants (fullwidth, ligatures, etc.) into
+    their canonical forms.  The category-Cc filter removes ASCII and Latin-1
+    control bytes that survive byte-level decoding but are meaningless to a
+    language model, while preserving the three whitespace controls (\n \r \t)
+    that carry real document structure.
+    """
+    text = unicodedata.normalize("NFKC", text)
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cc" or ch in "\n\r\t")
+
+
+def _filter_unk(
+    tokens: list[int],
+    unk_id: int = 0,
+    max_unk_rate: float = 0.02,
+) -> list[int]:
+    """Remove unknown-token IDs from an encoded sequence, or discard it entirely.
+
+    Two-stage strategy:
+    - If the fraction of unk tokens exceeds *max_unk_rate*, the document is too
+      noisy to produce useful training signal and an empty list is returned
+      (callers treat empty as "skip this document").
+    - Otherwise the unk tokens are stripped in place.  This handles the common
+      case of a small-vocab tokenizer that maps rare proper-noun initials to unk
+      (e.g. standalone "G", "U", "Z" with a 1 024-token SentencePiece model):
+      the word is slightly mangled but the document remains coherent, and the
+      model is never trained to generate unk.
+
+    Pass unk_id=-1 to disable all filtering.
+    """
+    if unk_id < 0 or not tokens:
+        return tokens
+    n_unk = sum(1 for t in tokens if t == unk_id)
+    if n_unk == 0:
+        return tokens
+    if n_unk / len(tokens) > max_unk_rate:
+        return []
+    return [t for t in tokens if t != unk_id]
+
+
 class FormatReader(ABC):
+    def iter_documents(
+        self, source: DataSource, tokenizer: TokenizerLike
+    ) -> Iterator[tuple[str, np.ndarray]]:
+        """Yield documents one at a time (override for memory-efficient streaming)."""
+        yield from self.read_documents(source, tokenizer)
+
     @abstractmethod
     def read_documents(
         self, source: DataSource, tokenizer: TokenizerLike
@@ -64,18 +114,17 @@ class TextFormatReader(FormatReader):
         if buffer.strip():
             yield buffer.strip()
 
-    def read_documents(
+    def iter_documents(
         self, source: DataSource, tokenizer: TokenizerLike
-    ) -> list[tuple[str, np.ndarray]]:
+    ) -> Iterator[tuple[str, np.ndarray]]:
         path = Path(source.path)
         files = sorted(path.glob("*.txt")) if path.is_dir() else [path]
-
-        documents: list[tuple[str, np.ndarray]] = []
         for file_path in files:
             for doc in self._iter_text_docs(file_path, source.delimiter):
+                doc = _normalize_text(doc)
                 if len(doc) < source.min_length:
                     continue
-                tokens = tokenizer.encode(doc)
+                tokens = _filter_unk(tokenizer.encode(doc))
                 if not tokens:
                     continue
                 if source.max_length and len(tokens) > source.max_length:
@@ -83,54 +132,61 @@ class TextFormatReader(FormatReader):
                 encoded = _token_array(tokens)
                 if len(encoded) < source.min_length:
                     continue
-                documents.append((source.name, encoded))
-        return documents
+                yield (source.name, encoded)
 
-
-class UTF8TokensReader(FormatReader):
     def read_documents(
         self, source: DataSource, tokenizer: TokenizerLike
     ) -> list[tuple[str, np.ndarray]]:
+        return list(self.iter_documents(source, tokenizer))
+
+
+class UTF8TokensReader(FormatReader):
+    def iter_documents(
+        self, source: DataSource, tokenizer: TokenizerLike
+    ) -> Iterator[tuple[str, np.ndarray]]:
         path = Path(source.path)
         utf8_tokens = np.load(path, mmap_mode="r")
         total = len(utf8_tokens)
         stream_chunk = 10_000_000
         doc_chunk = source.chunk_size or 512
-
-        documents: list[tuple[str, np.ndarray]] = []
         for start in range(0, total, stream_chunk):
             raw = utf8_tokens[start : start + stream_chunk]
-            text = raw.astype(np.uint8).tobytes().decode("utf-8", errors="ignore")
-            tokens = tokenizer.encode(text)
+            text = _normalize_text(raw.astype(np.uint8).tobytes().decode("utf-8", errors="ignore"))
+            tokens = _filter_unk(tokenizer.encode(text))
             for i in range(0, len(tokens), doc_chunk):
                 chunk = tokens[i : i + doc_chunk]
                 if len(chunk) >= source.min_length:
-                    documents.append((source.name, _token_array(chunk)))
+                    yield (source.name, _token_array(chunk))
 
-        return documents
-
-
-class JsonlReader(FormatReader):
     def read_documents(
         self, source: DataSource, tokenizer: TokenizerLike
     ) -> list[tuple[str, np.ndarray]]:
-        path = Path(source.path)
-        documents: list[tuple[str, np.ndarray]] = []
+        return list(self.iter_documents(source, tokenizer))
 
+
+class JsonlReader(FormatReader):
+    def iter_documents(
+        self, source: DataSource, tokenizer: TokenizerLike
+    ) -> Iterator[tuple[str, np.ndarray]]:
+        path = Path(source.path)
         with path.open(encoding="utf-8") as handle:
             for line in handle:
                 obj = json.loads(line)
                 text = obj.get(source.text_field, "")
                 if not text:
                     continue
-                tokens = tokenizer.encode(text)
+                text = _normalize_text(text)
+                tokens = _filter_unk(tokenizer.encode(text))
                 if source.max_length:
                     tokens = tokens[: source.max_length]
                 encoded = _token_array(tokens)
                 if len(encoded) >= source.min_length:
-                    documents.append((source.name, encoded))
+                    yield (source.name, encoded)
 
-        return documents
+    def read_documents(
+        self, source: DataSource, tokenizer: TokenizerLike
+    ) -> list[tuple[str, np.ndarray]]:
+        return list(self.iter_documents(source, tokenizer))
 
 
 class NpyReader(FormatReader):
@@ -143,24 +199,26 @@ class NpyReader(FormatReader):
         dtype = np.uint16 if int(tokens.max()) < 65536 else np.uint32
         return tokens.astype(dtype, copy=False)
 
+    def iter_documents(
+        self, source: DataSource, tokenizer: TokenizerLike
+    ) -> Iterator[tuple[str, np.ndarray]]:
+        del tokenizer
+        path = Path(source.path)
+        tokens = np.load(path)
+        if source.chunk_size:
+            for i in range(0, len(tokens), source.chunk_size):
+                chunk = self._coerce_token_dtype(tokens[i : i + source.chunk_size])
+                chunk = chunk[chunk != 0]  # filter <unk>
+                if len(chunk) >= source.min_length:
+                    yield (source.name, chunk)
+        else:
+            coerced = self._coerce_token_dtype(tokens)
+            yield (source.name, coerced[coerced != 0])
+
     def read_documents(
         self, source: DataSource, tokenizer: TokenizerLike
     ) -> list[tuple[str, np.ndarray]]:
-        del tokenizer
-
-        path = Path(source.path)
-        tokens = np.load(path)
-        documents: list[tuple[str, np.ndarray]] = []
-
-        if source.chunk_size:
-            for i in range(0, len(tokens), source.chunk_size):
-                chunk = tokens[i : i + source.chunk_size]
-                if len(chunk) >= source.min_length:
-                    documents.append((source.name, self._coerce_token_dtype(chunk)))
-        else:
-            documents.append((source.name, self._coerce_token_dtype(tokens)))
-
-        return documents
+        return list(self.iter_documents(source, tokenizer))
 
 
 _FORMAT_READERS: dict[str, FormatReader] = {
@@ -181,15 +239,15 @@ class MixingStrategy(ABC):
     @abstractmethod
     def mix(
         self,
-        all_documents: dict[str, list[np.ndarray]],
+        all_documents: dict[str, Sequence[np.ndarray]],
         config: MixingConfig,
     ) -> list[tuple[str, np.ndarray]]:
         raise NotImplementedError
 
 
 def _apply_sampling(
-    docs: dict[str, list[np.ndarray]], config: MixingConfig
-) -> dict[str, list[np.ndarray]]:
+    docs: dict[str, Sequence[np.ndarray]], config: MixingConfig
+) -> dict[str, Sequence[np.ndarray]]:
     if not (config.upsample_to_max or config.downsample_to_min or config.target_total_docs):
         return docs
 
@@ -202,7 +260,7 @@ def _apply_sampling(
     else:
         target = min(len(items) for items in docs.values())
 
-    sampled: dict[str, list[np.ndarray]] = {}
+    sampled: dict[str, Sequence[np.ndarray]] = {}
     for name, items in docs.items():
         if len(items) < target:
             indices = rng.choice(len(items), size=target, replace=True)
@@ -211,7 +269,7 @@ def _apply_sampling(
             indices = rng.choice(len(items), size=target, replace=False)
             sampled[name] = [items[i] for i in indices]
         else:
-            sampled[name] = items
+            sampled[name] = list(items)
 
     return sampled
 
@@ -251,7 +309,7 @@ def _apply_ratio_resampling(
             indices = rng.choice(len(items), size=target, replace=False)
             resampled[name] = [items[i] for i in indices]
         else:
-            resampled[name] = items
+            resampled[name] = list(items)
 
     return resampled
 
@@ -259,7 +317,7 @@ def _apply_ratio_resampling(
 class ConcatenateMixer(MixingStrategy):
     def mix(
         self,
-        all_documents: dict[str, list[np.ndarray]],
+        all_documents: dict[str, Sequence[np.ndarray]],
         config: MixingConfig,
     ) -> list[tuple[str, np.ndarray]]:
         docs = _apply_sampling(all_documents, config)
@@ -272,7 +330,7 @@ class ConcatenateMixer(MixingStrategy):
 class InterleaveMixer(MixingStrategy):
     def mix(
         self,
-        all_documents: dict[str, list[np.ndarray]],
+        all_documents: dict[str, Sequence[np.ndarray]],
         config: MixingConfig,
     ) -> list[tuple[str, np.ndarray]]:
         docs = _apply_sampling(all_documents, config)

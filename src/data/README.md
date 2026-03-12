@@ -20,11 +20,78 @@ src/data/
     └── tinystories/   TinyStories (Phase 2 placeholder)
 ```
 
-For end-to-end dataset preparation, run:
+## Preparation Framework
+
+The first-class path for building training datasets from raw sources.
 
 ```bash
 python -m src.data.preparation --config <config.json|config.toml>
 ```
+
+Progress is printed to stdout as four numbered steps; per-source tqdm bars show docs/s and cumulative token count in real time.
+
+### Configuration
+
+Configs are JSON or TOML files.  Top-level sections:
+
+| Section | Description |
+|---|---|
+| `[tokenizer]` | Tokenizer type, vocab size, character coverage, optional pre-built model path |
+| `[[datasets]]` | One entry per source (name, path, format, weight, …) |
+| `[mixing]` | How sources are combined (`interleave` or `concatenate`), optional per-source ratios |
+| `[splits]` | Train/val/test ratios, shuffle, stratified flag |
+| `[output]` | Output directory, file prefix, EOS token, shard size |
+| `[curriculum]` | Optional curriculum learning stages (length-based, domain, or custom) |
+
+### Supported source formats
+
+| `format` | What it reads |
+|---|---|
+| `text` | Plain `.txt` file(s); split on `delimiter` (default `\n\n`) |
+| `jsonl` | One JSON object per line; field selected by `text_field` (default `"text"`) |
+| `npy` | Pre-tokenized `.npy` uint16/uint32 token array; chunked by `chunk_size` |
+| `utf8_tokens` | `.npy` of raw UTF-8 byte values (uint8); decoded then re-tokenized |
+
+### Text cleaning
+
+Every document goes through two cleaning steps before tokenization, applied consistently to both the tokenizer training corpus and the main data path:
+
+1. **NFKC normalization** — collapses fullwidth, ligature, and other compatibility Unicode forms into their canonical equivalents (common in scraped web text and OpenWebText).
+2. **Control-character stripping** — removes ASCII and Latin-1 control bytes while preserving `\n`, `\r`, and `\t`.
+
+After tokenization, a **two-stage unk filter** is applied to every sequence (default `max_unk_rate = 2 %`):
+
+| Unk fraction in sequence | Action |
+|---|---|
+| > `max_unk_rate` | Drop the entire document — too noisy for useful training signal |
+| ≤ `max_unk_rate` | Strip individual unk tokens in place |
+
+This prevents the model from ever generating SentencePiece's `⁇` artifact (the "double-?" characters seen in inference output from models trained on noisy web data).  Dropping high-unk documents avoids word-fragment corruption (e.g. `"Gupta" → "upta"`) that arises when individual tokens are stripped from proper nouns; stripping low-unk documents handles isolated stray characters without discarding otherwise clean text.
+
+> **Note — vocab size matters:** With the 1 024-token SentencePiece model used in Phase 3, roughly 63 % of OpenWebText paragraphs exceed the 2 % threshold and are dropped because uncommon capital letters (`G`, `R`, `U`, `V`, `X`, `Z`) have no standalone token.  Upgrading to a ≥ 8 192-token vocabulary covers these characters and reduces the drop rate dramatically.
+
+Pre-tokenized `npy` sources have the same unk filter applied at the array level (always a hard drop of token 0, since there is no text to normalize).
+
+### Memory model
+
+Sources are streamed to temporary binary spill files under `<output_dir>/.prep_spill/` and backed by read-only memory maps.  Peak RAM is bounded to a single ~10 MB write buffer per source, regardless of corpus size.  Previously-read sources are memory-mapped so the OS can page them out while the next source is being read.  Spill files are removed unconditionally on exit (success or failure).
+
+Output `.npy` files are written via `np.lib.format.open_memmap` — a pre-allocated memory map is filled one document at a time, flushing every 5 M tokens, so the output side also never requires a full in-memory concatenation.
+
+### Output files
+
+| File | Description |
+|---|---|
+| `<prefix>_train.npy` | Training split (or shards `_train_00000.npy`, …) |
+| `<prefix>_val.npy` | Validation split |
+| `<prefix>_test.npy` | Test split (if `test > 0`) |
+| `<prefix>_stats.json` | Per-split / per-source document and token counts |
+| `<prefix>_manifest.json` | Shard paths, shard size, tokenizer path |
+| `<prefix>_tokenizer.model` | Trained SentencePiece model (unigram type only) |
+
+Set `shard_size_tokens > 0` to write multiple fixed-size shards instead of a single file per split.
+
+---
 
 The `pipeline/` modules below remain useful as focused building blocks for tokenization and extraction workflows.
 

@@ -23,7 +23,14 @@ class TrainingConfig:
     epsilon: float
     gradient_clip_norm: float
     precision_schedule: list[tuple[int, int, str]]
+    scheduler_type: Literal["cosine", "wsd"] = "cosine"
+    min_lr_ratio: float = 0.1
+    wsd_stable_fraction: float = 0.7
+    wsd_decay_fraction: float = 0.2
+    wsd_decay_shape: Literal["linear", "sqrt", "lowered_linear"] = "sqrt"
+    wsd_lowered_linear_alpha: float = 0.7
     moe_balance_loss_weight: float = 0.0  # No MoE by default
+    use_distributed: bool = False
     distributed_backend: Literal["ddp", "fsdp"] = "ddp"
     checkpoint_interval: int = 1000
     eval_interval: int = 100
@@ -53,7 +60,7 @@ class TrainingConfig:
             tuple(entry) if isinstance(entry, list) else entry for entry in self.precision_schedule
         ]
 
-    def _validate_basics(self) -> None:
+    def _validate_basics(self) -> None:  # noqa: C901
         """Validate basic training hyperparameters."""
         if self.batch_size <= 0:
             raise ValueError("batch_size must be positive")
@@ -67,6 +74,16 @@ class TrainingConfig:
             raise ValueError("weight_decay must be in [0, 1)")
         if self.warmup_steps > self.max_steps:
             raise ValueError("warmup_steps must be <= max_steps")
+        if not (0 <= self.min_lr_ratio <= 1):
+            raise ValueError("min_lr_ratio must be in [0, 1]")
+        if not (0 <= self.wsd_stable_fraction <= 1):
+            raise ValueError("wsd_stable_fraction must be in [0, 1]")
+        if not (0 <= self.wsd_decay_fraction <= 1):
+            raise ValueError("wsd_decay_fraction must be in [0, 1]")
+        if self.wsd_stable_fraction + self.wsd_decay_fraction > 1:
+            raise ValueError("wsd_stable_fraction + wsd_decay_fraction must be <= 1")
+        if not (0 < self.wsd_lowered_linear_alpha <= 1):
+            raise ValueError("wsd_lowered_linear_alpha must be in (0, 1]")
 
     def _validate_schedule(self) -> None:
         """Validate precision schedule."""

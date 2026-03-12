@@ -35,6 +35,7 @@ class TestConfigDefaults:
         assert cfg.splits.val == 0.1
         assert cfg.splits.test == 0.0
         assert cfg.output.eos_token_id == -1
+        assert cfg.output.shard_size_tokens == 0
 
     def test_minimal_json_config_loads_with_defaults(self, tmp_path):
         config_path = tmp_path / "prep.json"
@@ -116,3 +117,12 @@ class TestValidation:
         )
 
         cfg.validate()
+
+    def test_validate_rejects_negative_shard_size(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="tiny", path=__file__)],
+            output=OutputConfig(shard_size_tokens=-1),
+        )
+
+        with pytest.raises(AssertionError, match="shard_size_tokens"):
+            cfg.validate()
