@@ -11,7 +11,7 @@ from .toml_utils import load_toml, section_or_root
 class ModelConfig:
     """Model architecture configuration.
 
-    Minimal Phase 2 config: just hidden_size, vocab_size, max_seq_length.
+    Required: hidden_size, vocab_size, max_seq_length.
     Everything else has sensible defaults (num_layers=0 for embedding-only, num_heads=4, etc).
     """
 
@@ -43,9 +43,9 @@ class ModelConfig:
     def __post_init__(self) -> None:
         """Validate model configuration."""
         self._validate_basic()
+        self._set_defaults()
         self._validate_dims()
         self._validate_moe()
-        self._set_defaults()
 
     def _validate_basic(self) -> None:
         """Validate basic scalar constraints."""
@@ -78,7 +78,7 @@ class ModelConfig:
                     f"hidden_size ({self.hidden_size}) must be divisible by "
                     f"num_heads ({self.num_heads})"
                 )
-            if self.mla_latent_dim > 0 and self.mla_latent_dim % self.num_heads != 0:
+            if self.mla_latent_dim % self.num_heads != 0:
                 raise ValueError(
                     f"mla_latent_dim ({self.mla_latent_dim}) must be divisible by "
                     f"num_heads ({self.num_heads})"

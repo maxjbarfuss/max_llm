@@ -50,17 +50,15 @@ class TrainingConfig:
         """Validate training configuration."""
         self._coerce_toml_types()
         self._validate_basics()
+        self._validate_wsd()
         self._validate_schedule()
 
     def _coerce_toml_types(self) -> None:
-        """Coerce TOML-loaded types to expected Python types."""
-        if isinstance(self.betas, list):
-            self.betas = tuple(self.betas)
-        self.precision_schedule = [
-            tuple(entry) if isinstance(entry, list) else entry for entry in self.precision_schedule
-        ]
+        """Coerce TOML-loaded list types to expected Python tuples."""
+        self.betas = tuple(self.betas)  # type: ignore[assignment]
+        self.precision_schedule = [tuple(e) for e in self.precision_schedule]  # type: ignore[misc]
 
-    def _validate_basics(self) -> None:  # noqa: C901
+    def _validate_basics(self) -> None:
         """Validate basic training hyperparameters."""
         if self.batch_size <= 0:
             raise ValueError("batch_size must be positive")
@@ -76,6 +74,9 @@ class TrainingConfig:
             raise ValueError("warmup_steps must be <= max_steps")
         if not (0 <= self.min_lr_ratio <= 1):
             raise ValueError("min_lr_ratio must be in [0, 1]")
+
+    def _validate_wsd(self) -> None:
+        """Validate WSD scheduler fractions."""
         if not (0 <= self.wsd_stable_fraction <= 1):
             raise ValueError("wsd_stable_fraction must be in [0, 1]")
         if not (0 <= self.wsd_decay_fraction <= 1):
@@ -90,7 +91,7 @@ class TrainingConfig:
         if not self.precision_schedule:
             raise ValueError("precision_schedule cannot be empty")
         for start, end, precision in self.precision_schedule:
-            if precision not in ("fp4", "fp8", "bf16", "mixed"):
+            if precision not in {"fp4", "fp8", "bf16", "mixed"}:
                 raise ValueError(f"Invalid precision: {precision}")
             if end != -1 and start >= end:
                 raise ValueError(f"Invalid schedule interval: ({start}, {end})")

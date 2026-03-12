@@ -23,9 +23,9 @@ class InferenceConfig:
 
     def __post_init__(self) -> None:
         """Validate inference configuration."""
-        if self.device not in ("auto", "cpu", "cuda"):
+        if self.device not in {"auto", "cpu", "cuda"}:
             raise ValueError(f"device must be 'auto', 'cpu', or 'cuda', got '{self.device}'")
-        if self.kv_cache_dtype not in ("fp8", "bf16"):
+        if self.kv_cache_dtype not in {"fp8", "bf16"}:
             raise ValueError(f"kv_cache_dtype must be 'fp8' or 'bf16', got '{self.kv_cache_dtype}'")
         if self.max_new_tokens <= 0:
             raise ValueError("max_new_tokens must be positive")

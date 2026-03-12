@@ -1,7 +1,6 @@
 """Config validation utilities for checkpoint compatibility."""
 
-from __future__ import annotations
-
+import warnings
 from pathlib import Path
 
 import torch
@@ -14,8 +13,6 @@ from .training import TrainingConfig
 
 class ConfigVersionMismatchError(Exception):
     """Raised when checkpoint config versions don't match current code."""
-
-    pass
 
 
 def validate_checkpoint_config_compatibility(
@@ -50,11 +47,8 @@ def validate_checkpoint_config_compatibility(
         )
         if strict:
             raise ConfigVersionMismatchError(msg)
-        else:
-            import warnings
-
-            warnings.warn(msg, stacklevel=2)
-            return {}
+        warnings.warn(msg, stacklevel=2)
+        return {}
 
     saved_versions = checkpoint["config_versions"]
     current_versions = {
@@ -64,13 +58,11 @@ def validate_checkpoint_config_compatibility(
         "inference": InferenceConfig.__version__,
     }
 
-    mismatches = []
-    for config_name, current_version in current_versions.items():
-        saved_version = saved_versions.get(config_name)
-        if saved_version is not None and saved_version != current_version:
-            mismatches.append(
-                f"  {config_name}: checkpoint v{saved_version} != current v{current_version}"
-            )
+    mismatches = [
+        f"  {name}: checkpoint v{saved_versions.get(name)} != current v{current}"
+        for name, current in current_versions.items()
+        if saved_versions.get(name) not in (None, current)
+    ]
 
     if mismatches:
         error_msg = (
@@ -81,13 +73,9 @@ def validate_checkpoint_config_compatibility(
             + "  2. Re-train from scratch with current config\n"
             + "  3. Set strict=False to load anyway (breaks reproducibility guarantee)"
         )
-
         if strict:
             raise ConfigVersionMismatchError(error_msg)
-        else:
-            import warnings
-
-            warnings.warn(error_msg, stacklevel=2)
+        warnings.warn(error_msg, stacklevel=2)
 
     return saved_versions
 

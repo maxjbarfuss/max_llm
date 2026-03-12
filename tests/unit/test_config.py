@@ -275,7 +275,7 @@ class TestDataConfig:
         config = make_data_config(validation_split=0.1)
         assert config.validation_split == 0.1
 
-        with pytest.raises(ValueError, match="validation_split fraction must be"):
+        with pytest.raises(ValueError, match="validation_split must be"):
             make_data_config(validation_split=1.5)
 
     def test_validation_split_absolute(self):
