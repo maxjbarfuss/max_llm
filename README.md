@@ -23,6 +23,7 @@ Setup, then pick your entrypoint:
 
 - [scripts/setup/README.md](scripts/setup/README.md): environment setup and platform requirements
 - [scripts/build/README.md](scripts/build/README.md): C++ build wrapper and modes
+- [src/config/README.md](src/config/README.md): config system (adding fields, versioning, test fixtures)
 - [src/data/README.md](src/data/README.md): data prep workflow
 - [src/training/README.md](src/training/README.md): training configurations
 - [src/inference/README.md](src/inference/README.md): inference configurations

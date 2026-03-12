@@ -1,6 +1,8 @@
-# Config Reference
+# config — TOML Field Reference
 
 All training runs use a single TOML file with five sections. Pass it with `--config`.
+
+For the Python config module (adding fields, versioning, test fixtures) see [src/config/README.md](../src/config/README.md).
 
 ```
 [experiment]   name, output directory
