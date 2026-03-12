@@ -4,11 +4,10 @@ Usage:
     python -m src.training.train --config config/milestones/<experiment>.toml
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import random
+import warnings
 from pathlib import Path
 from typing import cast
 
@@ -39,6 +38,15 @@ from src.training.optimizer import configure_optimizer_param_groups
 from src.training.profiling import log_model_size
 from src.training.scheduler import get_cosine_schedule_with_warmup, get_wsd_schedule
 from src.utils import seed_everything, seed_worker
+
+
+def _config_versions() -> dict[str, int]:
+    return {
+        "model": ModelConfig.__version__,
+        "training": TrainingConfig.__version__,
+        "data": DataConfig.__version__,
+        "inference": InferenceConfig.__version__,
+    }
 
 
 class TokenDataset(Dataset):
@@ -142,20 +150,35 @@ def load_tokens(
         # Fallback: load entire file into RAM
         token_array = np.load(dataset_path)
         return torch.tensor(token_array, dtype=torch.long)
-    else:
-        # Load and tokenize text file
-        with open(dataset_path, encoding="utf-8") as f:
-            corpus_text = f.read()
 
-        tokenizer = create_configured_tokenizer(
-            tokenizer_name=tokenizer_name,
-            tokenizer_mode=tokenizer_mode,
-            tokenizer_vocab_size=tokenizer_vocab_size,
-            tokenizer_backend=tokenizer_backend,
-            unigram_model_path=unigram_model_path,
-            tokenizer_vocab_path=tokenizer_vocab_path,
-        )
-        return torch.tensor(tokenizer.encode(corpus_text), dtype=torch.long)
+    # Load and tokenize text file
+    with open(dataset_path, encoding="utf-8") as f:
+        corpus_text = f.read()
+    tokenizer = create_configured_tokenizer(
+        tokenizer_name=tokenizer_name,
+        tokenizer_mode=tokenizer_mode,
+        tokenizer_vocab_size=tokenizer_vocab_size,
+        tokenizer_backend=tokenizer_backend,
+        unigram_model_path=unigram_model_path,
+        tokenizer_vocab_path=tokenizer_vocab_path,
+    )
+    return torch.tensor(tokenizer.encode(corpus_text), dtype=torch.long)
+
+
+def _load_dataset(
+    path: str | Path,
+    cfg: DataConfig,
+) -> np.ndarray | torch.Tensor:
+    """Load tokens from a dataset path using tokenizer settings from DataConfig."""
+    return load_tokens(
+        path,
+        tokenizer_name=cfg.tokenizer_name,
+        tokenizer_backend=cfg.tokenizer_backend,
+        tokenizer_mode=cfg.tokenizer_mode,
+        tokenizer_vocab_size=cfg.tokenizer_vocab_size,
+        unigram_model_path=cfg.unigram_model_path,
+        tokenizer_vocab_path=cfg.tokenizer_vocab_path,
+    )
 
 
 def save_checkpoint(
@@ -185,12 +208,7 @@ def save_checkpoint(
             "model_state": model.state_dict(),
             "optimizer_state": optimizer.state_dict(),
             "step": step,
-            "config_versions": {
-                "model": ModelConfig.__version__,
-                "training": TrainingConfig.__version__,
-                "data": DataConfig.__version__,
-                "inference": InferenceConfig.__version__,
-            },
+            "config_versions": _config_versions(),
         },
         path,
     )
@@ -222,12 +240,7 @@ def load_checkpoint(
     # Check config version compatibility
     if "config_versions" in checkpoint:
         saved_versions = checkpoint["config_versions"]
-        current_versions = {
-            "model": ModelConfig.__version__,
-            "training": TrainingConfig.__version__,
-            "data": DataConfig.__version__,
-            "inference": InferenceConfig.__version__,
-        }
+        current_versions = _config_versions()
 
         mismatches = []
         for config_name, current_version in current_versions.items():
@@ -247,9 +260,7 @@ def load_checkpoint(
                 "  2. Re-train from scratch with current config\n"
                 "  3. Set strict_version_check=False (not recommended for reproducibility)"
             )
-        elif mismatches:
-            import warnings
-
+        if mismatches:
             warnings.warn(
                 "Config version mismatch (strict_version_check=False):\n" + "\n".join(mismatches),
                 stacklevel=2,
@@ -459,15 +470,7 @@ def main() -> None:  # noqa: C901
         raise FileNotFoundError(f"Training dataset not found: {dataset_path}")
 
     print_once(f"Loading training data from {dataset_path}")
-    train_tokens = load_tokens(
-        dataset_path,
-        tokenizer_name=config.data.tokenizer_name,
-        tokenizer_backend=config.data.tokenizer_backend,
-        tokenizer_mode=config.data.tokenizer_mode,
-        tokenizer_vocab_size=config.data.tokenizer_vocab_size,
-        unigram_model_path=config.data.unigram_model_path,
-        tokenizer_vocab_path=config.data.tokenizer_vocab_path,
-    )
+    train_tokens = _load_dataset(dataset_path, config.data)
 
     # Load optional validation dataset
     val_tokens = None
@@ -476,15 +479,7 @@ def main() -> None:  # noqa: C901
         if not val_path.exists():
             raise FileNotFoundError(f"Validation dataset not found: {val_path}")
         print_once(f"Loading validation data from {val_path}")
-        val_tokens = load_tokens(
-            val_path,
-            tokenizer_name=config.data.tokenizer_name,
-            tokenizer_backend=config.data.tokenizer_backend,
-            tokenizer_mode=config.data.tokenizer_mode,
-            tokenizer_vocab_size=config.data.tokenizer_vocab_size,
-            unigram_model_path=config.data.unigram_model_path,
-            tokenizer_vocab_path=config.data.tokenizer_vocab_path,
-        )
+        val_tokens = _load_dataset(val_path, config.data)
 
     # Load optional test dataset
     test_tokens = None
@@ -493,15 +488,7 @@ def main() -> None:  # noqa: C901
         if not test_path.exists():
             raise FileNotFoundError(f"Test dataset not found: {test_path}")
         print_once(f"Loading test data from {test_path}")
-        test_tokens = load_tokens(
-            test_path,
-            tokenizer_name=config.data.tokenizer_name,
-            tokenizer_backend=config.data.tokenizer_backend,
-            tokenizer_mode=config.data.tokenizer_mode,
-            tokenizer_vocab_size=config.data.tokenizer_vocab_size,
-            unigram_model_path=config.data.unigram_model_path,
-            tokenizer_vocab_path=config.data.tokenizer_vocab_path,
-        )
+        test_tokens = _load_dataset(test_path, config.data)
 
     if len(train_tokens) < config.data.max_length + 1:
         raise ValueError(
@@ -745,12 +732,7 @@ def main() -> None:  # noqa: C901
                     "model_state": model_sd,
                     "optimizer_state": opt_sd,
                     "step": step,
-                    "config_versions": {
-                        "model": ModelConfig.__version__,
-                        "training": TrainingConfig.__version__,
-                        "data": DataConfig.__version__,
-                        "inference": InferenceConfig.__version__,
-                    },
+                    "config_versions": _config_versions(),
                 },
                 ckpt_path,
             )
@@ -832,12 +814,7 @@ def main() -> None:  # noqa: C901
                     "model_state": model_sd,
                     "optimizer_state": opt_sd,
                     "step": config.training.max_steps,
-                    "config_versions": {
-                        "model": ModelConfig.__version__,
-                        "training": TrainingConfig.__version__,
-                        "data": DataConfig.__version__,
-                        "inference": InferenceConfig.__version__,
-                    },
+                    "config_versions": _config_versions(),
                 },
                 ckpt_path,
             )
