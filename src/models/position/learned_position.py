@@ -1,7 +1,5 @@
 """Learned positional embedding module (max_seq_len × d_model)."""
 
-from __future__ import annotations
-
 import torch
 import torch.nn as nn
 
@@ -22,15 +20,7 @@ class LearnedPositionEmbedding(nn.Module):
         nn.init.normal_(self.embedding.weight, mean=0.0, std=0.02)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Return positional embeddings for sequence length T.
-
-        Args:
-            x: Token tensor of shape (batch, T) — only T is used.
-
-        Returns:
-            Positional embeddings of shape (1, T, d_model), broadcastable
-            over batch dimension.
-        """
+        """Return positional embeddings (1, T, d_model); only T from x is used."""
         assert (
             x.ndim == 2
         ), f"LearnedPositionEmbedding expects 2-D input (batch, seq_len), got shape {x.shape}"
