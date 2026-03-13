@@ -1,7 +1,5 @@
 """Optimizer utilities for training."""
 
-from __future__ import annotations
-
 from typing import Any
 
 import torch.nn as nn
@@ -41,7 +39,7 @@ def configure_optimizer_param_groups(
     decay_params = []
     no_decay_params = []
 
-    for _, param in model.named_parameters():
+    for param in model.parameters():
         if not param.requires_grad:
             continue
 
