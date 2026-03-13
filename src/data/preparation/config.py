@@ -49,6 +49,7 @@ class MixingConfig:
     downsample_to_min: bool = False
     target_total_docs: int | None = None
     source_ratios: dict[str, float] | None = None
+    weight_by: str = "docs"  # "docs" or "tokens"
     seed: int = 42
 
 

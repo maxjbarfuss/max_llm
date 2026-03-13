@@ -108,6 +108,17 @@ class PreparationPipeline:
                 "Source loaded: name=%s docs=%d tokens=%d", source.name, len(spilled), total_tok
             )
 
+        # Auto-derive source_ratios from DataSource.weight when not explicitly set.
+        # For weight_by="tokens" always enforce ratios; for "docs" only when weights differ.
+        if config.mixing.source_ratios is None:
+            active_weights = {
+                s.name: s.weight for s in config.datasets
+                if s.weight > 0 and s.name in all_documents
+            }
+            unique_weights = set(active_weights.values())
+            if config.mixing.weight_by == "tokens" or len(unique_weights) > 1:
+                config.mixing.source_ratios = active_weights
+
         # ── Step 3: mix ──────────────────────────────────────────────────────
         print(f"\n[3/4] Mixing  ({config.mixing.strategy})", flush=True)
         logger.info("Mixing documents: strategy=%s", config.mixing.strategy)

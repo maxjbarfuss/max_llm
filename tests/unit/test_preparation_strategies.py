@@ -255,3 +255,56 @@ def test_npy_reader_rejects_negative_token_ids(tmp_path):
 
     with np.testing.assert_raises_regex(ValueError, "non-negative"):
         NpyReader().read_documents(source, _DummyTokenizer())
+
+
+def _make_docs(name: str, n: int, doc_len: int) -> dict[str, list[np.ndarray]]:
+    return {name: [np.ones(doc_len, dtype=np.uint16) for _ in range(n)]}
+
+
+def test_token_weighted_mixing_equalises_token_counts():
+    # Source A: 100 docs × 10 tokens = 1000 tokens
+    # Source B: 100 docs × 100 tokens = 10000 tokens
+    # weight_by="tokens", equal weights → result should be ~50/50 tokens
+    docs_a = [np.ones(10, dtype=np.uint16) for _ in range(100)]
+    docs_b = [np.ones(100, dtype=np.uint16) for _ in range(100)]
+    all_docs = {"a": docs_a, "b": docs_b}
+
+    cfg = MixingConfig(
+        strategy="interleave",
+        source_ratios={"a": 1.0, "b": 1.0},
+        weight_by="tokens",
+        seed=0,
+    )
+    mixed = InterleaveMixer().mix(all_docs, cfg)  # type: ignore[arg-type]
+
+    tok_a = sum(len(d) for name, d in mixed if name == "a")
+    tok_b = sum(len(d) for name, d in mixed if name == "b")
+    total = tok_a + tok_b
+    # Each source should be within 20% of the 50% target
+    assert abs(tok_a / total - 0.5) < 0.20, f"a fraction={tok_a / total:.2f}"
+    assert abs(tok_b / total - 0.5) < 0.20, f"b fraction={tok_b / total:.2f}"
+
+
+def test_doc_weighted_mixing_preserves_doc_ratio():
+    docs_a = [np.ones(10, dtype=np.uint16) for _ in range(200)]
+    docs_b = [np.ones(10, dtype=np.uint16) for _ in range(200)]
+    all_docs = {"a": docs_a, "b": docs_b}
+
+    cfg = MixingConfig(
+        strategy="interleave",
+        source_ratios={"a": 0.7, "b": 0.3},
+        weight_by="docs",
+        seed=0,
+    )
+    mixed = InterleaveMixer().mix(all_docs, cfg)  # type: ignore[arg-type]
+
+    count_a = sum(1 for name, _ in mixed if name == "a")
+    count_b = sum(1 for name, _ in mixed if name == "b")
+    total = count_a + count_b
+    assert abs(count_a / total - 0.7) < 0.05, f"a doc fraction={count_a / total:.2f}"
+
+
+def test_weight_by_tokens_config_round_trips():
+    cfg = MixingConfig(weight_by="tokens", source_ratios={"owt": 0.5, "fw": 0.5})
+    assert cfg.weight_by == "tokens"
+    assert cfg.source_ratios == {"owt": 0.5, "fw": 0.5}
