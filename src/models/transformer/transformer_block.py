@@ -1,7 +1,5 @@
 """Transformer block module (pre-norm attention + feedforward with residuals)."""
 
-from __future__ import annotations
-
 import torch
 import torch.nn as nn
 
@@ -59,14 +57,6 @@ class TransformerBlock(nn.Module):
         self.feedforward = FeedForward(d_model, ff_expansion_ratio, dropout, num_layers=num_layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Apply transformer block.
-
-        Args:
-            x: Input tensor of shape (batch, seq_len, d_model).
-
-        Returns:
-            Output tensor of shape (batch, seq_len, d_model).
-        """
         assert (
             x.ndim == 3
         ), f"TransformerBlock expects 3-D input (batch, seq_len, d_model), got shape {x.shape}"
