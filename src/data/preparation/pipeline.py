@@ -1,7 +1,5 @@
 """Orchestration pipeline for dataset preparation."""
 
-from __future__ import annotations
-
 import json
 import logging
 import shutil
@@ -167,12 +165,7 @@ class PreparationPipeline:
         tokenizer: Any,
         spill_dir: Path,
     ) -> _SpilledDocs:
-        """Stream a source's documents to a temp binary file and return a mmap-backed view.
-
-        This keeps peak RAM bounded to one source's flush buffer (~10 MB) regardless
-        of how many tokens the source contains.  Previously-read sources are backed by
-        mmap so the OS can page them out while the next source is being read.
-        """
+        """Stream source docs to a temp binary file; peak RAM is bounded to one flush buffer (~10 MB)."""
         bin_path = spill_dir / f"{source.name}.bin"
         dtype: np.dtype[np.unsignedinteger] = np.dtype(np.uint16)  # sufficient for vocab ≤ 65535
         offsets: list[int] = [0]
@@ -546,12 +539,7 @@ class PreparationPipeline:
         has_eos: bool,
         eos_val: int,
     ) -> tuple[list[str], int]:
-        """Stream all docs into a single .npy via a pre-allocated memmap.
-
-        Pre-computing the token count lets us write each doc directly into its
-        final position without holding more than one doc in RAM at a time.
-        Flushes every 5 M tokens so the OS page cache doesn't grow unbounded.
-        """
+        """Write all docs into a pre-allocated memmap, flushing every 5 M tokens."""
         total_tokens = sum(len(doc) + (1 if has_eos else 0) for _, doc in docs)
         file_path = output_dir / f"{prefix}_{split_name}.npy"
         out = np.lib.format.open_memmap(
@@ -638,7 +626,7 @@ class PreparationPipeline:
                     flush()
 
                 pbar.update(1)
-                if len(shard_paths) > 0:
+                if shard_paths:
                     pbar.set_postfix(shards=len(shard_paths))
 
             flush()
