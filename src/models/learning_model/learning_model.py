@@ -3,8 +3,6 @@
 Supports Phase 2 (embedding-only, num_layers=0) through Phase 4+ (transformer-based).
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from typing import Any
 
@@ -131,15 +129,6 @@ class LearningModel(BaseLearningModel):
             self.lm_head.weight = self.token_embedding.embedding.weight
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute logits for token index sequences.
-
-        Args:
-            x: Token indices of shape (batch_size, seq_len).
-               Values must be in [0, vocab_size).
-
-        Returns:
-            Logits of shape (batch_size, seq_len, vocab_size).
-        """
         assert x.ndim == 2, f"LearningModel expects 2-D input (batch, seq_len), got shape {x.shape}"
         assert x.dtype == torch.long, f"LearningModel expects dtype=torch.long, got {x.dtype}"
         B, T = x.shape
@@ -192,16 +181,6 @@ class LearningModel(BaseLearningModel):
 
     @classmethod
     def from_config(cls, config: ModelConfig, attention_backend: str = "flash") -> Self:
-        """Construct a LearningModel from a ModelConfig.
-
-        Args:
-            config: ModelConfig instance.
-            attention_backend: Attention backend to use (default: "flash").
-                Options: "flash", "sage", "xformers", "standard"
-
-        Returns:
-            LearningModel instance.
-        """
         return cls(
             vocab_size=config.vocab_size,
             d_model=config.hidden_size,
