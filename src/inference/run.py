@@ -4,8 +4,6 @@ Usage:
     python -m src.inference.run --config config/milestones/<experiment>.toml --prompt "Hello"
 """
 
-from __future__ import annotations
-
 import argparse
 
 import torch
