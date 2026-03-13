@@ -9,8 +9,6 @@ Fully Sharded Data Parallel (FSDP) training:
 - DDP and FSDP model wrapping
 """
 
-from __future__ import annotations
-
 import os
 from functools import partial
 from typing import Any
@@ -22,42 +20,22 @@ from torch.utils.data import DistributedSampler
 
 
 def is_distributed() -> bool:
-    """Check if distributed training is initialized.
-
-    Returns:
-        True if torch.distributed is initialized, False otherwise.
-    """
     return dist.is_available() and dist.is_initialized()
 
 
 def get_rank() -> int:
-    """Get the rank of the current process.
-
-    Returns:
-        Rank (0-indexed) if distributed, 0 otherwise.
-    """
     if is_distributed():
         return dist.get_rank()
     return 0
 
 
 def get_world_size() -> int:
-    """Get the total number of processes.
-
-    Returns:
-        World size if distributed, 1 otherwise.
-    """
     if is_distributed():
         return dist.get_world_size()
     return 1
 
 
 def is_main_process() -> bool:
-    """Check if current process is the main process (rank 0).
-
-    Returns:
-        True if rank 0 or not distributed, False otherwise.
-    """
     return get_rank() == 0
 
 
@@ -126,19 +104,14 @@ def init_distributed(backend: str = "nccl") -> dict[str, Any]:
 
 
 def cleanup_distributed() -> None:
-    """Clean up distributed training."""
     if is_distributed():
         dist.destroy_process_group()
 
 
 def barrier() -> None:
-    """Synchronize all processes.
-
-    All processes will wait at this point until all processes reach it.
-    No-op if not distributed.
-    """
+    """Synchronize all processes; no-op if not distributed."""
     if is_distributed():
-        dist.barrier()
+        dist.barrier()  # type: ignore[misc, unused-ignore]
 
 
 def wrap_model_ddp(
@@ -176,7 +149,7 @@ def create_distributed_sampler(
     shuffle: bool = True,
     seed: int = 0,
     drop_last: bool = False,
-) -> DistributedSampler | None:
+) -> DistributedSampler[Any] | None:
     """Create a DistributedSampler for the dataset.
 
     Args:
@@ -202,12 +175,6 @@ def create_distributed_sampler(
 
 
 def print_once(*args: Any, **kwargs: Any) -> None:
-    """Print only on the main process (rank 0).
-
-    Args:
-        *args: Arguments to print.
-        **kwargs: Keyword arguments to print.
-    """
     if is_main_process():
         print(*args, **kwargs)
 
@@ -229,7 +196,7 @@ def reduce_dict(data: dict[str, float]) -> dict[str, float]:
 
     for key, value in data.items():
         tensor = torch.tensor(value, device=torch.cuda.current_device())
-        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)  # type: ignore[misc, unused-ignore]
         reduced[key] = (tensor / world_size).item()
 
     return reduced
