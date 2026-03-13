@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive chat mode for max_llm trained models.
-
-Loads a checkpoint and provides a simple REPL for generating text.
+"""Interactive chat REPL for max_llm trained models.
 
 Usage:
     python -m src.inference.chat \
@@ -31,31 +29,15 @@ def load_checkpoint_model(
     checkpoint_path: str | None = None,
     device: str = "auto",
 ) -> tuple[LearningModel, Tokenizer, ExperimentConfig, torch.device]:
-    """Load model from checkpoint.
-
-    Args:
-        config_path: Path to experiment config
-        checkpoint_path: Path to checkpoint.pt, or None for random init
-        device: "auto", "cuda", or "cpu"
-
-    Returns:
-        (model, tokenizer, config, device_obj)
-    """
-    # Load config
+    """Return (model, tokenizer, config, device) loaded from config_path and optional checkpoint."""
     config = ExperimentConfig.from_toml(config_path)
-
-    # Determine device
     device_obj = resolve_device(device)
     print(f"📍 Device: {device_obj}")
 
-    # Honour the attention backend specified in the training config so that
-    # flash/xformers models don't crash at inference time (no AMP context →
-    # fp32 tensors → flash requires fp16/bf16).
+    # Honour training attention backend — flash/xformers require fp16/bf16.
     attn_backend = getattr(config.training, "attention_backend", "standard")
-
     model = LearningModel.from_config(config.model, attention_backend=attn_backend).to(device_obj)
 
-    # Load checkpoint if provided
     if checkpoint_path:
         checkpoint_file = Path(checkpoint_path)
         if checkpoint_file.exists():
@@ -69,11 +51,8 @@ def load_checkpoint_model(
     else:
         print("⚠ No checkpoint provided; using random weights")
 
-    # Create tokenizer
     tokenizer = create_tokenizer_from_data_config(config.data)
-
     model.eval()
-
     return model, tokenizer, config, device_obj
 
 
@@ -84,15 +63,7 @@ def chat_mode(
     device: torch.device,
     max_tokens: int | None = None,
 ) -> None:
-    """Interactive chat REPL.
-
-    Args:
-        model: Trained model
-        tokenizer: Tokenizer
-        config: Config
-        device: Device object
-        max_tokens: Override max_new_tokens from config
-    """
+    """Run the interactive generation REPL until Ctrl+C."""
     temperature = config.inference.temperature
     top_p = config.inference.top_p
     top_k = config.inference.top_k
@@ -101,14 +72,11 @@ def chat_mode(
 
     print("\n🤖 Chat Mode Ready")
     print(
-        f"   Model: hidden_size={config.model.hidden_size}, "
-        f"layers={config.model.num_layers}, "
-        f"vocab={config.model.vocab_size}"
+        f"   Model: hidden_size={config.model.hidden_size}, layers={config.model.num_layers}, vocab={config.model.vocab_size}"
     )
     print(f"   Data: {config.data.dataset_path}")
     print(
-        f"   Sampling: temp={temperature}, top_p={top_p}, top_k={top_k}, "
-        f"max_tokens={max_new_tokens}"
+        f"   Sampling: temp={temperature}, top_p={top_p}, top_k={top_k}, max_tokens={max_new_tokens}"
     )
     print("\n💬 Type prompts below (Ctrl+C to exit):\n")
 
@@ -117,13 +85,11 @@ def chat_mode(
             try:
                 prompt = input("You: ").strip()
             except EOFError:
-                # Handle piped input
                 break
 
             if not prompt:
                 continue
 
-            # Tokenize prompt
             try:
                 prompt_tokens = tokenizer.encode(prompt)
             except Exception as e:
@@ -134,15 +100,12 @@ def chat_mode(
                 print("❌ Prompt produced no tokens")
                 continue
 
-            # Generate
             try:
                 tokens = list(prompt_tokens)
                 if len(tokens) > max_seq_len:
-                    # Keep the most recent context window to match training behavior.
                     tokens = tokens[-max_seq_len:]
 
-                # Use autocast so flash/xformers backends receive the expected dtype
-                # (fp16/bf16) even without an explicit AMP training loop.
+                # autocast so flash/xformers backends receive fp16/bf16
                 autocast_ctx = (
                     torch.autocast(device_type=device.type, dtype=torch.bfloat16)
                     if device.type == "cuda"
@@ -150,56 +113,44 @@ def chat_mode(
                 )
                 with torch.no_grad(), autocast_ctx:
                     for _ in range(max_new_tokens):
-                        # Decode with a sliding context window so we never exceed max_seq_len.
-                        window = tokens[-max_seq_len:]
-                        input_ids = torch.tensor(window, dtype=torch.long, device=device).unsqueeze(
-                            0
-                        )
-                        logits = model(input_ids)[0, -1]
+                        input_ids = torch.tensor(
+                            tokens[-max_seq_len:], dtype=torch.long, device=device
+                        ).unsqueeze(0)
                         next_token = sample_token(
-                            logits, temperature=temperature, top_p=top_p, top_k=top_k
+                            model(input_ids)[0, -1],
+                            temperature=temperature,
+                            top_p=top_p,
+                            top_k=top_k,
                         )
                         tokens.append(next_token)
 
-                # Decode
-                output_text = tokenizer.decode(tokens)
-
-                print(f"🤖 {output_text}\n")
+                print(f"🤖 {tokenizer.decode(tokens)}\n")
             except Exception as e:
                 print(f"❌ Generation error: {e}\n")
                 import traceback
 
                 traceback.print_exc()
-                continue
 
     except KeyboardInterrupt:
         print("\n\n👋 Goodbye!")
         sys.exit(0)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Interactive chat with trained LM")
     parser.add_argument("--config", required=True, help="Path to experiment config (TOML)")
     parser.add_argument("--checkpoint", default=None, help="Path to checkpoint.pt")
     parser.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     parser.add_argument("--max-tokens", type=int, default=None, help="Override max_new_tokens")
-
     args = parser.parse_args()
 
-    # Load model
     model, tokenizer, config, device = load_checkpoint_model(
         config_path=args.config,
         checkpoint_path=args.checkpoint,
         device=args.device,
     )
-
-    # Chat mode
     chat_mode(
-        model=model,
-        tokenizer=tokenizer,
-        config=config,
-        device=device,
-        max_tokens=args.max_tokens,
+        model=model, tokenizer=tokenizer, config=config, device=device, max_tokens=args.max_tokens
     )
 
 
