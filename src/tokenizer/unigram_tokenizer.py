@@ -4,8 +4,6 @@ Supports loading pre-trained `.model` files and training new models
 for benchmarking/experimentation.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import sentencepiece as spm  # type: ignore[import-untyped]
