@@ -93,7 +93,7 @@ Quality:
 Data:
 - ✅ `src/data/loader.py`: in-memory text → char token ids → chunked batches (MVP)
 - ✅ Production data pipeline: pre-tokenization, metadata caching, chunked staging with prefetching (infrastructure complete)
-- ✅ `src/data/pipeline/`: tokenize.py, extract_tokens.py, extract_text.py (all runnable)
+- ✅ `src/data/pipeline/`: tokenize.py, extract_tokens.py, extract_text.py (superseded by `src/data/preparation/`)
 - ✅ `src/data/datasets/`: boundary detection (WikiText/TinyStories/pattern/none), normalize.py for WikiText
 - ✅ Tokenizer factory and multi-mode support: UTF-8, UTF-16, UTF-32, codepoint modes with configurable vocab_size
 - ✅ Data workflow infrastructure: YAML-driven config runners (`scripts/data/run_data_prep.py`), all pipeline steps
