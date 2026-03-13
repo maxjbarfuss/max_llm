@@ -8,8 +8,6 @@ Supports:
 - Enhanced logging (tokens/sec, GPU memory)
 """
 
-from __future__ import annotations
-
 import contextlib
 import csv
 import math
@@ -304,11 +302,12 @@ def train(  # noqa: C901
 
     # Initialize GradScaler for AMP if needed
     scaler: torch.GradScaler | None = None
-    if use_amp and device.type == "cuda":
-        scaler = torch.GradScaler("cuda")
-    if use_amp and device.type != "cuda":
-        print("Warning: AMP requested but CUDA not available. Falling back to FP32.")
-        use_amp = False
+    if use_amp:
+        if device.type == "cuda":
+            scaler = torch.GradScaler("cuda")
+        else:
+            print("Warning: AMP requested but CUDA not available. Falling back to FP32.")
+            use_amp = False
 
     losses: list[float] = []
     perplexities: list[float] = []
@@ -342,6 +341,8 @@ def train(  # noqa: C901
         ]
         csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         csv_writer.writeheader()
+
+    eval_max_batches_opt: int | None = eval_max_batches if eval_max_batches > 0 else None
 
     step = 0
     micro_step = 0
@@ -431,16 +432,17 @@ def train(  # noqa: C901
                 # Log GPU memory if requested
                 memory_mb = 0.0
                 if log_gpu_memory and device.type == "cuda":
-                    memory_mb = torch.cuda.max_memory_allocated(device) / 1024 / 1024
+                    memory_mb = torch.cuda.max_memory_allocated(device) / 1024**2
                     gpu_memory_list.append(memory_mb)
 
                 # Evaluate on val/test sets if requested
                 val_loss = None
                 test_loss = None
                 if eval_interval and (step + 1) % eval_interval == 0:
-                    _max_b = eval_max_batches if eval_max_batches > 0 else None
                     if val_loader is not None:
-                        val_loss = evaluate(model, val_loader, use_amp, label_smoothing, _max_b)
+                        val_loss = evaluate(
+                            model, val_loader, use_amp, label_smoothing, eval_max_batches_opt
+                        )
                         val_losses.append(val_loss)
 
                         # Early stopping check
@@ -462,12 +464,15 @@ def train(  # noqa: C901
                                 should_stop_early = True
 
                     if test_loader is not None:
-                        test_loss = evaluate(model, test_loader, use_amp, label_smoothing, _max_b)
+                        test_loss = evaluate(
+                            model, test_loader, use_amp, label_smoothing, eval_max_batches_opt
+                        )
                         test_losses.append(test_loss)
+
+                current_lr = optimizer.param_groups[0]["lr"]
 
                 # Write to CSV (every step)
                 if csv_writer is not None:
-                    current_lr = optimizer.param_groups[0]["lr"]
                     row: dict[str, Any] = {
                         "step": step + 1,
                         "loss": f"{avg_loss:.6f}",
@@ -486,7 +491,6 @@ def train(  # noqa: C901
 
                 # TensorBoard: log train metrics every step
                 if tb_writer is not None:
-                    current_lr = optimizer.param_groups[0]["lr"]
                     tb_writer.add_scalar("train/loss", avg_loss, step + 1)
                     tb_writer.add_scalar("train/perplexity", perplexity, step + 1)
                     tb_writer.add_scalar("train/lr", current_lr, step + 1)
@@ -506,7 +510,6 @@ def train(  # noqa: C901
 
                 # Logging
                 if log_interval > 0 and (step + 1) % log_interval == 0:
-                    current_lr = optimizer.param_groups[0]["lr"]
                     log_msg = (
                         f"step {step + 1:>5}/{max_steps}  "
                         f"loss={avg_loss:.4f}  ppl={perplexity:.2f}  "
