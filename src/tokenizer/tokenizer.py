@@ -17,37 +17,13 @@ class Tokenizer(ABC):
     """Abstract base class for tokenizers."""
 
     @abstractmethod
-    def encode(self, text: str) -> list[int]:
-        """Encode text to a list of token IDs.
-
-        Args:
-            text: Input text string.
-
-        Returns:
-            List of integer token IDs.
-        """
+    def encode(self, text: str) -> list[int]: ...
 
     @abstractmethod
-    def decode(self, tokens: list[int]) -> str:
-        """Decode a list of token IDs back to text.
-
-        Args:
-            tokens: List of integer token IDs.
-
-        Returns:
-            Decoded text string.
-        """
+    def decode(self, tokens: list[int]) -> str: ...
 
     @abstractmethod
-    def count_tokens(self, text: str) -> int:
-        """Count the number of tokens in text.
-
-        Args:
-            text: Input text string.
-
-        Returns:
-            Number of tokens.
-        """
+    def count_tokens(self, text: str) -> int: ...
 
 
 class TokenizerFactory:
@@ -60,7 +36,7 @@ class TokenizerFactory:
     _tokenizers: dict[str, type[Tokenizer]] = {}
 
     @classmethod
-    def create(cls, name: str = "char", **kwargs) -> Tokenizer:
+    def create(cls, name: str = "char", **kwargs: object) -> Tokenizer:
         """Create a tokenizer instance by name.
 
         Args:
@@ -102,9 +78,4 @@ class TokenizerFactory:
 
     @classmethod
     def list_available(cls) -> list[str]:
-        """List all available tokenizer names.
-
-        Returns:
-            Sorted list of registered tokenizer names.
-        """
         return sorted(cls._tokenizers.keys())
