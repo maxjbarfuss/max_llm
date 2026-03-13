@@ -1,13 +1,8 @@
 """Learning rate schedulers for training."""
 
-from __future__ import annotations
-
 import math
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import torch.optim
-    import torch.optim.lr_scheduler
+import torch.optim.lr_scheduler
 
 
 def get_cosine_schedule_with_warmup(
@@ -43,27 +38,48 @@ def get_cosine_schedule_with_warmup(
         ...     optimizer.step()
         ...     scheduler.step()
     """
-    import torch.optim.lr_scheduler
 
     def lr_lambda(current_step: int) -> float:
-        """Compute LR multiplier for current step."""
         # Warmup phase: linear ramp from 0 to 1
         if current_step < num_warmup_steps:
-            return float(current_step) / float(max(1, num_warmup_steps))
+            return current_step / max(1, num_warmup_steps)
 
         # Decay phase: cosine decay from 1 to min_lr_ratio
-        progress = float(current_step - num_warmup_steps) / float(
-            max(1, num_training_steps - num_warmup_steps)
+        progress = min(
+            1.0,
+            (current_step - num_warmup_steps) / max(1, num_training_steps - num_warmup_steps),
         )
-        # Clamp progress to [0, 1] in case we exceed num_training_steps
-        progress = min(1.0, progress)
         cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
         return min_lr_ratio + (1.0 - min_lr_ratio) * cosine_decay
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)
 
 
-def get_wsd_schedule(  # noqa: C901
+def _validate_wsd_params(
+    num_training_steps: int,
+    stable_fraction: float,
+    decay_fraction: float,
+    min_lr_ratio: float,
+    decay_shape: str,
+    lowered_linear_alpha: float,
+) -> None:
+    if num_training_steps <= 0:
+        raise ValueError("num_training_steps must be positive")
+    if not (0.0 <= stable_fraction <= 1.0):
+        raise ValueError("stable_fraction must be in [0, 1]")
+    if not (0.0 <= decay_fraction <= 1.0):
+        raise ValueError("decay_fraction must be in [0, 1]")
+    if stable_fraction + decay_fraction > 1.0:
+        raise ValueError("stable_fraction + decay_fraction must be <= 1.0")
+    if not (0.0 <= min_lr_ratio <= 1.0):
+        raise ValueError("min_lr_ratio must be in [0, 1]")
+    if decay_shape not in {"linear", "sqrt", "lowered_linear"}:
+        raise ValueError("decay_shape must be one of: linear, sqrt, lowered_linear")
+    if not (0.0 < lowered_linear_alpha <= 1.0):
+        raise ValueError("lowered_linear_alpha must be in (0, 1]")
+
+
+def get_wsd_schedule(
     optimizer: torch.optim.Optimizer,
     num_warmup_steps: int,
     num_training_steps: int,
@@ -84,22 +100,14 @@ def get_wsd_schedule(  # noqa: C901
 
     Any remaining steps after warmup+stable+decay stay at ``min_lr_ratio``.
     """
-    import torch.optim.lr_scheduler
-
-    if num_training_steps <= 0:
-        raise ValueError("num_training_steps must be positive")
-    if not (0.0 <= stable_fraction <= 1.0):
-        raise ValueError("stable_fraction must be in [0, 1]")
-    if not (0.0 <= decay_fraction <= 1.0):
-        raise ValueError("decay_fraction must be in [0, 1]")
-    if stable_fraction + decay_fraction > 1.0:
-        raise ValueError("stable_fraction + decay_fraction must be <= 1.0")
-    if not (0.0 <= min_lr_ratio <= 1.0):
-        raise ValueError("min_lr_ratio must be in [0, 1]")
-    if decay_shape not in {"linear", "sqrt", "lowered_linear"}:
-        raise ValueError("decay_shape must be one of: linear, sqrt, lowered_linear")
-    if not (0.0 < lowered_linear_alpha <= 1.0):
-        raise ValueError("lowered_linear_alpha must be in (0, 1]")
+    _validate_wsd_params(
+        num_training_steps,
+        stable_fraction,
+        decay_fraction,
+        min_lr_ratio,
+        decay_shape,
+        lowered_linear_alpha,
+    )
 
     warmup_end = max(0, num_warmup_steps)
     stable_steps = int(num_training_steps * stable_fraction)
@@ -118,21 +126,13 @@ def get_wsd_schedule(  # noqa: C901
         return max(0.0, 1.0 - (p**lowered_linear_alpha))
 
     def lr_lambda(current_step: int) -> float:
-        # Warmup phase
         if current_step < warmup_end:
-            return float(current_step) / float(max(1, warmup_end))
-
-        # Stable plateau phase
+            return current_step / max(1, warmup_end)
         if current_step < stable_end:
             return 1.0
-
-        # Decay phase
         if current_step < decay_end:
-            progress = float(current_step - stable_end) / float(max(1, decay_end - stable_end))
-            kernel = _decay_kernel(progress)
-            return min_lr_ratio + (1.0 - min_lr_ratio) * kernel
-
-        # Floor phase after planned decay window
+            progress = (current_step - stable_end) / max(1, decay_end - stable_end)
+            return min_lr_ratio + (1.0 - min_lr_ratio) * _decay_kernel(progress)
         return min_lr_ratio
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)
