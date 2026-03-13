@@ -1,7 +1,5 @@
 """Helpers for constructing tokenizers from runtime configuration."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from src.tokenizer.hf_bpe_tokenizer import HFBPETokenizer
