@@ -1,7 +1,5 @@
 """Strategy components for data preparation."""
 
-from __future__ import annotations
-
 import json
 import unicodedata
 from abc import ABC, abstractmethod
@@ -60,20 +58,7 @@ def _filter_unk(
     unk_id: int = 0,
     max_unk_rate: float = 0.02,
 ) -> list[int]:
-    """Remove unknown-token IDs from an encoded sequence, or discard it entirely.
-
-    Two-stage strategy:
-    - If the fraction of unk tokens exceeds *max_unk_rate*, the document is too
-      noisy to produce useful training signal and an empty list is returned
-      (callers treat empty as "skip this document").
-    - Otherwise the unk tokens are stripped in place.  This handles the common
-      case of a small-vocab tokenizer that maps rare proper-noun initials to unk
-      (e.g. standalone "G", "U", "Z" with a 1 024-token SentencePiece model):
-      the word is slightly mangled but the document remains coherent, and the
-      model is never trained to generate unk.
-
-    Pass unk_id=-1 to disable all filtering.
-    """
+    """Strip unk tokens, or return [] (skip) if unk rate exceeds max_unk_rate. unk_id=-1 disables."""
     if unk_id < 0 or not tokens:
         return tokens
     n_unk = sum(1 for t in tokens if t == unk_id)
@@ -94,8 +79,7 @@ class FormatReader(ABC):
     @abstractmethod
     def read_documents(
         self, source: DataSource, tokenizer: TokenizerLike
-    ) -> list[tuple[str, np.ndarray]]:
-        raise NotImplementedError
+    ) -> list[tuple[str, np.ndarray]]: ...
 
 
 class TextFormatReader(FormatReader):
@@ -241,8 +225,7 @@ class MixingStrategy(ABC):
         self,
         all_documents: dict[str, Sequence[np.ndarray]],
         config: MixingConfig,
-    ) -> list[tuple[str, np.ndarray]]:
-        raise NotImplementedError
+    ) -> list[tuple[str, np.ndarray]]: ...
 
 
 def _apply_sampling(
@@ -375,8 +358,7 @@ class CurriculumStrategy(ABC):
         self,
         documents: list[tuple[str, np.ndarray]],
         config: CurriculumConfig,
-    ) -> dict[str, list[tuple[str, np.ndarray]]]:
-        raise NotImplementedError
+    ) -> dict[str, list[tuple[str, np.ndarray]]]: ...
 
 
 class NoCurriculum(CurriculumStrategy):
@@ -493,8 +475,7 @@ class SplitStrategy(ABC):
         self,
         documents: list[tuple[str, np.ndarray]],
         config: SplitConfig,
-    ) -> dict[str, list[tuple[str, np.ndarray]]]:
-        raise NotImplementedError
+    ) -> dict[str, list[tuple[str, np.ndarray]]]: ...
 
 
 class StratifiedSplitter(SplitStrategy):
