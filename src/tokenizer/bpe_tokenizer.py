@@ -12,8 +12,6 @@ Usage:
     text = tok.decode(ids)
 """
 
-from __future__ import annotations
-
 import tiktoken
 
 from .tokenizer import Tokenizer
@@ -41,13 +39,6 @@ class BPETokenizer(Tokenizer):
     """
 
     def __init__(self, encoding: str = "gpt2", **_kwargs: object) -> None:
-        """Create a BPE tokenizer.
-
-        Args:
-            encoding: tiktoken encoding name.
-            **_kwargs: Ignored extra keyword arguments (for config-schema
-                compatibility with other tokenizers that accept e.g. ``mode``).
-        """
         if encoding not in _SUPPORTED_ENCODINGS:
             raise ValueError(
                 f"Unknown encoding '{encoding}'. " f"Supported: {sorted(_SUPPORTED_ENCODINGS)}"
@@ -55,59 +46,25 @@ class BPETokenizer(Tokenizer):
         self._enc = tiktoken.get_encoding(encoding)
         self._encoding_name = encoding
 
-    # ------------------------------------------------------------------
-    # Tokenizer ABC
-    # ------------------------------------------------------------------
-
     def encode(self, text: str) -> list[int]:
-        """Encode text to BPE token IDs.
-
-        Args:
-            text: Input text (any Unicode string).
-
-        Returns:
-            List of integer token IDs in [0, vocab_size).
-        """
         if not text:
             return []
         return list(self._enc.encode(text))
 
     def decode(self, tokens: list[int]) -> str:
-        """Decode BPE token IDs back to text.
-
-        Args:
-            tokens: List of integer token IDs.
-
-        Returns:
-            Decoded text string.
-        """
         if not tokens:
             return ""
         return self._enc.decode(tokens)
 
     def count_tokens(self, text: str) -> int:
-        """Return the number of tokens in text without constructing the list.
-
-        Args:
-            text: Input text string.
-
-        Returns:
-            Token count (integer ≥ 0).
-        """
         if not text:
             return 0
         return len(self._enc.encode(text))
 
-    # ------------------------------------------------------------------
-    # Properties
-    # ------------------------------------------------------------------
-
     @property
     def vocab_size(self) -> int:
-        """Vocabulary size of the underlying encoding."""
         return self._enc.n_vocab
 
     @property
     def encoding_name(self) -> str:
-        """Name of the tiktoken encoding in use."""
         return self._encoding_name
