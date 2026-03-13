@@ -35,7 +35,7 @@ class FeedForward(nn.Module):
         hidden_dim = d_model * expansion_ratio
 
         self.linear1 = nn.Linear(d_model, hidden_dim, bias=True)
-        self.activation = nn.GELU()
+        self.activation = nn.GELU(approximate="tanh")
         self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
         self.linear2 = nn.Linear(hidden_dim, d_model, bias=True)
 

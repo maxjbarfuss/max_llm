@@ -6,6 +6,7 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 # Try to import Flash Attention 2
 try:
@@ -98,8 +99,7 @@ class CausalMultiHeadAttention(nn.Module):
         # Output projection
         self.out_proj = nn.Linear(d_model, d_model, bias=True)
 
-        # Dropout (applied to attention weights or in Flash Attention)
-        self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
+        # Dropout applied inside each attention backend via dropout_p
 
         # Initialize weights
         self._reset_parameters()
@@ -239,29 +239,18 @@ class CausalMultiHeadAttention(nn.Module):
             # Output shape: (B, T, num_heads, head_dim)
             attn_output = attn_output.view(B, T, self.d_model)
 
-        else:  # standard attention
-            # Standard attention path: (B, T, num_heads, head_dim) -> (B, num_heads, T, head_dim)
+        else:  # standard — F.scaled_dot_product_attention (PyTorch 2.0+)
+            # Expects (B, num_heads, T, head_dim); handles causal mask and scaling internally.
             q = q.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
             k = k.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
             v = v.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
-
-            # Scaled dot-product attention: (B, num_heads, T, T)
-            scores = (q @ k.transpose(-2, -1)) / (self.head_dim**0.5)
-
-            # Apply causal mask (upper triangular, excluding diagonal)
-            causal_mask = torch.triu(
-                torch.ones(T, T, device=x.device, dtype=torch.bool), diagonal=1
+            attn_output = F.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                dropout_p=self.dropout_p if self.training else 0.0,
+                is_causal=True,
             )
-            scores = scores.masked_fill(causal_mask, float("-inf"))
-
-            # Compute attention weights
-            attn_weights = torch.softmax(scores, dim=-1)  # (B, num_heads, T, T)
-            attn_weights = self.dropout(attn_weights)
-
-            # Apply attention to values: (B, num_heads, T, head_dim)
-            attn_output = attn_weights @ v
-
-            # Merge heads: (B, num_heads, T, head_dim) -> (B, T, num_heads, head_dim) -> (B, T, d_model)
             attn_output = attn_output.transpose(1, 2).contiguous().view(B, T, self.d_model)
 
         # Final output projection
