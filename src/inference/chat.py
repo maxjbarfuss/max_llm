@@ -9,8 +9,6 @@ Usage:
     --checkpoint outputs/<run>/checkpoint.pt
 """
 
-from __future__ import annotations
-
 import argparse
 import sys
 from pathlib import Path
@@ -24,7 +22,7 @@ from src.inference.utils import (
     load_checkpoint_into_model,
     resolve_device,
 )
-from src.models.learning_model import BaseLearningModel, LearningModel
+from src.models.learning_model import LearningModel
 from src.tokenizer import Tokenizer
 
 
@@ -32,7 +30,7 @@ def load_checkpoint_model(
     config_path: str,
     checkpoint_path: str | None = None,
     device: str = "auto",
-) -> tuple[BaseLearningModel, Tokenizer, ExperimentConfig, torch.device]:
+) -> tuple[LearningModel, Tokenizer, ExperimentConfig, torch.device]:
     """Load model from checkpoint.
 
     Args:
@@ -80,7 +78,7 @@ def load_checkpoint_model(
 
 
 def chat_mode(
-    model: BaseLearningModel,
+    model: LearningModel,
     tokenizer: Tokenizer,
     config: ExperimentConfig,
     device: torch.device,

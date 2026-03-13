@@ -1,11 +1,9 @@
 """Shared inference utilities for checkpoint loading, device resolution, and tokenizer creation."""
 
-from __future__ import annotations
-
 import torch
 
 from src.config.experiment import DataConfig
-from src.models.learning_model import BaseLearningModel
+from src.models.learning_model import LearningModel
 from src.tokenizer import Tokenizer, create_configured_tokenizer
 
 
@@ -28,7 +26,7 @@ def resolve_device(device_spec: str) -> torch.device:
 
 
 def load_checkpoint_into_model(
-    model: BaseLearningModel,
+    model: LearningModel,
     checkpoint_path: str,
     device: torch.device,
 ) -> None:

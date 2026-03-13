@@ -15,10 +15,8 @@ from src.models.embeddings.token_embedding import TokenEmbedding
 from src.models.position.learned_position import LearnedPositionEmbedding
 from src.models.transformer.transformer_block import TransformerBlock
 
-from .base import BaseLearningModel
 
-
-class LearningModel(BaseLearningModel):
+class LearningModel(nn.Module):
     """Universal language model supporting Phase 2–7 configurations.
 
     Architecture:

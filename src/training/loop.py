@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from src.models.learning_model import BaseLearningModel
 from src.training.distributed import get_world_size
 
 
@@ -77,7 +77,7 @@ def compute_loss_with_smoothing(
 
 
 def evaluate(
-    model: BaseLearningModel,
+    model: nn.Module,
     dataloader: DataLoader,
     use_amp: bool = False,
     label_smoothing: float = 0.0,
@@ -127,7 +127,7 @@ def evaluate(
 
 
 def train_step(
-    model: BaseLearningModel,
+    model: nn.Module,
     x: torch.Tensor,
     y: torch.Tensor,
     optimizer: torch.optim.Optimizer,
@@ -193,7 +193,7 @@ def optimizer_step(
     scaler: torch.GradScaler | None = None,
     use_amp: bool = False,
     gradient_clip_norm: float | None = None,
-    model: BaseLearningModel | None = None,
+    model: nn.Module | None = None,
 ) -> float:
     """Perform optimizer step with optional gradient clipping and AMP unscaling.
 
@@ -229,7 +229,7 @@ def optimizer_step(
 
 
 def train(  # noqa: C901
-    model: BaseLearningModel,
+    model: nn.Module,
     train_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     max_steps: int,

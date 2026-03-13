@@ -21,7 +21,7 @@ from src.config.inference import InferenceConfig
 from src.config.model import ModelConfig
 from src.config.training import TrainingConfig
 from src.inference.utils import resolve_device
-from src.models.learning_model import BaseLearningModel, LearningModel
+from src.models.learning_model import LearningModel
 from src.tokenizer import create_configured_tokenizer
 from src.training.distributed import (
     cleanup_distributed,
@@ -182,7 +182,7 @@ def _load_dataset(
 
 
 def save_checkpoint(
-    model: BaseLearningModel,
+    model: LearningModel,
     optimizer: torch.optim.Optimizer,
     step: int,
     output_dir: str | Path,
@@ -217,7 +217,7 @@ def save_checkpoint(
 
 def load_checkpoint(
     checkpoint_path: str | Path,
-    model: BaseLearningModel,
+    model: LearningModel,
     optimizer: torch.optim.Optimizer | None = None,
     strict_version_check: bool = True,
 ) -> int:
@@ -525,7 +525,6 @@ def main() -> None:  # noqa: C901
         raise ValueError("Validation split is empty")
 
     # Create model from config (always LearningModel; num_layers determines phase)
-    model: BaseLearningModel
     attention_backend = config.training.attention_backend
     if attention_backend != "standard":
         print_once(f"Attention backend: {attention_backend}")
@@ -741,7 +740,7 @@ def main() -> None:  # noqa: C901
                 return
             raw_model = getattr(model, "module", model) if want_distributed else model
             ckpt_path = save_checkpoint(
-                cast(BaseLearningModel, raw_model),
+                cast(LearningModel, raw_model),
                 optimizer,
                 step=step,
                 output_dir=config.output_dir,
@@ -822,7 +821,7 @@ def main() -> None:  # noqa: C901
     elif is_main_process():
         # Unwrap model if DDP
         raw_model = getattr(model, "module", model) if want_distributed else model
-        model_to_save = cast(BaseLearningModel, raw_model)
+        model_to_save = cast(LearningModel, raw_model)
         ckpt_path = save_checkpoint(
             model_to_save,
             optimizer,

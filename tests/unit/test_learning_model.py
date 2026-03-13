@@ -1,4 +1,4 @@
-"""Unit tests for BaseLearningModel and LearningModel."""
+"""Unit tests for LearningModel."""
 
 import io
 
@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from src.config.model import ModelConfig
-from src.models.learning_model import BaseLearningModel, LearningModel
+from src.models.learning_model import LearningModel
 
 
 def make_model_config(**overrides: object) -> ModelConfig:
@@ -27,20 +27,6 @@ def make_model_config(**overrides: object) -> ModelConfig:
     }
     values.update(overrides)
     return ModelConfig(**values)
-
-
-class TestBaseLearningModel:
-    """Contract tests for the abstract base interface."""
-
-    def test_cannot_instantiate_directly(self):
-        """BaseLearningModel is abstract and cannot be instantiated."""
-        with pytest.raises(TypeError):
-            BaseLearningModel()  # type: ignore[abstract]
-
-    def test_decoder_lm_is_base_learning_model(self):
-        """LearningModel satisfies the BaseLearningModel contract."""
-        model = LearningModel.from_config(make_model_config(), attention_backend="standard")
-        assert isinstance(model, BaseLearningModel)
 
 
 class TestLearningModelConstruction:
