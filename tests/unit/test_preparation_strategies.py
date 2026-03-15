@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from pathlib import Path
+from typing import cast
 
 import numpy as np
 
 from src.data.preparation.config import CurriculumConfig, DataSource, MixingConfig, SplitConfig
+from src.data.preparation.pipeline._spill import read_and_spill
 from src.data.preparation.strategies import (
     ConcatenateMixer,
     InterleaveMixer,
@@ -189,12 +193,15 @@ def test_mixer_defaults_to_interleave():
 
 def test_interleave_and_concatenate_mixers():
     docs = {
-        "a": [np.array([1], dtype=np.uint16), np.array([2], dtype=np.uint16)],
-        "b": [np.array([3], dtype=np.uint16)],
+        "a": (np.array([1], dtype=np.uint16), np.array([2], dtype=np.uint16)),
+        "b": (np.array([3], dtype=np.uint16),),
     }
+    mixer_docs = cast(dict[str, Sequence[np.ndarray]], docs)
 
-    interleaved = InterleaveMixer().mix(docs, MixingConfig(strategy="interleave", seed=123))
-    concatenated = ConcatenateMixer().mix(docs, MixingConfig(strategy="concatenate", seed=123))
+    interleaved = InterleaveMixer().mix(mixer_docs, MixingConfig(strategy="interleave", seed=123))
+    concatenated = ConcatenateMixer().mix(
+        mixer_docs, MixingConfig(strategy="concatenate", seed=123)
+    )
 
     assert len(interleaved) == 3
     assert len(concatenated) == 3
@@ -305,6 +312,52 @@ def test_doc_weighted_mixing_preserves_doc_ratio():
 
 
 def test_weight_by_tokens_config_round_trips():
-    cfg = MixingConfig(weight_by="tokens", source_ratios={"owt": 0.5, "fw": 0.5})
+    cfg = MixingConfig(
+        weight_by="tokens",
+        source_ratios={"owt": 0.5, "fw": 0.5},
+        target_total_tokens=1000,
+    )
     assert cfg.weight_by == "tokens"
     assert cfg.source_ratios == {"owt": 0.5, "fw": 0.5}
+    assert cfg.target_total_tokens == 1000
+
+
+def test_token_weighted_mixing_honors_total_token_budget():
+    docs_a = [np.ones(10, dtype=np.uint16) for _ in range(300)]
+    docs_b = [np.ones(10, dtype=np.uint16) for _ in range(300)]
+    all_docs = {"a": docs_a, "b": docs_b}
+
+    cfg = MixingConfig(
+        strategy="interleave",
+        source_ratios={"a": 0.2, "b": 0.8},
+        weight_by="tokens",
+        target_total_tokens=1000,
+        seed=0,
+    )
+    mixed = InterleaveMixer().mix(all_docs, cfg)  # type: ignore[arg-type]
+
+    tok_a = sum(len(d) for name, d in mixed if name == "a")
+    tok_b = sum(len(d) for name, d in mixed if name == "b")
+    assert tok_a == 200
+    assert tok_b == 800
+
+
+def test_read_and_spill_honors_source_max_tokens(tmp_path):
+    path = tmp_path / "sample.txt"
+    path.write_text("alpha\n\n beta\n\n gamma\n\n delta", encoding="utf-8")
+    spill_dir = tmp_path / "spill"
+    spill_dir.mkdir()
+
+    source = DataSource(
+        name="tiny",
+        path=str(path),
+        format="text",
+        delimiter="\n\n",
+        min_length=1,
+        max_tokens=8,
+    )
+
+    spilled = read_and_spill(source, TextFormatReader(), _DummyTokenizer(), Path(spill_dir))
+
+    assert spilled.total_tokens <= 8
+    assert len(spilled) >= 1

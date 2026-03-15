@@ -34,8 +34,14 @@ def load_checkpoint_model(
     device_obj = resolve_device(device)
     print(f"📍 Device: {device_obj}")
 
-    # Honour training attention backend — flash/xformers require fp16/bf16.
+    # Honour training attention backend, but force a CPU-safe backend.
     attn_backend = getattr(config.training, "attention_backend", "standard")
+    if device_obj.type == "cpu" and attn_backend != "standard":
+        print(
+            f"⚠ Attention backend '{attn_backend}' is not supported on CPU; "
+            "falling back to 'standard'"
+        )
+        attn_backend = "standard"
     model = LearningModel.from_config(config.model, attention_backend=attn_backend).to(device_obj)
 
     if checkpoint_path:

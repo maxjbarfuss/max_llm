@@ -231,6 +231,12 @@ class MixingStrategy(ABC):
 def _apply_sampling(
     docs: dict[str, Sequence[np.ndarray]], config: MixingConfig
 ) -> dict[str, Sequence[np.ndarray]]:
+    has_total_budget = (
+        config.target_total_docs is not None or config.target_total_tokens is not None
+    )
+    if config.source_ratios and has_total_budget:
+        return docs
+
     if not (config.upsample_to_max or config.downsample_to_min or config.target_total_docs):
         return docs
 
@@ -260,8 +266,13 @@ def _apply_sampling(
 def _target_counts_by_docs(
     docs: dict[str, list[np.ndarray]],
     normalized: dict[str, float],
+    total_docs_override: int | None = None,
 ) -> dict[str, int]:
-    total_docs = sum(len(items) for items in docs.values())
+    total_docs = (
+        total_docs_override
+        if total_docs_override is not None
+        else sum(len(items) for items in docs.values())
+    )
     remaining = [n for n in docs if n not in normalized]
     rem_ratio = max(0.0, 1.0 - sum(normalized.values()))
     result: dict[str, int] = {}
@@ -278,9 +289,12 @@ def _target_counts_by_docs(
 def _target_counts_by_tokens(
     docs: dict[str, list[np.ndarray]],
     normalized: dict[str, float],
+    total_tokens_override: int | None = None,
 ) -> dict[str, int]:
     tok_totals = {name: int(sum(len(d) for d in items)) for name, items in docs.items()}
-    total_tokens = sum(tok_totals.values())
+    total_tokens = (
+        total_tokens_override if total_tokens_override is not None else sum(tok_totals.values())
+    )
     avg_len = {name: tok_totals[name] / max(1, len(docs[name])) for name in docs}
     remaining = [n for n in docs if n not in normalized]
     rem_ratio = max(0.0, 1.0 - sum(normalized.values()))
@@ -300,13 +314,15 @@ def _apply_ratio_resampling(
     docs: dict[str, list[np.ndarray]],
     ratios: dict[str, float],
     rng: np.random.RandomState,
+    target_total_docs: int | None = None,
+    target_total_tokens: int | None = None,
     weight_by: str = "docs",
 ) -> dict[str, list[np.ndarray]]:
     normalized = {k: v / sum(ratios.values()) for k, v in ratios.items()}
     target_counts = (
-        _target_counts_by_tokens(docs, normalized)
+        _target_counts_by_tokens(docs, normalized, total_tokens_override=target_total_tokens)
         if weight_by == "tokens"
-        else _target_counts_by_docs(docs, normalized)
+        else _target_counts_by_docs(docs, normalized, total_docs_override=target_total_docs)
     )
 
     resampled: dict[str, list[np.ndarray]] = {}
@@ -337,7 +353,12 @@ class ConcatenateMixer(MixingStrategy):
         if config.source_ratios:
             rng = np.random.RandomState(config.seed)
             source_docs = _apply_ratio_resampling(
-                source_docs, config.source_ratios, rng, config.weight_by
+                source_docs,
+                config.source_ratios,
+                rng,
+                target_total_docs=config.target_total_docs,
+                target_total_tokens=config.target_total_tokens,
+                weight_by=config.weight_by,
             )
         mixed: list[tuple[str, np.ndarray]] = []
         for name, items in source_docs.items():
@@ -360,7 +381,12 @@ class InterleaveMixer(MixingStrategy):
 
         if config.source_ratios:
             source_docs = _apply_ratio_resampling(
-                source_docs, config.source_ratios, rng, config.weight_by
+                source_docs,
+                config.source_ratios,
+                rng,
+                target_total_docs=config.target_total_docs,
+                target_total_tokens=config.target_total_tokens,
+                weight_by=config.weight_by,
             )
 
         mixed: list[tuple[str, np.ndarray]] = []

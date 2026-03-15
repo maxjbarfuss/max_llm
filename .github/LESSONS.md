@@ -130,6 +130,14 @@
 
 ---
 
+## L016 — Point TensorBoard at the Parent Output Dir, Not a Single Experiment Dir
+
+**Observed behavior**: Agent launched TensorBoard with `--logdir` pointing at a single experiment's subdirectory (e.g. `outputs/ephemeral/p3-some-run-20260313/tensorboard`). This works for that run in isolation but makes it impossible to compare curves across experiments without restarting TensorBoard.
+
+**Correct approach**: Always launch TensorBoard one level up — either at `outputs/ephemeral/` or at the shared parent that contains multiple experiment folders. TensorBoard will discover all nested `tensorboard/` subdirectories automatically and label each run by its folder name. Example: `tensorboard --logdir outputs/ephemeral/ --host 0.0.0.0 --port 6006`. This allows side-by-side comparison of every run in that directory without any restarts. Never point `--logdir` at a single experiment subfolder unless the user explicitly asks for an isolated view.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:

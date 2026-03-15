@@ -38,7 +38,7 @@ Configs are JSON or TOML files.  Top-level sections:
 |---|---|
 | `[tokenizer]` | Tokenizer type, vocab size, character coverage, optional pre-built model path |
 | `[[datasets]]` | One entry per source (name, path, format, weight, …) |
-| `[mixing]` | How sources are combined (`interleave` or `concatenate`), optional per-source ratios |
+| `[mixing]` | How sources are combined (`interleave` or `concatenate`), optional per-source ratios, and optional global doc/token budgets |
 | `[splits]` | Train/val/test ratios, shuffle, stratified flag |
 | `[output]` | Output directory, file prefix, EOS token, shard size |
 | `[curriculum]` | Optional curriculum learning stages (length-based, domain, or custom) |
@@ -71,6 +71,15 @@ This prevents the model from ever generating SentencePiece's `⁇` artifact (the
 > **Note — vocab size matters:** With the 1 024-token SentencePiece model used in Phase 3, roughly 63 % of OpenWebText paragraphs exceed the 2 % threshold and are dropped because uncommon capital letters (`G`, `R`, `U`, `V`, `X`, `Z`) have no standalone token.  Upgrading to a ≥ 8 192-token vocabulary covers these characters and reduces the drop rate dramatically.
 
 Pre-tokenized `npy` sources have the same unk filter applied at the array level (always a hard drop of token 0, since there is no text to normalize).
+
+### Token budgets and source caps
+
+`[mixing]` supports either `target_total_docs` or `target_total_tokens`.
+
+- Use `target_total_docs` when your ratios are meant in documents.
+- Use `target_total_tokens` with `weight_by = "tokens"` when your ratios are meant in tokens.
+
+Each `[[datasets]]` entry may also set `max_docs` or `max_tokens` to stop reading a large source early. This is especially useful for very large corpora such as FineWeb where reading the full source just to downsample later would waste hours.
 
 ### Memory model
 

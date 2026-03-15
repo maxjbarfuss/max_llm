@@ -55,6 +55,17 @@ def get_cosine_schedule_with_warmup(
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)
 
 
+def _decay_multiplier(progress: float, decay_shape: str, lowered_linear_alpha: float) -> float:
+    """Map decay progress in [0, 1] to a multiplier in [0, 1]."""
+    p = min(1.0, max(0.0, progress))
+    if decay_shape == "linear":
+        return 1.0 - p
+    if decay_shape == "sqrt":
+        return math.sqrt(max(0.0, 1.0 - p))
+    # lowered-linear: stays higher early, decays faster near end
+    return max(0.0, 1.0 - (p**lowered_linear_alpha))
+
+
 def _validate_wsd_params(
     num_training_steps: int,
     stable_fraction: float,
@@ -115,16 +126,6 @@ def get_wsd_schedule(
     stable_end = warmup_end + stable_steps
     decay_end = stable_end + max(1, decay_steps)
 
-    def _decay_kernel(progress: float) -> float:
-        # progress in [0, 1], returns multiplier in [0, 1]
-        p = min(1.0, max(0.0, progress))
-        if decay_shape == "linear":
-            return 1.0 - p
-        if decay_shape == "sqrt":
-            return math.sqrt(max(0.0, 1.0 - p))
-        # lowered-linear decay: keep lr higher early, then decay faster near end
-        return max(0.0, 1.0 - (p**lowered_linear_alpha))
-
     def lr_lambda(current_step: int) -> float:
         if current_step < warmup_end:
             return current_step / max(1, warmup_end)
@@ -132,7 +133,92 @@ def get_wsd_schedule(
             return 1.0
         if current_step < decay_end:
             progress = (current_step - stable_end) / max(1, decay_end - stable_end)
-            return min_lr_ratio + (1.0 - min_lr_ratio) * _decay_kernel(progress)
+            return min_lr_ratio + (1.0 - min_lr_ratio) * _decay_multiplier(
+                progress, decay_shape, lowered_linear_alpha
+            )
         return min_lr_ratio
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)
+
+
+def _validate_resume_params(
+    num_training_steps: int,
+    hold_steps: int,
+    ramp_steps: int,
+    start_lr_ratio: float,
+) -> None:
+    if num_training_steps <= 0:
+        raise ValueError("num_training_steps must be positive")
+    if hold_steps < 0:
+        raise ValueError("hold_steps must be >= 0")
+    if ramp_steps < 0:
+        raise ValueError("ramp_steps must be >= 0")
+    if not (0.0 <= start_lr_ratio <= 1.0):
+        raise ValueError("start_lr_ratio must be in [0, 1]")
+    if hold_steps + ramp_steps >= num_training_steps:
+        raise ValueError("hold_steps + ramp_steps must be < num_training_steps")
+
+
+def get_resume_hold_ramp_then_wsd_schedule(
+    optimizer: torch.optim.Optimizer,
+    num_training_steps: int,
+    start_lr_ratio: float,
+    hold_steps: int,
+    ramp_steps: int,
+    stable_fraction: float = 0.7,
+    decay_fraction: float = 0.2,
+    decay_shape: str = "sqrt",
+    min_lr_ratio: float = 0.0,
+    lowered_linear_alpha: float = 0.7,
+    last_epoch: int = -1,
+) -> torch.optim.lr_scheduler.LambdaLR:
+    """Schedule for resumed runs: hold checkpoint LR, ramp to target LR, then WSD.
+
+    This is intended for restart workflows where model weights are restored from
+    checkpoint, but we want a controlled LR transition for the new run.
+
+    Phases:
+        1) Hold ``start_lr_ratio * base_lr`` for ``hold_steps``
+        2) Linearly ramp to ``base_lr`` over ``ramp_steps``
+        3) Apply a WSD schedule over remaining steps (no extra warmup)
+    """
+    _validate_resume_params(num_training_steps, hold_steps, ramp_steps, start_lr_ratio)
+    transition_steps = hold_steps + ramp_steps
+
+    tail_steps = num_training_steps - transition_steps
+    _validate_wsd_params(
+        tail_steps,
+        stable_fraction,
+        decay_fraction,
+        min_lr_ratio,
+        decay_shape,
+        lowered_linear_alpha,
+    )
+
+    stable_steps = int(tail_steps * stable_fraction)
+    decay_steps = int(tail_steps * decay_fraction)
+    stable_end = stable_steps
+    decay_end = stable_end + max(1, decay_steps)
+
+    def _tail_wsd_ratio(tail_step: int) -> float:
+        if tail_step < stable_end:
+            return 1.0
+        if tail_step < decay_end:
+            progress = (tail_step - stable_end) / max(1, decay_end - stable_end)
+            return min_lr_ratio + (1.0 - min_lr_ratio) * _decay_multiplier(
+                progress, decay_shape, lowered_linear_alpha
+            )
+        return min_lr_ratio
+
+    def lr_lambda(current_step: int) -> float:
+        if current_step < hold_steps:
+            return start_lr_ratio
+        if current_step < transition_steps:
+            ramp_idx = current_step - hold_steps + 1
+            progress = min(1.0, ramp_idx / max(1, ramp_steps))
+            return start_lr_ratio + (1.0 - start_lr_ratio) * progress
+
+        tail_step = current_step - transition_steps
+        return _tail_wsd_ratio(tail_step)
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)

@@ -67,8 +67,7 @@ def load_source_as_text(source: DataSource) -> str:
     if source.format == "text":
         if path.is_dir():
             parts = [
-                p.read_text(encoding="utf-8", errors="ignore")
-                for p in sorted(path.glob("*.txt"))
+                p.read_text(encoding="utf-8", errors="ignore") for p in sorted(path.glob("*.txt"))
             ]
             return "\n\n".join(parts)
         return path.read_text(encoding="utf-8", errors="ignore")
@@ -77,9 +76,7 @@ def load_source_as_text(source: DataSource) -> str:
         tokens = np.load(path)
         byte_tokens = np.asarray(tokens)
         if byte_tokens.size and (int(byte_tokens.min()) < 0 or int(byte_tokens.max()) > 255):
-            raise ValueError(
-                f"utf8_tokens source contains out-of-byte-range values: {source.path}"
-            )
+            raise ValueError(f"utf8_tokens source contains out-of-byte-range values: {source.path}")
         return byte_tokens.astype(np.uint8, copy=False).tobytes().decode("utf-8", errors="ignore")
 
     if source.format == "jsonl":
@@ -187,9 +184,7 @@ def _write_source_to_corpus(  # noqa: C901
         tokens = np.load(path, mmap_mode="r")
         byte_tokens = np.asarray(tokens)
         if byte_tokens.size and (int(byte_tokens.min()) < 0 or int(byte_tokens.max()) > 255):
-            raise ValueError(
-                f"utf8_tokens source contains out-of-byte-range values: {source.path}"
-            )
+            raise ValueError(f"utf8_tokens source contains out-of-byte-range values: {source.path}")
         decoded = _normalize_text(
             byte_tokens.astype(np.uint8, copy=False).tobytes().decode("utf-8", errors="ignore")
         )

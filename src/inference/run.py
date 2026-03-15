@@ -50,12 +50,10 @@ def main() -> None:
     if not prompt_tokens:
         raise ValueError("Prompt produced no tokens; check tokenizer settings.")
 
-    model = LearningModel.from_config(
-        config.model,
-        attention_backend=(
-            config.training.attention_backend if hasattr(config, "training") else "standard"
-        ),
-    ).to(device)
+    attn_backend = getattr(config.training, "attention_backend", "standard")
+    if device.type == "cpu" and attn_backend != "standard":
+        attn_backend = "standard"
+    model = LearningModel.from_config(config.model, attention_backend=attn_backend).to(device)
     model.eval()
 
     if args.checkpoint:
@@ -65,7 +63,12 @@ def main() -> None:
 
     tokens = list(prompt_tokens)
 
-    with torch.no_grad():
+    autocast_ctx = (
+        torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+        if device.type == "cuda"
+        else torch.no_grad()
+    )
+    with torch.no_grad(), autocast_ctx:
         for _ in range(max_new_tokens):
             input_ids = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(0)
             logits = model(input_ids)[0, -1]

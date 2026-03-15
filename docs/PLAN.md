@@ -16,7 +16,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 |-------|--------|-------|--------|------|---------------|---------------|
 | **1** | ✅ Done | Foundation | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, env notes |
 | **2** | ✅ Done | Skeleton & Reproducibility | M | Low (scope clarity) | TinyStories + WikiText-103 (1–10M tokens) | Tokenizer, data pipeline, training loop, checkpointing, seed control, overfit test |
-| **3** | 🔄 In Progress | Capable GPT-2-like model (~60M params, coherent output) | L | Medium | Mixed corpus: TinyStories (~10%), WikiText-103 (full), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K tokenizer | Architecture + optimization stack complete. Dataset rebuilt with EOS + NFKC filtering. Training active: ~4500 steps, val loss ~3.59, ppl ~36. Goal not yet met: coherent output gate. [Phase 3 BPE Validation](PHASE_3_CLOSEOUT.md) |
+| **3** | ✅ Done | Capable GPT-2-like model (~60M params, coherent output) | L | Medium | Mixed corpus: TinyStories (~10%), WikiText-103 (full), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K tokenizer | Architecture + optimization stack complete. Two milestone runs: p3_final_unigram (ppl 24.0, 12K steps) and p3_final_27b_merge50 (ppl 28.9, 10,836 steps on 27B-token corpus). Coherent output gate passed. [Phase 3 Closeout](PHASE_3_CLOSEOUT.md) |
 | **4** | — | Llama Architecture + Scale-Up Training | XL | High (scale + stability) | OpenWebText/FineWeb 10–500M tokens with staged curriculum | Architecture A/B report, curriculum manifest, throughput benchmarks |
 | **5** | — | Post-Training | XL | High (forgetting + alignment) | SFT, grounding, preference data | LoRA adapters, grounding benchmark, reward-model card, safety evaluation |
 | **6** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + preference with curriculum | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
@@ -229,8 +229,9 @@ Evaluation and quality:
 - ✅ Scaled WikiText BPE to 10–50M tokens: both artifacts prepared and validated
 - ✅ Data ramp validation: 10M WikiText BPE run successful (5000 steps, loss 10.89→7.22, ppl 1362); demonstrates stable convergence at larger scale; 419 unit tests passing
 - ✅ Rebuild Unigram 8K dataset: proper document splitting, EOS token between docs, NFKC normalization + unk filtering; corpus = TinyStories (~10%) + WikiText-103 (full) + OpenWebText (~12%) + FineWeb-Edu (partial); artifact `data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_{train,val}.npy`
-- 🔄 **[IN PROGRESS]** Train ~60M param Unigram run (config: `config/ephemeral/p3_final.toml`, 2 GPUs, 12000 steps); currently step ~4500/12000, val loss ~3.59, ppl ~36; stable phase, decay not yet started
-- ☐ **[REMAINING — GATE]** Coherent output: generated text shows real word sequences, sentence structure, narrative fragments — not degenerate repetition
+- ✅ **Run 1** (`config/milestones/p3_final_unigram.toml`): 12K steps on original mixed corpus; best val ppl 24.0 — checkpoint `outputs/milestones/p3_final_unigram/`
+- ✅ **Final run** (`config/milestones/p3_final_27b_merge50.toml`): 10,836 steps on 27B-token corpus (owt30/fineweb70), resumed from 50/50 merged checkpoint; best val ppl 28.9 — checkpoint `outputs/milestones/p3_final_27b_merge50/`
+- ✅ **GATE**: Coherent output confirmed — real English sentences, narrative structure, no degenerate repetition (see `docs/PHASE_3_CLOSEOUT.md`)
 
 ---
 

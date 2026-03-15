@@ -35,6 +35,8 @@ class DataSource:
     text_field: str = "text"
     min_length: int = 10
     max_length: int | None = None
+    max_docs: int | None = None
+    max_tokens: int | None = None
     curriculum_stage: int | None = None
 
 
@@ -48,6 +50,7 @@ class MixingConfig:
     upsample_to_max: bool = False
     downsample_to_min: bool = False
     target_total_docs: int | None = None
+    target_total_tokens: int | None = None
     source_ratios: dict[str, float] | None = None
     weight_by: str = "docs"  # "docs" or "tokens"
     seed: int = 42
@@ -123,12 +126,20 @@ class DataPreparationConfig:
         for ds in self.datasets:
             assert Path(ds.path).exists(), f"Not found: {ds.path}"
             assert ds.weight >= 0, f"Negative weight: {ds.name}"
+            if ds.max_docs is not None:
+                assert ds.max_docs > 0, f"max_docs must be > 0: {ds.name}"
+            if ds.max_tokens is not None:
+                assert ds.max_tokens > 0, f"max_tokens must be > 0: {ds.name}"
 
         assert sum(ds.weight for ds in self.datasets) > 0, "All weights zero"
         assert self.output.shard_size_tokens >= 0, "shard_size_tokens must be >= 0"
 
         if self.mixing.upsample_to_max and self.mixing.downsample_to_min:
             raise ValueError("Cannot upsample and downsample")
+        if self.mixing.target_total_docs and self.mixing.target_total_tokens:
+            raise ValueError("Specify only one of target_total_docs or target_total_tokens")
+        if self.mixing.weight_by not in {"docs", "tokens"}:
+            raise ValueError(f"Unknown weight_by: {self.mixing.weight_by}")
 
 
 def _load_raw(path: Path) -> dict[str, Any]:

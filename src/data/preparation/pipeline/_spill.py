@@ -38,6 +38,20 @@ class _SpilledDocs:
         return int(self._offsets[-1])
 
 
+def _source_limit_reached(
+    source: DataSource, doc_count: int, current_tokens: int, doc_len: int
+) -> bool:
+    """Return True if any configured source limit has been hit."""
+    if source.max_docs is not None and doc_count >= source.max_docs:
+        return True
+    if source.max_tokens is not None:
+        if current_tokens >= source.max_tokens:
+            return True
+        if current_tokens > 0 and current_tokens + doc_len > source.max_tokens:
+            return True
+    return False
+
+
 def read_and_spill(
     source: DataSource,
     reader: FormatReader,
@@ -59,6 +73,9 @@ def read_and_spill(
     ) as pbar:
         with open(bin_path, "wb") as f:
             for _, doc in reader.iter_documents(source, tokenizer):
+                if _source_limit_reached(source, len(offsets) - 1, offsets[-1], len(doc)):
+                    break
+
                 if doc.dtype == np.uint32:
                     dtype = np.dtype(np.uint32)
                 coerced = doc.astype(dtype, copy=False)

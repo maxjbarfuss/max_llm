@@ -13,7 +13,6 @@ src/config/
 ├── training.py     TrainingConfig
 ├── inference.py    InferenceConfig
 ├── data.py         DataConfig — TOML null-coercion + tokenizer validation
-├── validation.py   validate_checkpoint_config_compatibility, ConfigVersionMismatchError
 ├── toml_utils.py   load_toml, require_section, section_or_root
 └── __init__.py     Public re-exports
 ```

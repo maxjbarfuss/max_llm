@@ -100,7 +100,9 @@ class PreparationPipeline:
                 source.format,
                 source.path,
             )
-            spilled = read_and_spill(source, resolve_format_reader(source.format), tokenizer, spill_dir)
+            spilled = read_and_spill(
+                source, resolve_format_reader(source.format), tokenizer, spill_dir
+            )
             all_documents[source.name] = spilled
             total_tok = spilled.total_tokens
             print(f"      {source.name}: {len(spilled):,} docs  {total_tok:,} tokens", flush=True)
@@ -112,7 +114,8 @@ class PreparationPipeline:
         # For weight_by="tokens" always enforce ratios; for "docs" only when weights differ.
         if config.mixing.source_ratios is None:
             active_weights = {
-                s.name: s.weight for s in config.datasets
+                s.name: s.weight
+                for s in config.datasets
                 if s.weight > 0 and s.name in all_documents
             }
             unique_weights = set(active_weights.values())

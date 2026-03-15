@@ -7,7 +7,6 @@ Usage:
 import argparse
 import os
 import random
-import warnings
 from pathlib import Path
 from typing import cast
 
@@ -17,9 +16,6 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from src.config.data import DataConfig
 from src.config.experiment import ExperimentConfig
-from src.config.inference import InferenceConfig
-from src.config.model import ModelConfig
-from src.config.training import TrainingConfig
 from src.inference.utils import resolve_device
 from src.models.learning_model import LearningModel
 from src.tokenizer import create_configured_tokenizer
@@ -36,17 +32,12 @@ from src.training.distributed import (
 from src.training.loop import train
 from src.training.optimizer import configure_optimizer_param_groups
 from src.training.profiling import log_model_size
-from src.training.scheduler import get_cosine_schedule_with_warmup, get_wsd_schedule
+from src.training.scheduler import (
+    get_cosine_schedule_with_warmup,
+    get_resume_hold_ramp_then_wsd_schedule,
+    get_wsd_schedule,
+)
 from src.utils import seed_everything, seed_worker
-
-
-def _config_versions() -> dict[str, int]:
-    return {
-        "model": ModelConfig.__version__,
-        "training": TrainingConfig.__version__,
-        "data": DataConfig.__version__,
-        "inference": InferenceConfig.__version__,
-    }
 
 
 class TokenDataset(Dataset):
@@ -208,7 +199,6 @@ def save_checkpoint(
             "model_state": model.state_dict(),
             "optimizer_state": optimizer.state_dict(),
             "step": step,
-            "config_versions": _config_versions(),
         },
         path,
     )
@@ -219,7 +209,6 @@ def load_checkpoint(
     checkpoint_path: str | Path,
     model: LearningModel,
     optimizer: torch.optim.Optimizer | None = None,
-    strict_version_check: bool = True,
 ) -> int:
     """Load model and optimizer state from checkpoint.
 
@@ -227,44 +216,10 @@ def load_checkpoint(
         checkpoint_path: Path to checkpoint file.
         model: Model to load state into.
         optimizer: Optional optimizer to load state into.
-        strict_version_check: If True, raises error on config version mismatch.
-
     Returns:
         Training step from checkpoint.
-
-    Raises:
-        ValueError: If strict_version_check=True and config versions don't match.
     """
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
-
-    # Check config version compatibility
-    if "config_versions" in checkpoint:
-        saved_versions = checkpoint["config_versions"]
-        current_versions = _config_versions()
-
-        mismatches = []
-        for config_name, current_version in current_versions.items():
-            saved_version = saved_versions.get(config_name)
-            if saved_version is not None and saved_version != current_version:
-                mismatches.append(
-                    f"  {config_name}: checkpoint v{saved_version} != current v{current_version}"
-                )
-
-        if mismatches and strict_version_check:
-            raise ValueError(
-                "Config version mismatch detected:\n"
-                + "\n".join(mismatches)
-                + "\n\nCheckpoint was saved with different config versions. "
-                "To load this checkpoint, either:\n"
-                "  1. Use matching config versions (git checkout to commit matching checkpoint)\n"
-                "  2. Re-train from scratch with current config\n"
-                "  3. Set strict_version_check=False (not recommended for reproducibility)"
-            )
-        if mismatches:
-            warnings.warn(
-                "Config version mismatch (strict_version_check=False):\n" + "\n".join(mismatches),
-                stacklevel=2,
-            )
 
     model.load_state_dict(checkpoint["model_state"])
     if optimizer is not None and "optimizer_state" in checkpoint:
@@ -543,7 +498,7 @@ def main() -> None:  # noqa: C901
         if not resume_path.exists():
             raise FileNotFoundError(f"Resume checkpoint not found: {resume_path}")
         print_once(f"Checkpoint : Loading model weights from {resume_path}")
-        loaded_step = load_checkpoint(resume_path, model, optimizer=None, strict_version_check=True)
+        loaded_step = load_checkpoint(resume_path, model, optimizer=None)
         print_once(f"Checkpoint : Loaded (saved at step {loaded_step})")
 
     # Log model size if profiling enabled
@@ -632,47 +587,108 @@ def main() -> None:  # noqa: C901
             fused=use_fused_optimizer,
         )
 
+    ckpt_lr: float | None = None
+
     # Resume optimizer state after optimizer construction.
-    if resume_path is not None and loaded_step > 0:
+    if resume_path is not None and loaded_step > 0 and config.training.resume_optimizer_state:
         _resume_ckpt = torch.load(resume_path, map_location="cpu")
         optimizer_state = _resume_ckpt.get("optimizer_state")
         if optimizer_state is not None:
             optimizer.load_state_dict(optimizer_state)
+            param_groups = optimizer_state.get("param_groups")
+            if param_groups and isinstance(param_groups, list):
+                first_lr = param_groups[0].get("lr")
+                if isinstance(first_lr, float):
+                    ckpt_lr = first_lr
         # LambdaLR with last_epoch >= 0 requires initial_lr in every param group.
         # Use loaded optimizer lr when resuming so extending max_steps does not
         # cause an artificial LR jump relative to the checkpoint state.
         for group in optimizer.param_groups:
             group["initial_lr"] = group.get("lr", config.training.learning_rate)
 
+    # For resumed runs with schedule restart, read checkpoint LR from optimizer_state
+    # metadata if it was not captured while restoring optimizer state.
+    if (
+        ckpt_lr is None
+        and resume_path is not None
+        and loaded_step > 0
+        and not config.training.resume_scheduler_state
+    ):
+        _resume_ckpt = torch.load(resume_path, map_location="cpu")
+        optimizer_state = _resume_ckpt.get("optimizer_state")
+        if optimizer_state is not None:
+            param_groups = optimizer_state.get("param_groups")
+            if param_groups and isinstance(param_groups, list):
+                first_lr = param_groups[0].get("lr")
+                if isinstance(first_lr, float):
+                    ckpt_lr = first_lr
+
+    scheduler_resume_step = loaded_step if config.training.resume_scheduler_state else 0
+
     # Create learning rate scheduler
     # If resuming from checkpoint, initialize scheduler at the loaded step
     # to avoid "scheduler.step() before optimizer.step()" warning
     if config.training.scheduler_type == "wsd":
-        lr_scheduler = get_wsd_schedule(
-            optimizer=optimizer,
-            num_warmup_steps=config.training.warmup_steps,
-            num_training_steps=config.training.max_steps,
-            stable_fraction=config.training.wsd_stable_fraction,
-            decay_fraction=config.training.wsd_decay_fraction,
-            decay_shape=config.training.wsd_decay_shape,
-            min_lr_ratio=config.training.min_lr_ratio,
-            lowered_linear_alpha=config.training.wsd_lowered_linear_alpha,
-            last_epoch=loaded_step - 1 if loaded_step > 0 else -1,
-        )
-        print_once(
-            f"Scheduler  : WSD warmup={config.training.warmup_steps}, "
-            f"stable={config.training.wsd_stable_fraction:.2f}, "
-            f"decay={config.training.wsd_decay_fraction:.2f}, "
-            f"shape={config.training.wsd_decay_shape}, "
-            f"min_lr_ratio={config.training.min_lr_ratio:.3f}"
-        )
+        use_resume_transition = loaded_step > 0 and not config.training.resume_scheduler_state
+
+        if use_resume_transition:
+            if ckpt_lr is None:
+                raise ValueError(
+                    "resume_lr_hold_steps/warmup_steps configured, but checkpoint LR "
+                    "could not be read from optimizer_state"
+                )
+            start_lr_ratio = max(0.0, min(1.0, ckpt_lr / config.training.learning_rate))
+            lr_scheduler = get_resume_hold_ramp_then_wsd_schedule(
+                optimizer=optimizer,
+                num_training_steps=config.training.max_steps,
+                start_lr_ratio=start_lr_ratio,
+                hold_steps=config.training.resume_lr_hold_steps,
+                ramp_steps=config.training.warmup_steps,
+                stable_fraction=config.training.wsd_stable_fraction,
+                decay_fraction=config.training.wsd_decay_fraction,
+                decay_shape=config.training.wsd_decay_shape,
+                min_lr_ratio=config.training.min_lr_ratio,
+                lowered_linear_alpha=config.training.wsd_lowered_linear_alpha,
+                last_epoch=-1,
+            )
+            # Apply the intended starting LR before the first optimizer step.
+            for group in optimizer.param_groups:
+                group["lr"] = config.training.learning_rate * start_lr_ratio
+            print_once(
+                f"Scheduler  : Resume transition hold={config.training.resume_lr_hold_steps}, "
+                f"ramp={config.training.warmup_steps}, "
+                f"start_lr={ckpt_lr:.2e}, target_lr={config.training.learning_rate:.2e}, "
+                f"stable={config.training.wsd_stable_fraction:.2f}, "
+                f"decay={config.training.wsd_decay_fraction:.2f}, "
+                f"shape={config.training.wsd_decay_shape}, "
+                f"min_lr_ratio={config.training.min_lr_ratio:.3f}"
+            )
+        else:
+            lr_scheduler = get_wsd_schedule(
+                optimizer=optimizer,
+                num_warmup_steps=config.training.warmup_steps,
+                num_training_steps=config.training.max_steps,
+                stable_fraction=config.training.wsd_stable_fraction,
+                decay_fraction=config.training.wsd_decay_fraction,
+                decay_shape=config.training.wsd_decay_shape,
+                min_lr_ratio=config.training.min_lr_ratio,
+                lowered_linear_alpha=config.training.wsd_lowered_linear_alpha,
+                last_epoch=scheduler_resume_step - 1 if scheduler_resume_step > 0 else -1,
+            )
+            print_once(
+                f"Scheduler  : WSD warmup={config.training.warmup_steps}, "
+                f"stable={config.training.wsd_stable_fraction:.2f}, "
+                f"decay={config.training.wsd_decay_fraction:.2f}, "
+                f"shape={config.training.wsd_decay_shape}, "
+                f"min_lr_ratio={config.training.min_lr_ratio:.3f}"
+            )
     else:
         lr_scheduler = get_cosine_schedule_with_warmup(
             optimizer=optimizer,
             num_warmup_steps=config.training.warmup_steps,
             num_training_steps=config.training.max_steps,
             min_lr_ratio=config.training.min_lr_ratio,
-            last_epoch=loaded_step - 1 if loaded_step > 0 else -1,
+            last_epoch=scheduler_resume_step - 1 if scheduler_resume_step > 0 else -1,
         )
         print_once(
             f"Scheduler  : Warmup {config.training.warmup_steps} steps, "
@@ -680,7 +696,12 @@ def main() -> None:  # noqa: C901
             f"over {config.training.max_steps} steps"
         )
     if loaded_step > 0:
-        print_once(f"Scheduler  : Resuming from step {loaded_step}")
+        if config.training.resume_scheduler_state:
+            print_once(f"Scheduler  : Resuming from step {loaded_step}")
+        else:
+            print_once(
+                "Scheduler  : Restarting schedule from step 0 (resume_scheduler_state=false)"
+            )
 
     # Determine mixed precision setting from precision_schedule
     # For now, use the first schedule entry; Phase 4 will implement full schedule support
@@ -731,7 +752,6 @@ def main() -> None:  # noqa: C901
                     "model_state": model_sd,
                     "optimizer_state": opt_sd,
                     "step": step,
-                    "config_versions": _config_versions(),
                 },
                 ckpt_path,
             )
@@ -813,7 +833,6 @@ def main() -> None:  # noqa: C901
                     "model_state": model_sd,
                     "optimizer_state": opt_sd,
                     "step": config.training.max_steps,
-                    "config_versions": _config_versions(),
                 },
                 ckpt_path,
             )

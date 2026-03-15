@@ -40,6 +40,9 @@ class TrainingConfig:
     attention_backend: str = "standard"
     selective_checkpointing: bool = False  # Disabled by default
     resume_from_checkpoint: str | None = None
+    resume_optimizer_state: bool = True
+    resume_scheduler_state: bool = True
+    resume_lr_hold_steps: int = 0
     early_stopping_patience: int | None = None
     early_stopping_min_delta: float = 0.0
     label_smoothing: float = 0.0
@@ -72,6 +75,10 @@ class TrainingConfig:
             raise ValueError("weight_decay must be in [0, 1)")
         if self.warmup_steps > self.max_steps:
             raise ValueError("warmup_steps must be <= max_steps")
+        if self.resume_lr_hold_steps < 0:
+            raise ValueError("resume_lr_hold_steps must be >= 0")
+        if self.resume_lr_hold_steps + self.warmup_steps >= self.max_steps:
+            raise ValueError("resume_lr_hold_steps + warmup_steps must be < max_steps")
         if not (0 <= self.min_lr_ratio <= 1):
             raise ValueError("min_lr_ratio must be in [0, 1]")
 

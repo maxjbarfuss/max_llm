@@ -48,9 +48,7 @@ def save_outputs(
 
     if config.output.save_stats:
         stats_path = output_dir / f"{config.output.prefix}_stats.json"
-        stats_path.write_text(
-            json.dumps(_compute_stats(splits), indent=2), encoding="utf-8"
-        )
+        stats_path.write_text(json.dumps(_compute_stats(splits), indent=2), encoding="utf-8")
 
     manifest: dict[str, Any] = {
         "tokenizer_path": tokenizer_path,
@@ -102,9 +100,7 @@ def _save_single_file(
     """Write all docs into a pre-allocated memmap, flushing every 5 M tokens."""
     total_tokens = sum(len(doc) + (1 if has_eos else 0) for _, doc in docs)
     file_path = output_dir / f"{prefix}_{split_name}.npy"
-    out = np.lib.format.open_memmap(
-        str(file_path), mode="w+", dtype=dtype, shape=(total_tokens,)
-    )
+    out = np.lib.format.open_memmap(str(file_path), mode="w+", dtype=dtype, shape=(total_tokens,))
     cursor = 0
     next_flush_at = 5_000_000
 

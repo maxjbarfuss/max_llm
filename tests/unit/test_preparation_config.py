@@ -108,6 +108,23 @@ class TestValidation:
         with pytest.raises(ValueError, match="Cannot upsample and downsample"):
             cfg.validate()
 
+    def test_validate_rejects_conflicting_total_budgets(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="tiny", path=__file__)],
+            mixing=MixingConfig(target_total_docs=100, target_total_tokens=1000),
+        )
+
+        with pytest.raises(ValueError, match="Specify only one"):
+            cfg.validate()
+
+    def test_validate_rejects_non_positive_source_token_cap(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="tiny", path=__file__, max_tokens=0)],
+        )
+
+        with pytest.raises(AssertionError, match="max_tokens"):
+            cfg.validate()
+
     def test_validate_accepts_existing_file_dataset(self):
         cfg = DataPreparationConfig(
             datasets=[DataSource(name="tiny", path=__file__)],
