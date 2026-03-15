@@ -272,32 +272,8 @@ from src.training.train import save_checkpoint, load_checkpoint
 # Save (auto-includes config versions)
 path = save_checkpoint(model, optimizer, step=100, output_dir="outputs")
 
-# Load with version validation
-step = load_checkpoint(path, model, optimizer, strict_version_check=True)
-# Raises ConfigVersionMismatchError if versions don't match
-
-# Load an older checkpoint without matching versions
-step = load_checkpoint(path, model, optimizer, strict_version_check=False)
-# Warns but loads successfully
-```
-
-### Validation Utilities
-
-```python
-from src.config import (
-    validate_checkpoint_config_compatibility,
-    get_checkpoint_config_versions,
-    ConfigVersionMismatchError,
-)
-
-try:
-    versions = validate_checkpoint_config_compatibility("ckpt.pt", strict=True)
-except ConfigVersionMismatchError as e:
-    print(e)  # Includes remediation steps
-
-versions = get_checkpoint_config_versions("ckpt.pt")
-# Returns: {"model": 1, "training": 1, "data": 1, "inference": 1}
-# Returns None if checkpoint predates versioning system
+# Load
+step = load_checkpoint(path, model, optimizer)
 ```
 
 ### Test Fixtures
@@ -324,7 +300,5 @@ Available: `build_model_config`, `build_training_config`, `build_data_config`, `
 | [src/config/training.py](../src/config/training.py) | `TrainingConfig` |
 | [src/config/data.py](../src/config/data.py) | `DataConfig` |
 | [src/config/inference.py](../src/config/inference.py) | `InferenceConfig` |
-| [src/config/validation.py](../src/config/validation.py) | Version validation and `ConfigVersionMismatchError` |
 | [src/training/train.py](../src/training/train.py) | `save_checkpoint()`, `load_checkpoint()` |
 | [tests/conftest.py](../tests/conftest.py) | Schema-aware config builders |
-| [tests/unit/test_config_versioning.py](../tests/unit/test_config_versioning.py) | Versioning system tests |
