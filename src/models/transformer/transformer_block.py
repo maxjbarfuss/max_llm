@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from src.models.attention.causal_mha import CausalMultiHeadAttention
-from src.models.feedforward.feedforward import FeedForward
+from src.models.feedforward import make_ffn
 from src.models.norm import make_norm
 from src.models.position.rope import RotaryEmbedding
 
@@ -14,24 +14,19 @@ class TransformerBlock(nn.Module):
 
     Architecture (pre-norm with residual connections):
     1. norm1 → Causal Multi-Head Attention → Residual Add
-    2. norm2 → FeedForward (2 Linear + GELU) → Residual Add
+    2. norm2 → FeedForward → Residual Add
 
     Args:
-        d_model: Model dimension (embedding size).
-        num_heads: Number of attention heads.
-        dropout: Dropout probability (default: 0.0).
-        ff_expansion_ratio: Expansion ratio for hidden dimension in FFN (default: 4).
-        attention_backend: Attention backend to use (default: "flash").
-            Options: "flash", "sage", "xformers", "standard"
-        norm_type: Normalization type — "layer" (LayerNorm) or "rms" (RMSNorm).
-            Default: "layer" (Phase 3 compatible); use "rms" for Llama-style (Phase 4+).
-        rope: Optional RotaryEmbedding instance to apply to Q/K before attention.
-
-    Attributes:
-        norm1: Pre-norm for attention.
-        attention: CausalMultiHeadAttention module.
-        norm2: Pre-norm for feedforward.
-        feedforward: FeedForward module.
+        d_model:           Model dimension (embedding size).
+        num_heads:         Number of attention heads.
+        dropout:           Dropout probability (default: 0.0).
+        ff_expansion_ratio: Expansion ratio for FFN hidden dim (default: 4). Ignored when
+                           intermediate_size is provided explicitly.
+        attention_backend: One of "flash", "sage", "xformers", "standard" (default: "flash").
+        norm_type:         "layer" (LayerNorm) or "rms" (RMSNorm, default: "layer").
+        rope:              Optional RotaryEmbedding to apply to Q/K.
+        ffn_type:          One of "gelu", "swiglu", "relu2", "xielu" (default: "gelu").
+        intermediate_size: FFN hidden dimension. Overrides ff_expansion_ratio when set.
     """
 
     def __init__(
@@ -44,6 +39,8 @@ class TransformerBlock(nn.Module):
         num_layers: int = 1,
         norm_type: str = "layer",
         rope: RotaryEmbedding | None = None,
+        ffn_type: str = "gelu",
+        intermediate_size: int | None = None,
     ) -> None:
         super().__init__()
         assert (
@@ -57,15 +54,17 @@ class TransformerBlock(nn.Module):
         self.d_model = d_model
         self.num_heads = num_heads
 
-        # Pre-norm layers
         self.norm1 = make_norm(norm_type, d_model)
         self.norm2 = make_norm(norm_type, d_model)
 
-        # Attention and feedforward (num_layers for scaled residual init)
         self.attention = CausalMultiHeadAttention(
             d_model, num_heads, dropout, attention_backend, num_layers=num_layers, rope=rope
         )
-        self.feedforward = FeedForward(d_model, ff_expansion_ratio, dropout, num_layers=num_layers)
+
+        _intermediate = (
+            intermediate_size if intermediate_size is not None else d_model * ff_expansion_ratio
+        )
+        self.feedforward = make_ffn(ffn_type, d_model, _intermediate, dropout, num_layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         assert (
@@ -79,13 +78,8 @@ class TransformerBlock(nn.Module):
         ), f"TransformerBlock input last dim {x.shape[-1]} != d_model {self.d_model}"
         in_shape = x.shape
 
-        # Pre-norm attention with residual
-        attn_out = self.attention(self.norm1(x))
-        x = x + attn_out
-
-        # Pre-norm feedforward with residual
-        ff_out = self.feedforward(self.norm2(x))
-        x = x + ff_out
+        x = x + self.attention(self.norm1(x))
+        x = x + self.feedforward(self.norm2(x))
 
         assert (
             x.shape == in_shape

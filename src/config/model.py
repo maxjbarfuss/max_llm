@@ -40,6 +40,7 @@ class ModelConfig:
     embedding_dim: int | None = None
     share_layer_weights: bool = False
     norm_type: str = "layer"  # "layer" = LayerNorm (Phase 3); "rms" = RMSNorm (Phase 4+ Llama)
+    ffn_type: str = "gelu"  # "gelu" | "swiglu" | "relu2" | "xielu"
 
     def __post_init__(self) -> None:
         """Validate model configuration."""
@@ -66,6 +67,10 @@ class ModelConfig:
             raise ValueError("dropout must be in [0, 1)")
         if self.norm_type not in {"layer", "rms"}:
             raise ValueError(f"norm_type must be 'layer' or 'rms', got '{self.norm_type}'")
+        if self.ffn_type not in {"gelu", "swiglu", "relu2", "xielu"}:
+            raise ValueError(
+                f"ffn_type must be 'gelu', 'swiglu', 'relu2', or 'xielu', got '{self.ffn_type}'"
+            )
 
     def _validate_dims(self) -> None:
         """Validate dimension alignments and divisibility."""
