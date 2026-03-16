@@ -33,11 +33,15 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `num_layers` | int | `0` | Transformer depth; `0` = embedding-only (Phase 2 baseline) |
 | `num_heads` | int | `4` | Attention heads; `hidden_size` must be divisible by `num_heads` |
 | `dropout` | float | `0.0` | Dropout probability applied in attention and FFN |
-| `intermediate_size` | int | `4 × hidden_size` | FFN hidden dimension; set explicitly to override the 4× default |
+| `norm_type` | `"layer"` \| `"rms"` | `"layer"` | Normalization: `"layer"` = LayerNorm (P3 default); `"rms"` = RMSNorm (P4+ recommended — lower memory, no mean centering) |
+| `ffn_type` | `"gelu"` \| `"swiglu"` \| `"relu2"` \| `"xielu"` | `"gelu"` | FFN activation variant: `"swiglu"` (Llama, no bias, hidden=4d×2/3); `"relu2"` (sparse ~50%, no params); `"xielu"` (piecewise quad/exp, 2 trainable scalars) |
+| `intermediate_size` | int | `4 × hidden_size` | FFN hidden dimension; overrides the 4× default; for SwiGLU use `swiglu_intermediate_size(hidden_size)` (rounds to 256 multiple) |
+| `pos_type` | string | `"learned"` | Positional encoding: `"learned"` (additive table), `"rope"` (rotary), `"add_rope"` (additive sinusoidal on Q/K), `"alibi"` (linear bias, no params), `"rel_pos"` (learned T5-style bucket bias) |
+| `rope_base` | int | `null` | Frequency base for `pos_type = "rope"` or `"add_rope"` (e.g. `10000`); ignored for other variants; back-compat: setting this without `pos_type` auto-selects `pos_type = "rope"` |
+| `rel_pos_num_buckets` | int | `32` | Distance buckets for `pos_type = "rel_pos"`; ignored for other variants |
 | `embedding_dim` | int | `null` | Factorized embedding dimension; `null` = no factorization |
 | `share_layer_weights` | bool | `false` | Share a single physical block across all `num_layers` — drastically cuts capacity; avoid for real training |
 | `mla_latent_dim` | int | `hidden_size` | MLA latent KV dimension (Phase 6+); set < `hidden_size` to compress |
-| `rope_base` | int | `10000` | RoPE base frequency (Phase 4+) |
 | `num_experts` | int | `1` | Total MoE experts (Phase 6+); `1` = dense |
 | `experts_per_token` | int | `1` | Top-k experts per token (Phase 6+) |
 | `moe_frequency` | int | `0` | Insert MoE every N blocks (Phase 6+); `0` = dense throughout |
@@ -170,6 +174,8 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 
 ## Complete Example
 
+### Phase 3 baseline
+
 ```toml
 [experiment]
 name = "maxllm-p3-unigram-1024h-10l"
@@ -224,6 +230,65 @@ unigram_model_path = "data/fast/p3_tokenizer.model"
 max_length = 2048
 num_workers = 4
 prefetch_factor = 4
+```
+
+### Phase 4 — Llama-style (RMSNorm + SwiGLU + RoPE)
+
+```toml
+[experiment]
+name = "p4-swiglu-rope"
+output_dir = "./outputs/ephemeral/p4-swiglu-rope"
+
+[model]
+hidden_size = 1024
+num_heads = 16
+vocab_size = 8192
+max_seq_length = 1024
+num_layers = 6
+norm_type = "rms"
+ffn_type = "swiglu"
+intermediate_size = 2816        # swiglu_intermediate_size(1024): 4*1024*2/3 rounded to 256
+pos_type = "rope"
+rope_base = 10000
+
+[training]
+batch_size = 16
+gradient_accumulation_steps = 4
+max_steps = 2000
+warmup_steps = 400
+learning_rate = 0.0018          # RoPE needs lower LR than standard (0.004 causes grad norm spike)
+weight_decay = 0.05
+betas = [0.9, 0.95]
+epsilon = 1e-8
+gradient_clip_norm = 1.0
+precision_schedule = [[0, -1, "bf16"]]
+scheduler_type = "cosine"
+min_lr_ratio = 0.1
+use_distributed = true
+attention_backend = "flash"
+use_torch_compile = true
+checkpoint_interval = 2000
+eval_interval = 100
+eval_max_batches = 32
+log_interval = 25
+
+[inference]
+temperature = 0.9
+top_p = 0.95
+max_new_tokens = 256
+
+[data]
+dataset_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_train.npy"
+validation_dataset_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_val.npy"
+tokenizer_name = "unigram"
+tokenizer_mode = "utf8"
+tokenizer_vocab_size = 8192
+tokenizer_backend = "unigram"
+unigram_model_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_tokenizer.model"
+max_length = 1024
+num_workers = 4
+prefetch_factor = 4
+seed = 42
 ```
 
 ---
