@@ -201,7 +201,7 @@ Training optimizations (advanced from Phase 4 to accelerate experimentation):
 - ✅ Multi-backend attention support: Flash Attention 2, Sage Attention, xFormers, Standard PyTorch (automatic fallback; config-selectable via `attention_backend`)
 - ✅ Fused QKV projection: single `nn.Linear(d, 3d)` replaces separate Q/K/V; bias removed on QKV; `out_proj` retains bias; GPT-2 scaled residual init on `out_proj` + FFN `linear2` (P3.8)
 - ✅ DataLoader optimization: parallel workers (`num_workers`), prefetching (`prefetch_factor`), pinned memory, persistent workers; eliminates CPU data loading bottleneck
-- ✅ torch.compile support: kernel fusion for 30-40% speedup (compatible with xFormers/standard, incompatible with Flash/Sage)
+- ✅ torch.compile support: kernel fusion for 30-40% speedup (compatible with Flash/xFormers/standard; sage graph-breaks around its kernel)
 - ✅ Multi-GPU (DDP): tested with 2 GPUs, ~1.8x throughput (30-35% sync overhead) with DistributedSampler + `set_epoch` per epoch *(train_ddp.sh removed; use `torchrun` directly)*
 - ✅ FSDP support: model sharding wired alongside DDP (P3.9, advanced from P4)
 - ✅ Profiling utilities: model size logging, GPU memory tracking, throughput monitoring (`--profile` flag)
@@ -244,6 +244,7 @@ Evaluation and quality:
 **Kill Criteria**: Stop if Llama architecture degrades perplexity vs Phase 3 baseline OR if multi-GPU loss diverges from single-GPU by >5% at same seed after 100 steps.
 **Out of Scope**: Fine-tuning, RL alignment, MoE/MLA upgrades.
 **Decision Log**: Record decisions as `P4-DEC-<n>` in Running Session Log.
+- **P4-DEC-1** (2026-03-16): RMSNorm confirmed as default norm for Phase 4. A/B vs LayerNorm (6L/1024H, 2K steps, same LR/data/seed): lower peak memory, similar throughput at this scale, slightly noisier early loss curve (expected — no mean centering; stabilizes at longer runs). Speed advantage expected to grow at 12L+. LR may need slight reduction at larger scale.
 
 **Tasks**:
 
@@ -264,7 +265,7 @@ Data:
 - ☐ Validate curriculum with per-stage loss curves and stage-transition logs; benchmark vs random mixing
 
 Components:
-- ☐ RMSNorm (replace LayerNorm, no mean, learnable gain)
+- ✅ RMSNorm (replace LayerNorm, no mean, learnable gain) — `src/models/norm/rms_norm.py`; `F.rms_norm` fused kernel; `make_norm` factory; 26 unit tests
 - ☐ RoPE on Q/K with explicit formulation (complex or sin/cos pairs)
 - ☐ RoPE length extrapolation beyond training context
 - ☐ SwiGLU FFN (hidden = 4×d_model×2/3, rounded to 256 multiples)
@@ -276,8 +277,9 @@ Training infrastructure:
 - ☐ Multi-node DDP setup (4+ GPUs across multiple machines)
 
 Evaluation and quality:
-- ☐ Per-component unit tests: RMSNorm, RoPE, SwiGLU, GQA
-- ☐ A/B comparison script: Phase 3 vs Phase 4 on same data/seed/param count
+- ✅ Per-component unit tests: RMSNorm (26 tests); ☐ RoPE, SwiGLU, GQA pending
+- ✅ LayerNorm vs RMSNorm A/B (6L/1024H, 2K steps, Flash+DDP): RMSNorm lower memory, similar speed, slightly noisier early curve — **RMSNorm confirmed as Phase 4 default** (P4-DEC-1)
+- ☐ Phase 3 vs Phase 4 A/B comparison (same data/seed/param count)
 - ☐ Comparison logs: parameter count, perplexity delta, tokens/sec, peak memory
 
 **Exit Criteria**:

@@ -12,6 +12,7 @@ from typing_extensions import Self
 
 from src.config.model import ModelConfig
 from src.models.embeddings.token_embedding import TokenEmbedding
+from src.models.norm import make_norm
 from src.models.position.learned_position import LearnedPositionEmbedding
 from src.models.transformer.transformer_block import TransformerBlock
 
@@ -54,6 +55,7 @@ class LearningModel(nn.Module):
         attention_backend: str = "flash",
         embedding_dim: int | None = None,
         share_layer_weights: bool = False,
+        norm_type: str = "layer",
     ) -> None:
         super().__init__()
         assert (
@@ -93,6 +95,7 @@ class LearningModel(nn.Module):
                         ff_expansion_ratio=ff_expansion_ratio,
                         attention_backend=attention_backend,
                         num_layers=num_layers,
+                        norm_type=norm_type,
                     )
                 ]
             )
@@ -106,6 +109,7 @@ class LearningModel(nn.Module):
                         ff_expansion_ratio=ff_expansion_ratio,
                         attention_backend=attention_backend,
                         num_layers=num_layers,
+                        norm_type=norm_type,
                     )
                     for _ in range(num_layers)
                 ]
@@ -118,8 +122,10 @@ class LearningModel(nn.Module):
                 len(self.blocks) == num_layers
             ), "share_layer_weights=False must create one block per layer"
 
-        # Final layer norm (standard for GPT-style models, skipped for num_layers=0 to support Phase 2)
-        self.final_norm = nn.LayerNorm(d_model) if num_layers > 0 else None
+        # Final norm (skipped for num_layers=0 to support Phase 2 embedding-only mode)
+        self.final_norm: nn.Module | None = (
+            make_norm(norm_type, d_model) if num_layers > 0 else None
+        )
 
         # LM head with weight tying (only when not using factorized embeddings)
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
@@ -190,4 +196,5 @@ class LearningModel(nn.Module):
             attention_backend=attention_backend,
             embedding_dim=config.embedding_dim,
             share_layer_weights=config.share_layer_weights,
+            norm_type=config.norm_type,
         )

@@ -5,14 +5,15 @@ import torch.nn as nn
 
 from src.models.attention.causal_mha import CausalMultiHeadAttention
 from src.models.feedforward.feedforward import FeedForward
+from src.models.norm import make_norm
 
 
 class TransformerBlock(nn.Module):
     """Transformer block with pre-norm, causal attention, and feedforward.
 
     Architecture (pre-norm with residual connections):
-    1. LayerNorm → Causal Multi-Head Attention → Residual Add
-    2. LayerNorm → FeedForward (2 Linear + GELU) → Residual Add
+    1. norm1 → Causal Multi-Head Attention → Residual Add
+    2. norm2 → FeedForward (2 Linear + GELU) → Residual Add
 
     Args:
         d_model: Model dimension (embedding size).
@@ -21,6 +22,8 @@ class TransformerBlock(nn.Module):
         ff_expansion_ratio: Expansion ratio for hidden dimension in FFN (default: 4).
         attention_backend: Attention backend to use (default: "flash").
             Options: "flash", "sage", "xformers", "standard"
+        norm_type: Normalization type — "layer" (LayerNorm) or "rms" (RMSNorm).
+            Default: "layer" (Phase 3 compatible); use "rms" for Llama-style (Phase 4+).
 
     Attributes:
         norm1: Pre-norm for attention.
@@ -37,18 +40,23 @@ class TransformerBlock(nn.Module):
         ff_expansion_ratio: int = 4,
         attention_backend: str = "flash",
         num_layers: int = 1,
+        norm_type: str = "layer",
     ) -> None:
         super().__init__()
         assert (
             d_model % num_heads == 0
         ), f"d_model ({d_model}) must be divisible by num_heads ({num_heads})"
+        assert norm_type in {
+            "layer",
+            "rms",
+        }, f"norm_type must be 'layer' or 'rms', got '{norm_type}'"
 
         self.d_model = d_model
         self.num_heads = num_heads
 
         # Pre-norm layers
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
+        self.norm1 = make_norm(norm_type, d_model)
+        self.norm2 = make_norm(norm_type, d_model)
 
         # Attention and feedforward (num_layers for scaled residual init)
         self.attention = CausalMultiHeadAttention(

@@ -39,6 +39,7 @@ class ModelConfig:
     # Optional: advanced features
     embedding_dim: int | None = None
     share_layer_weights: bool = False
+    norm_type: str = "layer"  # "layer" = LayerNorm (Phase 3); "rms" = RMSNorm (Phase 4+ Llama)
 
     def __post_init__(self) -> None:
         """Validate model configuration."""
@@ -63,6 +64,8 @@ class ModelConfig:
             raise ValueError("num_heads must be positive when num_layers > 0")
         if not (0 <= self.dropout < 1):
             raise ValueError("dropout must be in [0, 1)")
+        if self.norm_type not in {"layer", "rms"}:
+            raise ValueError(f"norm_type must be 'layer' or 'rms', got '{self.norm_type}'")
 
     def _validate_dims(self) -> None:
         """Validate dimension alignments and divisibility."""

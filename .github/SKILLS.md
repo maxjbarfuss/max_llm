@@ -113,6 +113,18 @@ Before every commit:
 
 ---
 
+## Slash Commands (Claude Code)
+
+Project-specific slash commands live in `.claude/commands/`. Invoke them with `/command-name [args]`.
+
+| Command | What it does |
+|---------|-------------|
+| `/chat [run_name]` | Start an interactive chat session with a trained checkpoint. Finds the most recent checkpoint under `outputs/ephemeral/` and its matching config in `config/ephemeral/` automatically. Pass an optional run name (e.g. `/chat p4_norm_ab_rms`) to pick a specific run. Runs `python -m src.inference.chat`. |
+| `/train [config_name]` | Launch a training run across both GPUs (RTX 4090 + RTX 3090 Ti) via `torchrun --nproc_per_node=2`. Resolves the config from `config/ephemeral/` or `config/milestones/` by name, or lists available configs if no argument given. Always uses DDP — never single-GPU. |
+| `/dataprep [config_name]` | Run the data preparation pipeline (`python -m src.data.preparation`) to tokenize and stage a dataset. Resolves config from `config/ephemeral/` or `config/data_prep/` by name. Reports output artifact paths and token counts on completion. |
+
+---
+
 ## Common Workflow Patterns
 
 ### Fast Iteration Loop

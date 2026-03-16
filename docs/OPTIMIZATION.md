@@ -7,7 +7,7 @@
 ```toml
 [training]
 attention_backend = "flash"           # flash|sage|xformers|standard
-use_torch_compile = false            # incompatible with flash/sage
+use_torch_compile = true
 batch_size = 12
 gradient_accumulation_steps = 10     # effective batch = 12 × 10 = 120
 scheduler_type = "wsd"               # cosine|wsd
@@ -34,14 +34,10 @@ Choose one based on your constraints:
 
 | Backend | Speed | Memory | torch.compile | Use When |
 |---------|-------|--------|---------------|----------|
-| **flash** | 2-4x | Best | ❌ No | Default for training (recommended) |
-| **sage** | 2-4x | Best | ❌ No | A/B test vs Flash Attention |
-| **xformers** | 1.5-2x | Good | ✅ Yes | Need torch.compile compatibility |
+| **flash** | 2-4x | Best | ✅ Yes | Default for training (recommended) |
+| **sage** | 2-4x | Best | ⚠️ Partial | Graph-breaks around sage kernel; compile provides no fusion benefit |
+| **xformers** | 1.5-2x | Good | ✅ Yes | Alternative to flash |
 | **standard** | 1x | Baseline | ✅ Yes | Debugging, CPU, fallback |
-
-**Critical constraint**: `flash` and `sage` cannot use `torch.compile`. Choose one path:
-- **Path A**: `attention_backend = "flash"` + `use_torch_compile = false` (recommended)
-- **Path B**: `attention_backend = "xformers"` + `use_torch_compile = true`
 
 ### Installation
 
@@ -148,16 +144,16 @@ persistent_workers = false   # true for multi-epoch, false for single-pass
 
 **Purpose**: Kernel fusion and graph optimization for 30-40% speedup.
 
-**Status**: ✅ Implemented (xformers/standard only)
+**Status**: ✅ Implemented (all backends)
 
 ```toml
 [training]
-attention_backend = "xformers"  # or "standard"
+attention_backend = "flash"  # flash|xformers|standard all support compile
 use_torch_compile = true
 ```
 
-**Constraints**:
-- ❌ **Cannot** be used with `flash` or `sage` attention
+**Notes**:
+- `sage` runs with compile but graph-breaks around its kernel — no fusion benefit; prefer `flash`
 - Adds ~10-30s compilation overhead on first step
 - Requires PyTorch 2.x
 
@@ -224,7 +220,7 @@ precision_schedule = [[0, -1, "bf16"]]  # bf16 from step 0 to end
 ```toml
 [training]
 attention_backend = "flash"
-use_torch_compile = false
+use_torch_compile = true
 use_distributed = true
 distributed_backend = "ddp"
 batch_size = 12
@@ -251,7 +247,7 @@ persistent_workers = false
 ```toml
 [training]
 attention_backend = "flash"
-use_torch_compile = false
+use_torch_compile = true
 batch_size = 8
 gradient_accumulation_steps = 2
 scheduler_type = "cosine"
@@ -263,14 +259,6 @@ prefetch_factor = 2
 pin_memory = true
 ```
 **Expected**: ~150-180K tok/s (RTX 4090, 256H, 4L, seq_len=256)
-
-### Alternative: torch.compile Path
-```toml
-[training]
-attention_backend = "xformers"
-use_torch_compile = true
-```
-**When**: Flash Attention unavailable or validating compile benefits
 
 ## Profiling
 
@@ -288,7 +276,7 @@ Output: Model size, parameter count, memory usage per layer
 
 **Small model** (RTX 4090, 256H, 4L, seq_len=256):
 
-1. **Flash Attention + Workers**: ~175k tokens/sec ⚡⚡⚡
+1. **Flash + compile + Workers**: ~175k tokens/sec ⚡⚡⚡ (recommended)
 2. **xFormers + compile + Workers**: ~145k tokens/sec ⚡⚡
 3. **Standard + compile + Workers**: ~110k tokens/sec ⚡
 4. **Baseline (no optimizations)**: ~80k tokens/sec ⚫
@@ -310,10 +298,6 @@ Output: Model size, parameter count, memory usage per layer
 **Cause**: Not installed
 **Fix**: `pip install flash-attn --no-build-isolation`
 **Note**: Auto-falls back to standard (training continues)
-
-### torch.compile error with flash
-**Cause**: Known incompatibility
-**Fix**: Set `use_torch_compile = false` or switch to `attention_backend = "xformers"`
 
 ### OOM with num_workers > 0
 **Cause**: Each worker allocates memory
