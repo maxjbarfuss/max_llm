@@ -1,0 +1,52 @@
+[experiment]
+name = "maxllm-p3-unigram-h16-8layers-wsd-safe-20260311"
+output_dir = "./outputs/milestones/p3_final_unigram"
+
+[model]
+hidden_size = 1024
+num_heads = 16
+vocab_size = 8192
+max_seq_length = 2048
+num_layers = 10
+
+[training]
+batch_size = 12
+gradient_accumulation_steps = 10
+max_steps = 12000
+warmup_steps = 500
+scheduler_type = "wsd"
+learning_rate = 0.004
+min_lr_ratio = 0.05
+wsd_stable_fraction = 0.55
+wsd_decay_fraction = 0.35
+wsd_decay_shape = "sqrt"
+wsd_lowered_linear_alpha = 0.7
+weight_decay = 0.05
+betas = [0.9, 0.95]
+epsilon = 1e-8
+gradient_clip_norm = 0.5
+precision_schedule = [[0, -1, "bf16"]]
+checkpoint_interval = 500
+eval_interval = 100
+eval_max_batches = 64
+log_interval = 25
+use_torch_compile = false
+use_distributed = true
+attention_backend = "flash"
+
+[inference]
+temperature = 0.9
+top_p = 0.95
+max_new_tokens = 1024
+
+[data]
+dataset_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_train.npy"
+validation_dataset_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_val.npy"
+tokenizer_name = "unigram"
+tokenizer_mode = "utf8"
+tokenizer_vocab_size = 8192
+tokenizer_backend = "unigram"
+unigram_model_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_tokenizer.model"
+max_length = 2048
+num_workers = 4
+prefetch_factor = 4

@@ -9,13 +9,13 @@ from unittest.mock import Mock, patch
 import pytest
 import torch
 
-from src.config.experiment import DataConfig, ExperimentConfig
+from src.config.experiment import DataConfig
 from src.inference.utils import (
     create_tokenizer_from_data_config,
     load_checkpoint_into_model,
     resolve_device,
 )
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import LearningModel
 
 
 class TestResolveDevice:
@@ -49,9 +49,11 @@ class TestLoadCheckpointIntoModel:
 
     @pytest.fixture
     def model(self):
-        """Create a simple model for testing."""
-        config = ExperimentConfig.from_toml("config/experiment.toml")
-        return SimpleLM.from_config(config.model)
+        """Create a small model for testing."""
+        from tests.conftest import build_model_config
+
+        config = build_model_config()
+        return LearningModel.from_config(config, attention_backend="standard")
 
     def test_load_checkpoint_with_model_state_key(self, model):
         """Test loading checkpoint with 'model_state' key."""
@@ -149,16 +151,65 @@ class TestLoadCheckpointIntoModel:
 class TestCreateTokenizerFromDataConfig:
     """Test tokenizer creation from data config."""
 
+    @patch("src.tokenizer.configured_tokenizer.TokenizerFactory.create")
+    def test_create_bpe_tokenizer_uses_encoding(self, mock_create):
+        """Test BPE tokenizer creation uses encoding kwarg."""
+        data_config = Mock(spec=DataConfig)
+        data_config.tokenizer_name = "bpe"
+        data_config.tokenizer_mode = "utf8"
+        data_config.tokenizer_vocab_size = 50_000
+        data_config.tokenizer_backend = "gpt2_bpe"
+        data_config.unigram_model_path = None
+        data_config.tokenizer_vocab_path = None
+
+        create_tokenizer_from_data_config(data_config)
+
+        mock_create.assert_called_once_with("bpe", encoding="gpt2")
+
+    @patch("src.tokenizer.configured_tokenizer.TokenizerFactory.create")
+    def test_create_unigram_tokenizer_uses_model_path(self, mock_create):
+        """Test unigram tokenizer creation forwards model_path."""
+        data_config = Mock(spec=DataConfig)
+        data_config.tokenizer_name = "unigram"
+        data_config.tokenizer_mode = "utf8"
+        data_config.tokenizer_vocab_size = 50_000
+        data_config.tokenizer_backend = "unigram"
+        data_config.unigram_model_path = "models/unigram.model"
+        data_config.tokenizer_vocab_path = None
+
+        create_tokenizer_from_data_config(data_config)
+
+        mock_create.assert_called_once_with("unigram", model_path="models/unigram.model")
+
     def test_create_utf8_tokenizer(self):
         """Test creating UTF-8 tokenizer."""
-        config = ExperimentConfig.from_toml("config/experiment.toml")
-        tokenizer = create_tokenizer_from_data_config(config.data)
+        from tests.conftest import build_data_config
+
+        config = build_data_config(
+            tokenizer_name="char", tokenizer_mode="utf8", tokenizer_backend="char_utf8"
+        )
+        tokenizer = create_tokenizer_from_data_config(config)
 
         # Should be able to encode/decode
         tokens = tokenizer.encode("Hello")
         assert len(tokens) > 0
         decoded = tokenizer.decode(tokens)
         assert isinstance(decoded, str)
+
+    @patch("src.tokenizer.configured_tokenizer.HFBPETokenizer")
+    def test_create_bpe_tokenizer_uses_explicit_vocab_path(self, mock_hf_bpe):
+        data_config = Mock(spec=DataConfig)
+        data_config.tokenizer_name = "bpe"
+        data_config.tokenizer_mode = "utf8"
+        data_config.tokenizer_vocab_size = 4096
+        data_config.tokenizer_backend = "gpt2_bpe"
+        data_config.unigram_model_path = None
+        data_config.tokenizer_vocab_path = "data/fast/custom_vocab.json"
+
+        tokenizer = create_tokenizer_from_data_config(data_config)
+
+        mock_hf_bpe.assert_called_once_with("data/fast/custom_vocab.json")
+        assert tokenizer == mock_hf_bpe.return_value
 
     def test_create_codepoint_tokenizer(self):
         """Test creating codepoint tokenizer with vocab_size."""

@@ -6,7 +6,7 @@ Minimal inference entrypoint for Phase 2 models.
 
 ```bash
 python -m src.inference.run \
-    --config config/experiment.toml \
+    --config config/milestones/p2_ascii127.toml \
     --checkpoint /path/to/checkpoint.pt \
     --prompt "Hello"
 ```

@@ -1,7 +1,7 @@
 """Compatibility wrapper for training entrypoint.
 
 Prefer:
-    python -m src.training.train --config config/experiment.toml
+    python -m src.training.train --config config/milestones/<experiment>.toml
 """
 
 from src.training.train import main

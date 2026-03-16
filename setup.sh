@@ -254,7 +254,7 @@ echo -e "${GREEN}✓${NC} Python dependencies installed\n"
 echo -e "${BLUE}Step 4: PyTorch & GPU Dependencies${NC}"
 TORCH_WHEEL_URL="https://download.pytorch.org/whl/cu128/torch-2.10.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl"
 FLASH_ATTN_WHEEL_URL="https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.8.3%2Bcu128torch2.10-cp312-cp312-linux_x86_64.whl"
-SAGE_ATTN_GIT_REF="${SAGE_ATTN_GIT_REF:-d1a57a546c3d395b1ffcbeecc66d81db76f3b4b5}"
+SAGE_ATTN_GIT_REF="${SAGE_ATTN_GIT_REF:-main}"
 
 if [ "$FAST_SETUP" = "1" ]; then
     echo -e "${YELLOW}↷ FAST_SETUP=1: installing CPU-only torch for CI${NC}"

@@ -84,13 +84,30 @@ Verify your environment works:
 make test       # Python + C++ tests
 ```
 
-Then read [CONTRIBUTING.md](../../CONTRIBUTING.md) and [docs/SESSION.md](../../docs/SESSION.md) to begin.
+Then read [CONTRIBUTING.md](../../CONTRIBUTING.md), [.github/AGENTS.md](../../.github/AGENTS.md), and check [.github/MEMORY.md](../../.github/MEMORY.md) for current session state to begin.
 
 ---
 
 ## Dataset Tooling
 
-Dataset preparation scripts live under `scripts/data/`. See [scripts/data/README.md](../data/README.md) for Quick Start, config reference, and size guide.
+Dataset preparation is first-class in `src/data/preparation/`. Use
+`python -m src.data.preparation --config <config.json|config.toml>` and see
+[src/data/README.md](../../src/data/README.md) for data tooling details.
+
+For fast local source discovery (without broad filesystem scans), use:
+
+```bash
+/home/max/dev/max_llm/.venv/bin/python scripts/setup/locate_dataset.py --dataset tinystories-gpt4-clean
+```
+
+To inspect all ranked candidates under specific roots:
+
+```bash
+/home/max/dev/max_llm/.venv/bin/python scripts/setup/locate_dataset.py \
+	--dataset tinystories-gpt4-clean \
+	--root /mnt/d/dev/data \
+	--all
+```
 
 For higher download rate limits, place a Hugging Face token in `.huggingface/.hf_token` (ignored by git) or export `HF_TOKEN`.
 
@@ -116,4 +133,5 @@ Read: [NVIDIA WSL User Guide](https://docs.nvidia.com/cuda/wsl-user-guide/)
 
 - [README.md](../../README.md): Project overview and status
 - [CONTRIBUTING.md](../../CONTRIBUTING.md): Workflow and contribution rules
-- [docs/SESSION.md](../../docs/SESSION.md): Current focus and immediate next steps
+- [.github/MEMORY.md](../../.github/MEMORY.md): Current session working state
+- [.github/SESSION_LOG.md](../../.github/SESSION_LOG.md): History of completed work

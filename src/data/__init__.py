@@ -3,6 +3,8 @@
 Structure:
 - pipeline/: Dataset-agnostic pipeline steps (tokenize, extract_tokens, extract_text)
 - datasets/: Dataset-specific processing (wikitext/, tinystories/, ...)
+- preparation/: First-class dataset preparation framework for mixed-source
+        tokenization, splitting, and export.
 
 Planned components (Phase 3+):
 - downloader: HuggingFace dataset downloading and schema discovery

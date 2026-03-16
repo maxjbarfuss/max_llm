@@ -5,8 +5,8 @@ Works with .npy token arrays cached on slow storage, extracts subsets to fast st
 
 Usage:
     python -m src.data.pipeline.extract_tokens \\
-        --input /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
-        --output data/fast/wikitext_tokens_1m.npy \\
+        --input data/slow/<dataset>_tokens.npy \\
+        --output data/fast/<dataset>_tokens_1m.npy \\
         --size 1M
 """
 
@@ -139,14 +139,14 @@ Workflow:
 Examples:
   # Extract 1M tokens for training
   python -m src.data.pipeline.extract_tokens \\
-      --input /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
-      --output data/fast/wikitext_1m_tokens.npy \\
+      --input data/slow/<dataset>_tokens.npy \\
+      --output data/fast/<dataset>_1m_tokens.npy \\
       --size 1M
 
   # Extract 100K tokens for quick overfit test
   python -m src.data.pipeline.extract_tokens \\
-      --input /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
-      --output data/fast/wikitext_100k_tokens.npy \\
+      --input data/slow/<dataset>_tokens.npy \\
+      --output data/fast/<dataset>_100k_tokens.npy \\
       --size 100K
         """,
     )

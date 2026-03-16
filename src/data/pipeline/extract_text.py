@@ -6,17 +6,17 @@ strategy is dataset-specific (WikiText article headers, TinyStories end-of-story
 tokens, etc.) and is resolved by the BoundaryDetector factory.
 
 Usage:
-    # Extract complete WikiText articles
+    # Extract complete documents using a registered detector
     python -m src.data.pipeline.extract_text \\
-        --input /slow/wikitext/train_normalized.txt \\
-        --output data/fast/wikitext_10mb.txt \\
-        --size 10M --dataset wikitext
+        --input data/slow/<dataset>_normalized.txt \\
+        --output data/fast/<dataset>_10mb.txt \\
+        --size 10M --dataset <detector_name>
 
-    # Extract complete TinyStories stories
+    # Extract complete stories using a different detector
     python -m src.data.pipeline.extract_text \\
-        --input /slow/tinystories/train.txt \\
-        --output data/fast/tinystories_10mb.txt \\
-        --size 10M --dataset tinystories
+        --input data/slow/<another_dataset>.txt \\
+        --output data/fast/<another_dataset>_10mb.txt \\
+        --size 10M --dataset <detector_name>
 
     # Custom boundary pattern (regex)
     python -m src.data.pipeline.extract_text \\
@@ -239,17 +239,17 @@ Boundary detection (mutually exclusive, first match wins):
   (neither)             No boundary detection; cut at byte limit
 
 Examples:
-  # WikiText: extract complete articles
+  # Dataset A: extract complete documents with a registered detector
   python -m src.data.pipeline.extract_text \\
-      --input /slow/wikitext/train_normalized.txt \\
-      --output data/fast/wikitext_10mb.txt \\
-      --size 10M --dataset wikitext
+      --input data/slow/<dataset_a>.txt \\
+      --output data/fast/<dataset_a>_10mb.txt \\
+      --size 10M --dataset <detector_a>
 
-  # TinyStories: extract complete stories
+  # Dataset B: extract complete documents with another detector
   python -m src.data.pipeline.extract_text \\
-      --input /slow/tinystories/train.txt \\
-      --output data/fast/tinystories_10mb.txt \\
-      --size 10M --dataset tinystories
+      --input data/slow/<dataset_b>.txt \\
+      --output data/fast/<dataset_b>_10mb.txt \\
+      --size 10M --dataset <detector_b>
 
   # Custom boundary pattern
   python -m src.data.pipeline.extract_text \\

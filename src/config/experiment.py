@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from .data import DataConfig
 from .inference import InferenceConfig
@@ -38,18 +37,13 @@ class ExperimentConfig:
         raw = load_toml(file_path)
 
         experiment_raw = require_section(raw, "experiment")
-        model_raw = require_section(raw, "model")
-        training_raw = require_section(raw, "training")
-        inference_raw = require_section(raw, "inference")
-        data_raw = require_section(raw, "data")
-
         return cls(
-            name=cast(str, experiment_raw["name"]),
-            output_dir=cast(str, experiment_raw["output_dir"]),
-            model=ModelConfig(**model_raw),
-            training=TrainingConfig(**training_raw),
-            inference=InferenceConfig(**inference_raw),
-            data=DataConfig(**data_raw),
+            name=experiment_raw["name"],
+            output_dir=experiment_raw["output_dir"],
+            model=ModelConfig(**require_section(raw, "model")),
+            training=TrainingConfig(**require_section(raw, "training")),
+            inference=InferenceConfig(**raw.get("inference", {})),
+            data=DataConfig(**require_section(raw, "data")),
         )
 
     @classmethod
@@ -64,8 +58,8 @@ class ExperimentConfig:
         """Create an experiment config from split TOML files."""
         experiment_raw = section_or_root(load_toml(experiment_path), "experiment")
         return cls(
-            name=cast(str, experiment_raw["name"]),
-            output_dir=cast(str, experiment_raw["output_dir"]),
+            name=experiment_raw["name"],
+            output_dir=experiment_raw["output_dir"],
             model=ModelConfig.from_toml(model_path),
             training=TrainingConfig.from_toml(training_path),
             inference=InferenceConfig.from_toml(inference_path),

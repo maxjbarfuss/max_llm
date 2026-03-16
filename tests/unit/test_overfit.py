@@ -1,14 +1,18 @@
-"""Overfit test for Phase 2 — verify model can memorize small dataset."""
+"""Overfit tests — verify models can memorize small datasets.
+
+Phase 2: Small LearningModel overfits 10K-token char-level dataset.
+Phase 3: LearningModel overfits 1K-token char-level dataset (exit criterion).
+"""
 
 import torch
 
 from src.config.model import ModelConfig
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import LearningModel
 from src.training.loop import train
 from src.training.train import create_simple_loaders
 
 
-def _make_model() -> SimpleLM:
+def _make_model() -> LearningModel:
     """Create a small model for Phase 2 overfitting."""
     config = ModelConfig(
         hidden_size=128,
@@ -25,7 +29,7 @@ def _make_model() -> SimpleLM:
         gru_hidden_size=128,
         dropout=0.0,
     )
-    return SimpleLM.from_config(config)
+    return LearningModel.from_config(config, attention_backend="standard")
 
 
 class TestOverfit:
@@ -42,8 +46,8 @@ class TestOverfit:
         assert len(tokens) >= 10000
 
         # Create loaders with no validation split (all train)
-        train_loader, _ = create_simple_loaders(
-            tokens=tokens,
+        train_loader, _, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=128,
             batch_size=4,
             validation_split=0.0,  # All data is training
@@ -88,8 +92,8 @@ class TestOverfit:
         Verifies that training is making progress and not diverging.
         """
         tokens = torch.arange(256, dtype=torch.long).repeat(40)  # 10240 tokens
-        train_loader, _ = create_simple_loaders(
-            tokens=tokens,
+        train_loader, _, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=128,
             batch_size=4,
             validation_split=0.0,
@@ -132,8 +136,8 @@ class TestOverfit:
     def test_overfit_within_500_steps(self):
         """Target loss < 0.1 is achieved within the 500-step limit."""
         tokens = torch.arange(256, dtype=torch.long).repeat(40)  # 10240 tokens
-        train_loader, _ = create_simple_loaders(
-            tokens=tokens,
+        train_loader, _, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=128,
             batch_size=4,
             validation_split=0.0,
@@ -171,3 +175,78 @@ class TestOverfit:
         ), f"Loss never dropped below 0.1 within 500 steps. Min loss: {min(losses):.4f}, achieved at step {losses.index(min(losses)) + 1}"
 
         print(f"✓ Loss < 0.1 achieved at step {step_threshold}")
+
+
+def _make_decoder_model() -> LearningModel:
+    """Create a small LearningModel for Phase 3 overfitting."""
+    config = ModelConfig(
+        hidden_size=128,
+        num_layers=2,
+        num_heads=4,
+        vocab_size=256,
+        max_seq_length=64,
+        mla_latent_dim=64,
+        rope_base=10000,
+        intermediate_size=512,
+        num_experts=1,
+        experts_per_token=1,
+        moe_frequency=0,
+        gru_hidden_size=128,
+        dropout=0.0,
+    )
+    return LearningModel.from_config(config, attention_backend="standard")
+
+
+class TestLearningModelOverfit:
+    """Phase 3 exit criterion: LearningModel overfits 1K-token subset to loss < 0.5 within 1000 steps."""
+
+    def test_learning_model_overfit_1k_tokens(self) -> None:
+        """
+        LearningModel overfits 1K-token subset: train loss < 0.5 within 1000 steps.
+
+        Phase 3 exit criterion: model_type=decoder_lm, perplexity < 2.0.
+        """
+        # 1K+ tokens with repeating pattern for deterministic overfitting
+        tokens = torch.arange(256, dtype=torch.long).repeat(5)  # 1280 tokens
+        assert len(tokens) >= 1000
+
+        train_loader, _, _ = create_simple_loaders(
+            train_tokens=tokens,
+            seq_len=64,
+            batch_size=4,
+            validation_split=0.0,
+            seed=42,
+        )
+
+        model = _make_decoder_model()
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=0.005,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            weight_decay=0.0,
+        )
+
+        metrics = train(
+            model=model,
+            train_loader=train_loader,
+            optimizer=optimizer,
+            max_steps=1000,
+            log_interval=0,
+        )
+
+        losses = metrics["losses"]
+        assert len(losses) > 0
+
+        min_loss = min(losses)
+        final_loss = losses[-1]
+        min_ppl = 2.718281828**min_loss  # e^loss
+
+        assert min_loss < 0.5, (
+            f"LearningModel overfit failed: min_loss={min_loss:.4f} (need < 0.5), "
+            f"final_loss={final_loss:.4f}, steps={len(losses)}"
+        )
+        assert min_ppl < 2.0, f"LearningModel overfit failed: min_ppl={min_ppl:.4f} (need < 2.0)"
+        print(
+            f"✓ LearningModel loss < 0.5 achieved: min_loss={min_loss:.4f}, min_ppl={min_ppl:.4f}"
+        )

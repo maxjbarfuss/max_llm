@@ -8,8 +8,8 @@ This is part of the recommended workflow:
 
 Usage:
     python -m src.data.pipeline.tokenize \\
-        --input /mnt/d/dev/data/wikitext-103-raw/train_normalized.txt \\
-        --output /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
+        --input data/slow/<dataset>_normalized.txt \\
+        --output data/slow/<dataset>_tokens.npy \\
         --tokenizer char
 """
 
@@ -22,9 +22,45 @@ from pathlib import Path
 import numpy as np
 from rich.console import Console
 
-from src.tokenizer import TokenizerFactory
+from src.tokenizer import create_configured_tokenizer
 
 console = Console()
+
+
+def _print_tokenizer_config(
+    tokenizer_name: str,
+    tokenizer_mode: str,
+    vocab_size: int,
+    encoding: str,
+    model_path: str | None,
+) -> None:
+    """Print tokenizer configuration to console."""
+    console.print(f"  Tokenizer: {tokenizer_name}")
+    if tokenizer_name == "bpe":
+        console.print(f"  Encoding: {encoding}")
+    elif tokenizer_name == "unigram":
+        console.print(f"  Model: {model_path}")
+    else:
+        console.print(f"  Mode: {tokenizer_mode}")
+        if tokenizer_mode == "codepoint":
+            console.print(f"  Vocab size: {vocab_size}")
+
+
+def _create_tokenizer(
+    tokenizer_name: str,
+    tokenizer_mode: str,
+    vocab_size: int,
+    encoding: str,
+    model_path: str | None,
+):
+    """Create tokenizer based on configuration."""
+    return create_configured_tokenizer(
+        tokenizer_name=tokenizer_name,
+        tokenizer_mode=tokenizer_mode,
+        tokenizer_vocab_size=vocab_size,
+        unigram_model_path=model_path,
+        bpe_encoding=encoding,
+    )
 
 
 def tokenize_dataset(
@@ -33,6 +69,8 @@ def tokenize_dataset(
     tokenizer_name: str,
     tokenizer_mode: str = "codepoint",
     vocab_size: int = 128,
+    encoding: str = "gpt2",
+    model_path: str | None = None,
     chunk_size: int = 100_000,  # Process in chunks to show progress
 ) -> None:
     """Tokenize text dataset and save as numpy array.
@@ -40,18 +78,17 @@ def tokenize_dataset(
     Args:
         input_path: Source text file (normalized)
         output_path: Destination .npy file
-        tokenizer_name: Tokenizer to use (e.g., 'char')
-        tokenizer_mode: Tokenizer mode (codepoint, utf8, utf16, utf32)
-        vocab_size: Vocabulary size for tokenizer (default: 128)
+        tokenizer_name: Tokenizer to use (e.g., 'char', 'bpe')
+        tokenizer_mode: Tokenizer mode for char tokenizer (codepoint, utf8, utf16, utf32)
+        vocab_size: Vocabulary size for codepoint mode (default: 128)
+        encoding: tiktoken encoding name for BPE tokenizer (default: 'gpt2')
+        model_path: sentencepiece model path for Unigram tokenizer
         chunk_size: Characters to process per chunk for progress display
     """
     console.print("[bold blue]Tokenizing dataset[/bold blue]")
     console.print(f"  Input: {input_path}")
     console.print(f"  Output: {output_path}")
-    console.print(f"  Tokenizer: {tokenizer_name}")
-    console.print(f"  Mode: {tokenizer_mode}")
-    if tokenizer_mode == "codepoint":
-        console.print(f"  Vocab size: {vocab_size}")
+    _print_tokenizer_config(tokenizer_name, tokenizer_mode, vocab_size, encoding, model_path)
 
     if not input_path.exists():
         console.print(f"[bold red]Error:[/bold red] Input file not found: {input_path}")
@@ -62,14 +99,9 @@ def tokenize_dataset(
 
     # Load tokenizer
     try:
-        if tokenizer_mode == "codepoint":
-            tokenizer = TokenizerFactory.create(
-                tokenizer_name,
-                mode=tokenizer_mode,
-                vocab_size=vocab_size,
-            )
-        else:
-            tokenizer = TokenizerFactory.create(tokenizer_name, mode=tokenizer_mode)
+        tokenizer = _create_tokenizer(
+            tokenizer_name, tokenizer_mode, vocab_size, encoding, model_path
+        )
     except Exception as e:
         console.print(f"[bold red]Error loading tokenizer:[/bold red] {e}")
         sys.exit(1)
@@ -127,17 +159,17 @@ Workflow:
   3. Extract token subsets to fast storage (instant, reusable)
 
 Examples:
-  # Tokenize normalized WikiText with character tokenizer
+  # Tokenize normalized text with character tokenizer
   python -m src.data.pipeline.tokenize \\
-      --input /mnt/d/dev/data/wikitext-103-raw/train_normalized.txt \\
-      --output /mnt/d/dev/data/wikitext-103-raw/train_tokens.npy \\
+      --input data/slow/<dataset>_normalized.txt \\
+      --output data/slow/<dataset>_tokens.npy \\
       --tokenizer char
 
-  # Tokenize with different tokenizer (future)
+  # Tokenize with BPE tokenizer
   python -m src.data.pipeline.tokenize \\
-      --input /mnt/d/dev/data/wikitext-103-raw/train_normalized.txt \\
-      --output /mnt/d/dev/data/wikitext-103-raw/train_tokens_bpe.npy \\
-      --tokenizer gpt2
+      --input data/slow/<dataset>_normalized.txt \\
+      --output data/slow/<dataset>_tokens_bpe.npy \\
+      --tokenizer bpe --encoding gpt2
         """,
     )
 
@@ -170,6 +202,16 @@ Examples:
         default=128,
         help="Vocabulary size for codepoint mode (default: 128)",
     )
+    parser.add_argument(
+        "--encoding",
+        default="gpt2",
+        help="tiktoken encoding for BPE tokenizer (default: gpt2)",
+    )
+    parser.add_argument(
+        "--model-path",
+        default=None,
+        help="SentencePiece .model path for Unigram tokenizer",
+    )
 
     args = parser.parse_args()
 
@@ -179,6 +221,8 @@ Examples:
         tokenizer_name=args.tokenizer,
         tokenizer_mode=args.mode,
         vocab_size=args.vocab_size,
+        encoding=args.encoding,
+        model_path=args.model_path,
     )
 
 

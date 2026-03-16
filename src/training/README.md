@@ -5,7 +5,7 @@ Phase 2 training entrypoint lives in this folder.
 ## Run Training
 
 ```bash
-python -m src.training.train --config config/experiment.toml
+python -m src.training.train --config config/milestones/p2_ascii127.toml
 ```
 
 ## Checkpoint
@@ -16,4 +16,5 @@ A checkpoint is saved automatically to `output_dir/checkpoint.pt` at the end of 
 
 - The entrypoint supports `.npy` token arrays for fast iteration.
 - The config path must include `[model]`, `[training]`, and `[data]` sections.
-- For data preparation, see [scripts/data/README.md](../../scripts/data/README.md).
+- For data preparation, see [src/data/README.md](../data/README.md) and run
+	`python -m src.data.preparation --config <config.json|config.toml>`.

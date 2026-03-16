@@ -1,24 +1,18 @@
 """TOML loading helpers for configuration modules."""
 
-import importlib
-import sys
 from pathlib import Path
 from typing import Any, cast
 
-if sys.version_info >= (3, 11):
-    import tomllib as _toml_loader
-else:  # pragma: no cover
-    _toml_loader = None
+try:
+    import tomllib as _toml_loader  # type: ignore[import-not-found]  # Python 3.11+ stdlib
+except ImportError:  # pragma: no cover
+    import tomli as _toml_loader  # type: ignore[import-not-found]
 
 
 def load_toml(file_path: str | Path) -> dict[str, Any]:
     """Load TOML file into dictionary."""
-    path = Path(file_path)
-    with path.open("rb") as toml_file:
-        if _toml_loader is not None:
-            return _toml_loader.load(toml_file)
-        tomli = importlib.import_module("tomli")
-        return cast(dict[str, Any], tomli.load(toml_file))
+    with Path(file_path).open("rb") as f:
+        return cast(dict[str, Any], _toml_loader.load(f))
 
 
 def section_or_root(raw: dict[str, Any], name: str) -> dict[str, Any]:

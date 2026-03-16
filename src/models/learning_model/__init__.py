@@ -1,6 +1,5 @@
 """Learning model implementations."""
 
-from .base import BaseLearningModel
-from .simple_lm import SimpleLM
+from .learning_model import LearningModel
 
-__all__ = ["BaseLearningModel", "SimpleLM"]
+__all__ = ["LearningModel"]

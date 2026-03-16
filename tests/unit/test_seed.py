@@ -6,27 +6,22 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.config.model import ModelConfig
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import LearningModel
 from src.training.loop import train
 from src.training.train import create_simple_loaders
 from src.utils import seed_everything
+from tests.conftest import build_model_config
 
 
 def _make_model_config() -> ModelConfig:
     """Create a minimal model config for testing."""
-    return ModelConfig(
-        hidden_size=64,  # Must be multiple of 64
+    return build_model_config(
+        hidden_size=64,
         num_layers=1,
         num_heads=4,
         vocab_size=64,
         max_seq_length=32,
         mla_latent_dim=32,
-        rope_base=10000,
-        intermediate_size=None,
-        num_experts=1,
-        experts_per_token=1,
-        moe_frequency=0,
-        gru_hidden_size=None,
         dropout=0.0,
     )
 
@@ -75,10 +70,10 @@ class TestDeterministicReplay:
     def test_deterministic_model_initialization(self):
         """Same seed produces identical model initialization."""
         seed_everything(42, deterministic=True)
-        model1 = SimpleLM.from_config(_make_model_config())
+        model1 = LearningModel.from_config(_make_model_config(), attention_backend="standard")
 
         seed_everything(42, deterministic=True)
-        model2 = SimpleLM.from_config(_make_model_config())
+        model2 = LearningModel.from_config(_make_model_config(), attention_backend="standard")
 
         for p1, p2 in zip(model1.parameters(), model2.parameters(), strict=True):
             assert torch.equal(
@@ -90,8 +85,8 @@ class TestDeterministicReplay:
         tokens = torch.arange(0, 1000, dtype=torch.long)
 
         seed_everything(42, deterministic=True)
-        loader1, _ = create_simple_loaders(
-            tokens=tokens,
+        loader1, _, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=16,
             batch_size=4,
             validation_split=0.1,
@@ -99,8 +94,8 @@ class TestDeterministicReplay:
         )
 
         seed_everything(42, deterministic=True)
-        loader2, _ = create_simple_loaders(
-            tokens=tokens,
+        loader2, _, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=16,
             batch_size=4,
             validation_split=0.1,
@@ -129,13 +124,13 @@ class TestDeterministicReplay:
 
         # First run
         seed_everything(42, deterministic=True)
-        model1 = SimpleLM.from_config(_make_model_config())
+        model1 = LearningModel.from_config(_make_model_config(), attention_backend="standard")
         optimizer1 = torch.optim.Adam(model1.parameters(), lr=1e-3)
         metrics1 = train(model1, loader, optimizer1, max_steps=1, log_interval=0)
 
         # Second run
         seed_everything(42, deterministic=True)
-        model2 = SimpleLM.from_config(_make_model_config())
+        model2 = LearningModel.from_config(_make_model_config(), attention_backend="standard")
         optimizer2 = torch.optim.Adam(model2.parameters(), lr=1e-3)
         metrics2 = train(model2, loader, optimizer2, max_steps=1, log_interval=0)
 
@@ -158,27 +153,27 @@ class TestDeterministicReplay:
 
         # First run
         seed_everything(123, deterministic=True)
-        loader1, _ = create_simple_loaders(
-            tokens=tokens,
+        loader1, _, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=16,
             batch_size=4,
             validation_split=0.1,
             seed=123,
         )
-        model1 = SimpleLM.from_config(_make_model_config())
+        model1 = LearningModel.from_config(_make_model_config(), attention_backend="standard")
         optimizer1 = torch.optim.Adam(model1.parameters(), lr=1e-3)
         metrics1 = train(model1, loader1, optimizer1, max_steps=10, log_interval=0)
 
         # Second run
         seed_everything(123, deterministic=True)
-        loader2, _ = create_simple_loaders(
-            tokens=tokens,
+        loader2, _, _ = create_simple_loaders(
+            train_tokens=tokens,
             seq_len=16,
             batch_size=4,
             validation_split=0.1,
             seed=123,
         )
-        model2 = SimpleLM.from_config(_make_model_config())
+        model2 = LearningModel.from_config(_make_model_config(), attention_backend="standard")
         optimizer2 = torch.optim.Adam(model2.parameters(), lr=1e-3)
         metrics2 = train(model2, loader2, optimizer2, max_steps=10, log_interval=0)
 
@@ -205,19 +200,19 @@ class TestDeterministicReplay:
 
         # Run with seed 42
         seed_everything(42, deterministic=True)
-        loader1, _ = create_simple_loaders(
-            tokens=tokens, seq_len=16, batch_size=4, validation_split=0.1, seed=42
+        loader1, _, _ = create_simple_loaders(
+            train_tokens=tokens, seq_len=16, batch_size=4, validation_split=0.1, seed=42
         )
-        model1 = SimpleLM.from_config(_make_model_config())
+        model1 = LearningModel.from_config(_make_model_config(), attention_backend="standard")
         optimizer1 = torch.optim.Adam(model1.parameters(), lr=1e-3)
         metrics1 = train(model1, loader1, optimizer1, max_steps=5, log_interval=0)
 
         # Run with seed 99
         seed_everything(99, deterministic=True)
-        loader2, _ = create_simple_loaders(
-            tokens=tokens, seq_len=16, batch_size=4, validation_split=0.1, seed=99
+        loader2, _, _ = create_simple_loaders(
+            train_tokens=tokens, seq_len=16, batch_size=4, validation_split=0.1, seed=99
         )
-        model2 = SimpleLM.from_config(_make_model_config())
+        model2 = LearningModel.from_config(_make_model_config(), attention_backend="standard")
         optimizer2 = torch.optim.Adam(model2.parameters(), lr=1e-3)
         metrics2 = train(model2, loader2, optimizer2, max_steps=5, log_interval=0)
 

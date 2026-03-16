@@ -1,10 +1,8 @@
 """Inference entrypoint for max-llm.
 
 Usage:
-    python -m src.inference.run --config config/experiment.toml --prompt "Hello"
+    python -m src.inference.run --config config/milestones/<experiment>.toml --prompt "Hello"
 """
-
-from __future__ import annotations
 
 import argparse
 
@@ -17,7 +15,7 @@ from src.inference.utils import (
     load_checkpoint_into_model,
     resolve_device,
 )
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import LearningModel
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,7 +50,10 @@ def main() -> None:
     if not prompt_tokens:
         raise ValueError("Prompt produced no tokens; check tokenizer settings.")
 
-    model = SimpleLM.from_config(config.model).to(device)
+    attn_backend = getattr(config.training, "attention_backend", "standard")
+    if device.type == "cpu" and attn_backend != "standard":
+        attn_backend = "standard"
+    model = LearningModel.from_config(config.model, attention_backend=attn_backend).to(device)
     model.eval()
 
     if args.checkpoint:
@@ -62,7 +63,12 @@ def main() -> None:
 
     tokens = list(prompt_tokens)
 
-    with torch.no_grad():
+    autocast_ctx = (
+        torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+        if device.type == "cuda"
+        else torch.no_grad()
+    )
+    with torch.no_grad(), autocast_ctx:
         for _ in range(max_new_tokens):
             input_ids = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(0)
             logits = model(input_ids)[0, -1]

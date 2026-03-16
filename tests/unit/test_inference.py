@@ -4,10 +4,10 @@ import torch
 
 from src.config.model import ModelConfig
 from src.inference.run import sample_token
-from src.models.learning_model import SimpleLM
+from src.models.learning_model import LearningModel
 
 
-def _make_model() -> SimpleLM:
+def _make_model() -> LearningModel:
     config = ModelConfig(
         hidden_size=64,
         num_layers=1,
@@ -23,7 +23,7 @@ def _make_model() -> SimpleLM:
         gru_hidden_size=None,
         dropout=0.0,
     )
-    return SimpleLM.from_config(config)
+    return LearningModel.from_config(config, attention_backend="standard")
 
 
 class TestSampleToken:

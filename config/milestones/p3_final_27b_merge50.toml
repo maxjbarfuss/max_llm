@@ -1,0 +1,59 @@
+[experiment]
+name = "maxllm-p3-27b-merge50-newdata-20260314"
+output_dir = "./outputs/milestones/p3_final_27b_merge50"
+
+[model]
+hidden_size = 1024
+num_heads = 16
+vocab_size = 8192
+max_seq_length = 2048
+num_layers = 10
+dropout = 0.05
+
+[training]
+batch_size = 16
+gradient_accumulation_steps = 8
+max_steps = 10836
+warmup_steps = 400
+scheduler_type = "wsd"
+learning_rate = 0.0042
+min_lr_ratio = 0.05
+wsd_stable_fraction = 0.45
+wsd_decay_fraction = 0.45
+wsd_decay_shape = "sqrt"
+wsd_lowered_linear_alpha = 0.7
+weight_decay = 0.05
+betas = [0.9, 0.95]
+epsilon = 1e-8
+gradient_clip_norm = 0.5
+precision_schedule = [[0, -1, "bf16"]]
+checkpoint_interval = 500
+eval_interval = 100
+eval_max_batches = 64
+log_interval = 25
+use_torch_compile = true
+use_distributed = true
+attention_backend = "flash"
+resume_from_checkpoint = "outputs/ephemeral/p3-owt50-fineweb50-3x-merged/checkpoint_moderate15000_x_step12000_50_50_20260314.pt"
+resume_optimizer_state = false
+resume_scheduler_state = false
+resume_lr_hold_steps = 20
+label_smoothing = 0.05
+
+[inference]
+temperature = 0.9
+top_p = 0.8
+top_k = 20
+max_new_tokens = 1024
+
+[data]
+dataset_path = "data/fast/p3_27b_tshalf_wikiall_owt30_fineweb70_unigram8192_20260314_train.npy"
+validation_dataset_path = "data/fast/p3_27b_tshalf_wikiall_owt30_fineweb70_unigram8192_20260314_val.npy"
+tokenizer_name = "unigram"
+tokenizer_mode = "utf8"
+tokenizer_vocab_size = 8192
+tokenizer_backend = "unigram"
+unigram_model_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_tokenizer.model"
+max_length = 2048
+num_workers = 4
+prefetch_factor = 4

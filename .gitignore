@@ -43,7 +43,6 @@ env/
 .mypy_cache/
 .coverage
 htmlcov/
-artifacts/
 .tox/
 .ruff_cache/
 
@@ -52,6 +51,14 @@ artifacts/
 
 # Training outputs (checkpoints, generated text, experiment artifacts)
 /outputs/
+
+# Checkpoints and training artifacts (never commit large model files)
+*.pt
+checkpoint_step_*.pt
+tensorboard/
+
+# Ephemeral experiment configs (intentionally local/untracked)
+/config/ephemeral/
 
 # Credentials (never commit)
 .github/.github_token
@@ -65,3 +72,8 @@ dist/
 
 # Pre-commit
 .pre-commit-framework/
+
+# Local ad-hoc chat helpers (do not track)
+/interactive_chat.py
+/phase2_chat.py
+/phase2_chat_ascii128.py

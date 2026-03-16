@@ -3,7 +3,7 @@
 		 test tests test-quick test-py test-py-quick test-cpp test-cov test-report cpp-lint cpp-format cpp-format-check \
          clean clean-py clean-cmake pre-commit-run
 
-ARTIFACTS_DIR ?= artifacts/test
+ARTIFACTS_DIR ?= outputs/test
 PYTEST_JUNIT ?= $(ARTIFACTS_DIR)/junit-py.xml
 PYTEST_COV_XML ?= $(ARTIFACTS_DIR)/coverage-py.xml
 PYTEST_SUMMARY ?= $(ARTIFACTS_DIR)/summary-py.md

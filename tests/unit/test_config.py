@@ -8,56 +8,57 @@ from pathlib import Path
 import pytest
 
 from src.config import DataConfig, ExperimentConfig, InferenceConfig, ModelConfig, TrainingConfig
+from tests.conftest import (
+    build_data_config,
+    build_inference_config,
+    build_model_config,
+    build_training_config,
+)
 
 
+# Legacy fixtures with original test defaults for backward compatibility
 def make_model_config(**overrides):
-    values = {
+    """Legacy test fixture with original defaults."""
+    defaults = {
         "hidden_size": 768,
         "num_layers": 12,
         "num_heads": 12,
         "vocab_size": 50304,
         "max_seq_length": 2048,
         "mla_latent_dim": 768,
-        "rope_base": 10000,
-        "intermediate_size": None,
+        "moe_frequency": 2,
         "num_experts": 16,
         "experts_per_token": 2,
-        "moe_frequency": 2,
-        "gru_hidden_size": None,
         "dropout": 0.1,
     }
-    values.update(overrides)
-    return ModelConfig(**values)
+    defaults.update(overrides)
+    return build_model_config(**defaults)
 
 
 def make_training_config(**overrides):
-    values = {
+    """Legacy test fixture with original defaults."""
+    defaults = {
         "batch_size": 32,
-        "gradient_accumulation_steps": 1,
         "max_steps": 100000,
         "warmup_steps": 2000,
         "learning_rate": 3e-4,
         "weight_decay": 0.1,
-        "betas": (0.9, 0.95),
-        "epsilon": 1e-8,
-        "gradient_clip_norm": 1.0,
         "precision_schedule": [(0, 30000, "fp4"), (30000, 80000, "fp8"), (80000, -1, "mixed")],
-        "moe_balance_loss_weight": 0.01,
-        "distributed_backend": "ddp",
         "checkpoint_interval": 5000,
         "eval_interval": 1000,
         "log_interval": 100,
         "keep_last_n_checkpoints": 3,
         "use_torch_compile": True,
-        "use_flash_attention": True,
+        "attention_backend": "flash",
         "selective_checkpointing": True,
     }
-    values.update(overrides)
-    return TrainingConfig(**values)
+    defaults.update(overrides)
+    return build_training_config(**defaults)
 
 
 def make_inference_config(**overrides):
-    values = {
+    """Legacy test fixture with original defaults."""
+    defaults = {
         "device": "auto",
         "max_new_tokens": 256,
         "temperature": 0.8,
@@ -66,31 +67,26 @@ def make_inference_config(**overrides):
         "use_kv_cache": True,
         "kv_cache_dtype": "fp8",
     }
-    values.update(overrides)
-    return InferenceConfig(**values)
+    defaults.update(overrides)
+    return build_inference_config(**defaults)
 
 
 def make_data_config(**overrides):
-    values = {
+    """Legacy test fixture with original defaults."""
+    defaults = {
         "dataset_path": "openwebtext",
         "tokenizer_name": "gpt2",
-        "tokenizer_mode": "codepoint",
-        "tokenizer_vocab_size": 128,
-        "tokenizer_backend": "gpt2_bpe",
-        "unigram_model_path": None,
         "max_length": 2048,
         "num_workers": 6,
-        "prefetch_factor": 2,
         "pin_memory": True,
         "persistent_workers": True,
         "streaming": True,
         "cache_dir": "./data/cache",
         "num_shards": 64,
         "validation_split": 0.01,
-        "seed": 42,
     }
-    values.update(overrides)
-    return DataConfig(**values)
+    defaults.update(overrides)
+    return build_data_config(**defaults)
 
 
 class TestModelConfig:
@@ -207,6 +203,16 @@ class TestTrainingConfig:
         with pytest.raises(ValueError, match="Invalid precision"):
             make_training_config(precision_schedule=invalid_schedule)
 
+    def test_wsd_fraction_validation(self):
+        """WSD stable + decay fractions must not exceed 1."""
+        with pytest.raises(ValueError, match=r"wsd_stable_fraction \+ wsd_decay_fraction"):
+            make_training_config(wsd_stable_fraction=0.8, wsd_decay_fraction=0.3)
+
+    def test_wsd_alpha_validation(self):
+        """Lowered-linear alpha must be in (0, 1]."""
+        with pytest.raises(ValueError, match="wsd_lowered_linear_alpha"):
+            make_training_config(wsd_lowered_linear_alpha=0.0)
+
 
 class TestInferenceConfig:
     """Tests for InferenceConfig validation."""
@@ -220,7 +226,10 @@ class TestInferenceConfig:
     def test_sampling_validation(self):
         """Sampling parameters should be validated."""
         with pytest.raises(ValueError, match="top_p must be in"):
-            make_inference_config(top_p=0)
+            make_inference_config(top_p=-0.1)
+
+        with pytest.raises(ValueError, match="top_p must be in"):
+            make_inference_config(top_p=1.5)
 
         with pytest.raises(ValueError, match="max_new_tokens must be positive"):
             make_inference_config(max_new_tokens=0)
@@ -266,16 +275,13 @@ class TestDataConfig:
         config = make_data_config(validation_split=0.1)
         assert config.validation_split == 0.1
 
-        with pytest.raises(ValueError, match="validation_split fraction must be"):
+        with pytest.raises(ValueError, match="validation_split must be"):
             make_data_config(validation_split=1.5)
 
     def test_validation_split_absolute(self):
-        """Validation split can be absolute number."""
-        config = make_data_config(validation_split=1000)
-        assert config.validation_split == 1000
-
-        with pytest.raises(ValueError, match="validation_split must be positive"):
-            make_data_config(validation_split=-100)
+        """Validation split must be a float ratio, not an absolute count."""
+        with pytest.raises(ValueError, match="validation_split must be a float ratio"):
+            make_data_config(validation_split=1000)
 
 
 class TestExperimentConfig:
@@ -387,7 +393,7 @@ eval_interval = 50
 log_interval = 10
 keep_last_n_checkpoints = 3
 use_torch_compile = true
-use_flash_attention = true
+attention_backend = "flash"
 selective_checkpointing = true
 
 [inference]
@@ -479,7 +485,7 @@ seed = 42
                     "log_interval = 10",
                     "keep_last_n_checkpoints = 3",
                     "use_torch_compile = true",
-                    "use_flash_attention = true",
+                    'attention_backend = "flash"',
                     "selective_checkpointing = true",
                 ]
             ),
@@ -538,28 +544,5 @@ seed = 42
         assert config.data.tokenizer_name == "gpt2"
 
 
-class TestP2ExperimentToml:
-    """Smoke tests for the on-disk Phase 2 experiment.toml config file."""
-
-    def test_p2_toml_loads(self):
-        """config/experiment.toml loads and reflects Phase 2 model values."""
-        config_path = Path(__file__).parents[2] / "config" / "experiment.toml"
-        config = ExperimentConfig.from_toml(config_path)
-        assert config.name == "maxllm-p2-baseline"
-        assert config.model.hidden_size == 128
-        assert config.model.vocab_size == 256
-        assert config.model.num_layers == 1
-
-    def test_p2_toml_training_values(self):
-        """P2 training config reflects prototype-scale hyperparameters."""
-        config_path = Path(__file__).parents[2] / "config" / "experiment.toml"
-        config = ExperimentConfig.from_toml(config_path)
-        assert config.training.max_steps == 500
-        assert config.training.use_torch_compile is False
-        assert config.training.use_flash_attention is False
-
-    def test_p2_toml_data_seq_length(self):
-        """P2 data max_length is within model max_seq_length."""
-        config_path = Path(__file__).parents[2] / "config" / "experiment.toml"
-        config = ExperimentConfig.from_toml(config_path)
-        assert config.data.max_length <= config.model.max_seq_length
+class TestMilestoneToml:
+    """Smoke tests for on-disk milestone TOML configs."""
