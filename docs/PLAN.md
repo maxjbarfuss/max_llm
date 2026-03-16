@@ -246,6 +246,7 @@ Evaluation and quality:
 **Decision Log**: Record decisions as `P4-DEC-<n>` in Running Session Log.
 - **P4-DEC-1** (2026-03-16): RMSNorm confirmed as default norm for Phase 4.
 - **P4-DEC-2** (2026-03-16): RoPE implemented; length extrapolation is inherent (no extra code). Initial run at lr=0.0042 showed grad norm instability — RoPE requires lower LR (0.0018–0.0025) and longer warmup (600–800 steps). Advantages (relative position, long-context coherency) emerge at 12L+/2048ctx/10K+ steps, not at the 2K-step A/B scale. A/B vs LayerNorm (6L/1024H, 2K steps, same LR/data/seed): lower peak memory, similar throughput at this scale, slightly noisier early loss curve (expected — no mean centering; stabilizes at longer runs). Speed advantage expected to grow at 12L+. LR may need slight reduction at larger scale.
+- **P4-DEC-3** (2026-03-16): Three FFN activation variants implemented: SwiGLU (Llama-style, no bias, hidden=4×d/3×2 rounded to 256), ReLU² (relu(x)², ~50% sparsity, no extra params), xIELU (arXiv:2411.13010, piecewise quadratic/exponential, 2 shared trainable scalars). Factory `make_ffn` dispatches via `ffn_type` config field. ReLU² A/B run (6L/1024H/2K steps, no RoPE, same baseline) in progress.
 
 **Tasks**:
 
@@ -269,7 +270,10 @@ Components:
 - ✅ RMSNorm (replace LayerNorm, no mean, learnable gain) — `src/models/norm/rms_norm.py`; `F.rms_norm` fused kernel; `make_norm` factory; 26 unit tests
 - ✅ RoPE on Q/K with explicit formulation (sin/cos pairs, rotate-half trick) — `src/models/position/rope.py`; pre-shaped cache; `rope_base: int | None` config field; 25 unit tests; length extrapolation inherent (P4-DEC-2)
 - ✅ RoPE length extrapolation beyond training context — inherent property; no extra code needed
-- ☐ SwiGLU FFN (hidden = 4×d_model×2/3, rounded to 256 multiples)
+- ✅ SwiGLU FFN (hidden = 4×d_model×2/3, rounded to 256 multiples) — `src/models/feedforward/swiglu.py`; no bias; `swiglu_intermediate_size` helper
+- ✅ ReLU² FFN (relu(x)²; ~50% sparsity; no extra params) — `src/models/feedforward/relu2_ffn.py`
+- ✅ xIELU FFN (piecewise quadratic/exp, 2 trainable scalars; best ppl in paper) — `src/models/feedforward/xielu_ffn.py`
+- ✅ `make_ffn` factory; `ffn_type` config field in `ModelConfig`; `FeedForward` extended to accept `intermediate_size` directly
 - ☐ GQA with configurable KV head count (1 = MQA, N = MHA, between = GQA)
 
 Training infrastructure:
@@ -278,8 +282,10 @@ Training infrastructure:
 - ☐ Multi-node DDP setup (4+ GPUs across multiple machines)
 
 Evaluation and quality:
-- ✅ Per-component unit tests: RMSNorm (26 tests), RoPE (25 tests); ☐ SwiGLU, GQA pending
+- ✅ Per-component unit tests: RMSNorm (26 tests), RoPE (25 tests), FFN variants (39 tests); ☐ GQA pending
 - ✅ LayerNorm vs RMSNorm A/B (6L/1024H, 2K steps, Flash+DDP): RMSNorm lower memory, similar speed, slightly noisier early curve — **RMSNorm confirmed as Phase 4 default** (P4-DEC-1)
+- ⏳ ReLU² vs GELU A/B (6L/1024H, 2K steps, no RoPE) — run complete, analysis pending
+- ☐ SwiGLU and xIELU A/B runs (same baseline)
 - ☐ Phase 3 vs Phase 4 A/B comparison (same data/seed/param count)
 - ☐ Comparison logs: parameter count, perplexity delta, tokens/sec, peak memory
 

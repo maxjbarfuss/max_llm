@@ -34,8 +34,6 @@ _ALPHA_N_INIT = 0.8
 
 def _inv_softplus(y: float) -> float:
     """softplus⁻¹(y) = log(exp(y) - 1)  — used to init parameters."""
-    import math
-
     return math.log(math.exp(y) - 1.0)
 
 

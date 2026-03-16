@@ -97,41 +97,24 @@ class LearningModel(nn.Module):
 
         # Transformer blocks
         # Optional cross-layer parameter sharing: reuse one block N times.
+        def _make_block() -> TransformerBlock:
+            return TransformerBlock(
+                d_model=d_model,
+                num_heads=num_heads,
+                dropout=dropout,
+                ff_expansion_ratio=ff_expansion_ratio,
+                intermediate_size=intermediate_size,
+                ffn_type=ffn_type,
+                attention_backend=attention_backend,
+                num_layers=num_layers,
+                norm_type=norm_type,
+                rope=rope,
+            )
+
         if self.share_layer_weights:
-            self.blocks = nn.ModuleList(
-                [
-                    TransformerBlock(
-                        d_model=d_model,
-                        num_heads=num_heads,
-                        dropout=dropout,
-                        ff_expansion_ratio=ff_expansion_ratio,
-                        intermediate_size=intermediate_size,
-                        ffn_type=ffn_type,
-                        attention_backend=attention_backend,
-                        num_layers=num_layers,
-                        norm_type=norm_type,
-                        rope=rope,
-                    )
-                ]
-            )
+            self.blocks = nn.ModuleList([_make_block()])
         else:
-            self.blocks = nn.ModuleList(
-                [
-                    TransformerBlock(
-                        d_model=d_model,
-                        num_heads=num_heads,
-                        dropout=dropout,
-                        ff_expansion_ratio=ff_expansion_ratio,
-                        intermediate_size=intermediate_size,
-                        ffn_type=ffn_type,
-                        attention_backend=attention_backend,
-                        num_layers=num_layers,
-                        norm_type=norm_type,
-                        rope=rope,
-                    )
-                    for _ in range(num_layers)
-                ]
-            )
+            self.blocks = nn.ModuleList([_make_block() for _ in range(num_layers)])
 
         if self.share_layer_weights:
             assert len(self.blocks) == 1, "share_layer_weights=True must create exactly one block"

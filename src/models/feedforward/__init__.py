@@ -33,7 +33,9 @@ def make_ffn(
         return ReLU2FFN(d_model, intermediate_size, dropout, num_layers)
     if ffn_type == "xielu":
         return xIELUFFN(d_model, intermediate_size, dropout, num_layers)
-    return FeedForward(d_model, intermediate_size // d_model, dropout, num_layers)
+    return FeedForward(
+        d_model, dropout=dropout, num_layers=num_layers, intermediate_size=intermediate_size
+    )
 
 
 __all__ = ["FeedForward", "ReLU2FFN", "SwiGLU", "xIELUFFN", "make_ffn", "swiglu_intermediate_size"]
