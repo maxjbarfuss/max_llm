@@ -6,6 +6,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.position.add_rope import AdditiveRoPE
+from src.models.position.alibi import ALiBi
+from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
 
 # Try to import Flash Attention 2
@@ -37,6 +40,9 @@ except ImportError:
     sage_attn_func = None  # type: ignore[assignment, unused-ignore]
     SAGE_ATTN_AVAILABLE = False
 
+# Type alias for cleaner annotations
+AttnBiasModule = ALiBi | RelativePositionBias  # both have get_bias(T, device, dtype)
+
 
 class CausalMultiHeadAttention(nn.Module):
     """Causal MHA with pluggable backends: "flash", "sage", "xformers", "standard"."""
@@ -48,7 +54,8 @@ class CausalMultiHeadAttention(nn.Module):
         dropout: float = 0.0,
         attention_backend: str = "flash",
         num_layers: int = 1,
-        rope: RotaryEmbedding | None = None,
+        rope: RotaryEmbedding | AdditiveRoPE | None = None,
+        attn_bias: ALiBi | RelativePositionBias | None = None,
     ) -> None:
         super().__init__()
         assert (
@@ -61,6 +68,7 @@ class CausalMultiHeadAttention(nn.Module):
         self.dropout_p = dropout
         self.num_layers = num_layers
         self.rope = rope
+        self.attn_bias = attn_bias
 
         valid_backends = {"flash", "sage", "xformers", "standard"}
         assert (
@@ -131,20 +139,35 @@ class CausalMultiHeadAttention(nn.Module):
         if self.rope is not None:
             q, k = self.rope(q, k)
 
-        if self.attention_backend == "flash":
+        # Compute attention bias (None if not using ALiBi/RelPosBias)
+        _attn_bias: torch.Tensor | None = None
+        if self.attn_bias is not None:
+            _attn_bias = self.attn_bias.get_bias(T, q.device, q.dtype)  # (num_heads, T, T)
+
+        # For RelPosBias: fall back to standard attention (flash/sage/xformers don't easily
+        # support arbitrary per-head bias matrices).
+        effective_backend = self.attention_backend
+        if isinstance(self.attn_bias, RelativePositionBias) and effective_backend != "standard":
+            effective_backend = "standard"
+
+        if effective_backend == "flash":
             assert flash_attn_func is not None
+            alibi_slopes: torch.Tensor | None = None
+            if isinstance(self.attn_bias, ALiBi):
+                alibi_slopes = self.attn_bias.slopes.to(torch.float32)
             attn_output = flash_attn_func(
                 q,
                 k,
                 v,
                 dropout_p=self.dropout_p if self.training else 0.0,
-                softmax_scale=1.0 / (self.head_dim**0.5),
+                softmax_scale=1.0 / math.sqrt(self.head_dim),
                 causal=True,
+                alibi_slopes=alibi_slopes,
             )
             assert attn_output is not None
             attn_output = attn_output.view(B, T, self.d_model)
 
-        elif self.attention_backend == "sage":
+        elif effective_backend == "sage":
             # tensor_layout="NHD": (B, T, num_heads, head_dim)
             assert sage_attn_func is not None
             attn_output = sage_attn_func(
@@ -153,34 +176,63 @@ class CausalMultiHeadAttention(nn.Module):
                 v,
                 tensor_layout="NHD",
                 is_causal=True,
-                sm_scale=1.0 / (self.head_dim**0.5),
+                sm_scale=1.0 / math.sqrt(self.head_dim),
             )
             attn_output = attn_output.view(B, T, self.d_model)
 
-        elif self.attention_backend == "xformers":
+        elif effective_backend == "xformers":
             # LowerTriangularMask avoids allocating a [B, num_heads, T, T] bias tensor
             assert LowerTriangularMask is not None and memory_efficient_attention is not None
-            attn_output = memory_efficient_attention(
-                q,
-                k,
-                v,
-                attn_bias=LowerTriangularMask(),
-                p=self.dropout_p if self.training else 0.0,
-            )
+            if _attn_bias is not None:
+                causal_mask = torch.triu(
+                    torch.full((T, T), float("-inf"), device=q.device, dtype=q.dtype), 1
+                )
+                combined = (
+                    (causal_mask.unsqueeze(0) + _attn_bias).unsqueeze(0).expand(B, -1, -1, -1)
+                )
+                attn_output = memory_efficient_attention(
+                    q,
+                    k,
+                    v,
+                    attn_bias=combined,
+                    p=self.dropout_p if self.training else 0.0,
+                )
+            else:
+                attn_output = memory_efficient_attention(
+                    q,
+                    k,
+                    v,
+                    attn_bias=LowerTriangularMask(),
+                    p=self.dropout_p if self.training else 0.0,
+                )
             attn_output = attn_output.view(B, T, self.d_model)
 
         else:  # standard — F.scaled_dot_product_attention (PyTorch 2.0+)
             # Expects (B, num_heads, T, head_dim)
-            q = q.transpose(1, 2)
-            k = k.transpose(1, 2)
-            v = v.transpose(1, 2)
-            attn_output = F.scaled_dot_product_attention(
-                q,
-                k,
-                v,
-                dropout_p=self.dropout_p if self.training else 0.0,
-                is_causal=True,
-            )
+            q_std = q.transpose(1, 2)
+            k_std = k.transpose(1, 2)
+            v_std = v.transpose(1, 2)
+            if _attn_bias is not None:
+                causal_mask = torch.triu(
+                    torch.full((T, T), float("-inf"), device=q.device, dtype=q.dtype), 1
+                )
+                combined_mask = causal_mask.unsqueeze(0) + _attn_bias  # (num_heads, T, T)
+                attn_output = F.scaled_dot_product_attention(
+                    q_std,
+                    k_std,
+                    v_std,
+                    attn_mask=combined_mask,
+                    dropout_p=self.dropout_p if self.training else 0.0,
+                    is_causal=False,
+                )
+            else:
+                attn_output = F.scaled_dot_product_attention(
+                    q_std,
+                    k_std,
+                    v_std,
+                    dropout_p=self.dropout_p if self.training else 0.0,
+                    is_causal=True,
+                )
             attn_output = attn_output.transpose(1, 2).contiguous().view(B, T, self.d_model)
 
         return self.out_proj(attn_output)

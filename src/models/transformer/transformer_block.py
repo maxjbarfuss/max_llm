@@ -6,6 +6,9 @@ import torch.nn as nn
 from src.models.attention.causal_mha import CausalMultiHeadAttention
 from src.models.feedforward import make_ffn
 from src.models.norm import make_norm
+from src.models.position.add_rope import AdditiveRoPE
+from src.models.position.alibi import ALiBi
+from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
 
 
@@ -27,6 +30,7 @@ class TransformerBlock(nn.Module):
         rope:              Optional RotaryEmbedding to apply to Q/K.
         ffn_type:          One of "gelu", "swiglu", "relu2", "xielu" (default: "gelu").
         intermediate_size: FFN hidden dimension. Overrides ff_expansion_ratio when set.
+        attn_bias:         Optional ALiBi or RelativePositionBias to add to attention logits.
     """
 
     def __init__(
@@ -38,9 +42,10 @@ class TransformerBlock(nn.Module):
         attention_backend: str = "flash",
         num_layers: int = 1,
         norm_type: str = "layer",
-        rope: RotaryEmbedding | None = None,
+        rope: RotaryEmbedding | AdditiveRoPE | None = None,
         ffn_type: str = "gelu",
         intermediate_size: int | None = None,
+        attn_bias: ALiBi | RelativePositionBias | None = None,
     ) -> None:
         super().__init__()
         assert (
@@ -58,7 +63,13 @@ class TransformerBlock(nn.Module):
         self.norm2 = make_norm(norm_type, d_model)
 
         self.attention = CausalMultiHeadAttention(
-            d_model, num_heads, dropout, attention_backend, num_layers=num_layers, rope=rope
+            d_model,
+            num_heads,
+            dropout,
+            attention_backend,
+            num_layers=num_layers,
+            rope=rope,
+            attn_bias=attn_bias,
         )
 
         _intermediate = (

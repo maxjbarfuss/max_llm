@@ -41,13 +41,22 @@ class ModelConfig:
     share_layer_weights: bool = False
     norm_type: str = "layer"  # "layer" = LayerNorm (Phase 3); "rms" = RMSNorm (Phase 4+ Llama)
     ffn_type: str = "gelu"  # "gelu" | "swiglu" | "relu2" | "xielu"
+    pos_type: str = "learned"  # "learned" | "rope" | "add_rope" | "alibi" | "rel_pos"
+    rel_pos_num_buckets: int = 32  # used when pos_type == "rel_pos"
 
     def __post_init__(self) -> None:
         """Validate model configuration."""
+        self._apply_back_compat()
         self._validate_basic()
         self._set_defaults()
         self._validate_dims()
         self._validate_moe()
+
+    def _apply_back_compat(self) -> None:
+        """Apply backwards-compatibility promotions before validation."""
+        # rope_base set but pos_type still "learned" → promote to "rope"
+        if self.rope_base is not None and self.pos_type == "learned":
+            object.__setattr__(self, "pos_type", "rope")
 
     def _validate_basic(self) -> None:
         """Validate basic scalar constraints."""
@@ -70,6 +79,17 @@ class ModelConfig:
         if self.ffn_type not in {"gelu", "swiglu", "relu2", "xielu"}:
             raise ValueError(
                 f"ffn_type must be 'gelu', 'swiglu', 'relu2', or 'xielu', got '{self.ffn_type}'"
+            )
+        self._validate_pos_type()
+
+    def _validate_pos_type(self) -> None:
+        """Validate positional encoding type and required co-fields."""
+        _VALID_POS_TYPES = {"learned", "rope", "add_rope", "alibi", "rel_pos"}
+        if self.pos_type not in _VALID_POS_TYPES:
+            raise ValueError(f"pos_type must be one of {_VALID_POS_TYPES}, got '{self.pos_type}'")
+        if self.pos_type in {"rope", "add_rope"} and self.rope_base is None:
+            raise ValueError(
+                f"pos_type='{self.pos_type}' requires rope_base to be set (e.g. rope_base = 10000)"
             )
 
     def _validate_dims(self) -> None:

@@ -13,9 +13,46 @@ from typing_extensions import Self
 from src.config.model import ModelConfig
 from src.models.embeddings.token_embedding import TokenEmbedding
 from src.models.norm import make_norm
+from src.models.position.add_rope import AdditiveRoPE
+from src.models.position.alibi import ALiBi
 from src.models.position.learned_position import LearnedPositionEmbedding
+from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
 from src.models.transformer.transformer_block import TransformerBlock
+
+
+def _build_pos_modules(
+    pos_type: str,
+    head_dim: int,
+    max_seq_len: int,
+    num_heads: int,
+    rope_base: int | None,
+    rel_pos_num_buckets: int,
+    d_model: int,
+) -> tuple[
+    LearnedPositionEmbedding | None,
+    RotaryEmbedding | AdditiveRoPE | None,
+    ALiBi | RelativePositionBias | None,
+]:
+    """Construct positional encoding modules for a given pos_type."""
+    pos_emb: LearnedPositionEmbedding | None = (
+        LearnedPositionEmbedding(max_seq_len, d_model) if pos_type == "learned" else None
+    )
+    rope: RotaryEmbedding | AdditiveRoPE | None
+    if pos_type == "rope":
+        rope = RotaryEmbedding(head_dim, max_seq_len, rope_base or 10000)
+    elif pos_type == "add_rope":
+        rope = AdditiveRoPE(head_dim, max_seq_len, rope_base or 10000)
+    else:
+        rope = None
+    attn_bias: ALiBi | RelativePositionBias | None
+    if pos_type == "alibi":
+        attn_bias = ALiBi(num_heads)
+    elif pos_type == "rel_pos":
+        attn_bias = RelativePositionBias(num_heads, rel_pos_num_buckets)
+    else:
+        attn_bias = None
+    return pos_emb, rope, attn_bias
 
 
 class LearningModel(nn.Module):
@@ -42,6 +79,12 @@ class LearningModel(nn.Module):
         max_seq_len: Maximum sequence length (default: 2048).
         attention_backend: Attention backend to use (default: "flash").
             Options: "flash", "sage", "xformers", "standard"
+        pos_type: Positional encoding type. One of "learned", "rope", "add_rope",
+            "alibi", "rel_pos" (default: "learned").
+        rel_pos_num_buckets: Number of relative position buckets (used when
+            pos_type == "rel_pos", default: 32).
+        rope_base: Frequency base for RoPE/AddRoPE (required when
+            pos_type in {"rope", "add_rope"}).
     """
 
     def __init__(
@@ -60,6 +103,8 @@ class LearningModel(nn.Module):
         share_layer_weights: bool = False,
         norm_type: str = "layer",
         rope_base: int | None = None,
+        pos_type: str = "learned",
+        rel_pos_num_buckets: int = 32,
     ) -> None:
         super().__init__()
         assert (
@@ -76,17 +121,18 @@ class LearningModel(nn.Module):
         self.embedding_dim = embedding_dim or d_model
         self.use_factorized = embedding_dim is not None and embedding_dim < d_model
 
-        # Embeddings: RoPE replaces learned position embedding (no additive pos bias needed)
+        # Embeddings
         self.token_embedding = TokenEmbedding(vocab_size, self.embedding_dim)
-        self.position_embedding: LearnedPositionEmbedding | None = (
-            None if rope_base is not None else LearnedPositionEmbedding(max_seq_len, d_model)
-        )
 
-        # Shared RoPE instance (no parameters — all blocks reuse the same cache)
+        # Back-compat: rope_base set but pos_type still "learned" → promote to "rope"
+        if rope_base is not None and pos_type == "learned":
+            pos_type = "rope"
+
         head_dim = d_model // num_heads
-        rope: RotaryEmbedding | None = (
-            RotaryEmbedding(head_dim, max_seq_len, rope_base) if rope_base is not None else None
+        pos_emb, rope, attn_bias = _build_pos_modules(
+            pos_type, head_dim, max_seq_len, num_heads, rope_base, rel_pos_num_buckets, d_model
         )
+        self.position_embedding = pos_emb
 
         # Projection layer for factorized embeddings
         self.embedding_projection: nn.Linear | None
@@ -109,6 +155,7 @@ class LearningModel(nn.Module):
                 num_layers=num_layers,
                 norm_type=norm_type,
                 rope=rope,
+                attn_bias=attn_bias,
             )
 
         if self.share_layer_weights:
@@ -146,7 +193,7 @@ class LearningModel(nn.Module):
             assert self.embedding_projection is not None
             tok_emb = self.embedding_projection(tok_emb)  # (B, T, d_model)
 
-        # RoPE: no additive position embedding — position is encoded in Q/K rotations
+        # Learned position embedding (skipped for RoPE/ALiBi/RelPos variants)
         if self.position_embedding is not None:
             h = tok_emb + self.position_embedding(x)  # (B, T, d_model)
         else:
@@ -203,4 +250,6 @@ class LearningModel(nn.Module):
             share_layer_weights=config.share_layer_weights,
             norm_type=config.norm_type,
             rope_base=config.rope_base,
+            pos_type=config.pos_type,
+            rel_pos_num_buckets=config.rel_pos_num_buckets,
         )
