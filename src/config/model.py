@@ -40,6 +40,9 @@ class ModelConfig:
     embedding_dim: int | None = None
     share_layer_weights: bool = False
     norm_type: str = "layer"  # "layer" = LayerNorm (Phase 3); "rms" = RMSNorm (Phase 4+ Llama)
+    use_rope: bool = (
+        False  # Rotary position embedding on Q/K (Phase 4+ Llama); replaces learned pos
+    )
 
     def __post_init__(self) -> None:
         """Validate model configuration."""

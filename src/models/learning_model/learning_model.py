@@ -14,6 +14,7 @@ from src.config.model import ModelConfig
 from src.models.embeddings.token_embedding import TokenEmbedding
 from src.models.norm import make_norm
 from src.models.position.learned_position import LearnedPositionEmbedding
+from src.models.position.rope import RotaryEmbedding
 from src.models.transformer.transformer_block import TransformerBlock
 
 
@@ -56,6 +57,8 @@ class LearningModel(nn.Module):
         embedding_dim: int | None = None,
         share_layer_weights: bool = False,
         norm_type: str = "layer",
+        use_rope: bool = False,
+        rope_base: int = 10000,
     ) -> None:
         super().__init__()
         assert (
@@ -67,14 +70,23 @@ class LearningModel(nn.Module):
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.share_layer_weights = share_layer_weights
+        self.use_rope = use_rope
 
         # Factorized embeddings: use smaller embedding_dim if specified
         self.embedding_dim = embedding_dim or d_model
         self.use_factorized = embedding_dim is not None and embedding_dim < d_model
 
-        # Embeddings
+        # Embeddings: RoPE replaces learned position embedding (no additive pos bias needed)
         self.token_embedding = TokenEmbedding(vocab_size, self.embedding_dim)
-        self.position_embedding = LearnedPositionEmbedding(max_seq_len, d_model)
+        self.position_embedding: LearnedPositionEmbedding | None = (
+            None if use_rope else LearnedPositionEmbedding(max_seq_len, d_model)
+        )
+
+        # Shared RoPE instance (no parameters — all blocks reuse the same cache)
+        head_dim = d_model // num_heads
+        rope: RotaryEmbedding | None = (
+            RotaryEmbedding(head_dim, max_seq_len, rope_base) if use_rope else None
+        )
 
         # Projection layer for factorized embeddings
         self.embedding_projection: nn.Linear | None
@@ -96,6 +108,7 @@ class LearningModel(nn.Module):
                         attention_backend=attention_backend,
                         num_layers=num_layers,
                         norm_type=norm_type,
+                        rope=rope,
                     )
                 ]
             )
@@ -110,6 +123,7 @@ class LearningModel(nn.Module):
                         attention_backend=attention_backend,
                         num_layers=num_layers,
                         norm_type=norm_type,
+                        rope=rope,
                     )
                     for _ in range(num_layers)
                 ]
@@ -145,8 +159,11 @@ class LearningModel(nn.Module):
             assert self.embedding_projection is not None
             tok_emb = self.embedding_projection(tok_emb)  # (B, T, d_model)
 
-        pos_emb = self.position_embedding(x)  # (1, T, d_model)
-        h = tok_emb + pos_emb  # (B, T, d_model)
+        # RoPE: no additive position embedding — position is encoded in Q/K rotations
+        if self.position_embedding is not None:
+            h = tok_emb + self.position_embedding(x)  # (B, T, d_model)
+        else:
+            h = tok_emb
 
         # Apply transformer blocks
         if self.share_layer_weights:
@@ -197,4 +214,6 @@ class LearningModel(nn.Module):
             embedding_dim=config.embedding_dim,
             share_layer_weights=config.share_layer_weights,
             norm_type=config.norm_type,
+            use_rope=config.use_rope,
+            rope_base=config.rope_base,
         )

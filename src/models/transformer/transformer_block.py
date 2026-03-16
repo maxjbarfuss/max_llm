@@ -6,6 +6,7 @@ import torch.nn as nn
 from src.models.attention.causal_mha import CausalMultiHeadAttention
 from src.models.feedforward.feedforward import FeedForward
 from src.models.norm import make_norm
+from src.models.position.rope import RotaryEmbedding
 
 
 class TransformerBlock(nn.Module):
@@ -24,6 +25,7 @@ class TransformerBlock(nn.Module):
             Options: "flash", "sage", "xformers", "standard"
         norm_type: Normalization type — "layer" (LayerNorm) or "rms" (RMSNorm).
             Default: "layer" (Phase 3 compatible); use "rms" for Llama-style (Phase 4+).
+        rope: Optional RotaryEmbedding instance to apply to Q/K before attention.
 
     Attributes:
         norm1: Pre-norm for attention.
@@ -41,6 +43,7 @@ class TransformerBlock(nn.Module):
         attention_backend: str = "flash",
         num_layers: int = 1,
         norm_type: str = "layer",
+        rope: RotaryEmbedding | None = None,
     ) -> None:
         super().__init__()
         assert (
@@ -60,7 +63,7 @@ class TransformerBlock(nn.Module):
 
         # Attention and feedforward (num_layers for scaled residual init)
         self.attention = CausalMultiHeadAttention(
-            d_model, num_heads, dropout, attention_backend, num_layers=num_layers
+            d_model, num_heads, dropout, attention_backend, num_layers=num_layers, rope=rope
         )
         self.feedforward = FeedForward(d_model, ff_expansion_ratio, dropout, num_layers=num_layers)
 

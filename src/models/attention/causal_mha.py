@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.position.rope import RotaryEmbedding
+
 # Try to import Flash Attention 2
 try:
     from flash_attn import flash_attn_func
@@ -46,6 +48,7 @@ class CausalMultiHeadAttention(nn.Module):
         dropout: float = 0.0,
         attention_backend: str = "flash",
         num_layers: int = 1,
+        rope: RotaryEmbedding | None = None,
     ) -> None:
         super().__init__()
         assert (
@@ -57,6 +60,7 @@ class CausalMultiHeadAttention(nn.Module):
         self.head_dim = d_model // num_heads
         self.dropout_p = dropout
         self.num_layers = num_layers
+        self.rope = rope
 
         valid_backends = {"flash", "sage", "xformers", "standard"}
         assert (
@@ -118,10 +122,16 @@ class CausalMultiHeadAttention(nn.Module):
 
         q, k, v = self.qkv_proj(x).chunk(3, dim=-1)  # each (B, T, d_model)
 
+        # Reshape to (B, T, num_heads, head_dim) — NHD layout used by flash/sage/xformers
+        q = q.view(B, T, self.num_heads, self.head_dim)
+        k = k.view(B, T, self.num_heads, self.head_dim)
+        v = v.view(B, T, self.num_heads, self.head_dim)
+
+        # Apply RoPE to Q and K before attention (NHD layout)
+        if self.rope is not None:
+            q, k = self.rope(q, k)
+
         if self.attention_backend == "flash":
-            q = q.view(B, T, self.num_heads, self.head_dim)
-            k = k.view(B, T, self.num_heads, self.head_dim)
-            v = v.view(B, T, self.num_heads, self.head_dim)
             assert flash_attn_func is not None
             attn_output = flash_attn_func(
                 q,
@@ -135,9 +145,6 @@ class CausalMultiHeadAttention(nn.Module):
             attn_output = attn_output.view(B, T, self.d_model)
 
         elif self.attention_backend == "sage":
-            q = q.view(B, T, self.num_heads, self.head_dim)
-            k = k.view(B, T, self.num_heads, self.head_dim)
-            v = v.view(B, T, self.num_heads, self.head_dim)
             # tensor_layout="NHD": (B, T, num_heads, head_dim)
             assert sage_attn_func is not None
             attn_output = sage_attn_func(
@@ -151,9 +158,6 @@ class CausalMultiHeadAttention(nn.Module):
             attn_output = attn_output.view(B, T, self.d_model)
 
         elif self.attention_backend == "xformers":
-            q = q.view(B, T, self.num_heads, self.head_dim)
-            k = k.view(B, T, self.num_heads, self.head_dim)
-            v = v.view(B, T, self.num_heads, self.head_dim)
             # LowerTriangularMask avoids allocating a [B, num_heads, T, T] bias tensor
             assert LowerTriangularMask is not None and memory_efficient_attention is not None
             attn_output = memory_efficient_attention(
@@ -166,10 +170,10 @@ class CausalMultiHeadAttention(nn.Module):
             attn_output = attn_output.view(B, T, self.d_model)
 
         else:  # standard — F.scaled_dot_product_attention (PyTorch 2.0+)
-            # Expects (B, num_heads, T, head_dim); dispatches to FlashAttn kernels when available.
-            q = q.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
-            k = k.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
-            v = v.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
+            # Expects (B, num_heads, T, head_dim)
+            q = q.transpose(1, 2)
+            k = k.transpose(1, 2)
+            v = v.transpose(1, 2)
             attn_output = F.scaled_dot_product_attention(
                 q,
                 k,
