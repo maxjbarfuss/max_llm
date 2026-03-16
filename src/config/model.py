@@ -28,7 +28,7 @@ class ModelConfig:
 
     # Optional: Phase 3+ features (MLA, MoE, GRU)
     mla_latent_dim: int = -1  # Defaults to hidden_size in __post_init__
-    rope_base: int = 10000
+    rope_base: int | None = None  # None = no RoPE; any int = enable RoPE with that frequency base
     intermediate_size: int | None = None  # Defaults to 4*hidden_size
     num_experts: int = 1
     experts_per_token: int = 1
@@ -40,9 +40,6 @@ class ModelConfig:
     embedding_dim: int | None = None
     share_layer_weights: bool = False
     norm_type: str = "layer"  # "layer" = LayerNorm (Phase 3); "rms" = RMSNorm (Phase 4+ Llama)
-    use_rope: bool = (
-        False  # Rotary position embedding on Q/K (Phase 4+ Llama); replaces learned pos
-    )
 
     def __post_init__(self) -> None:
         """Validate model configuration."""

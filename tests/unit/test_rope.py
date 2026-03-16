@@ -37,8 +37,8 @@ def test_rotate_half_splits_correctly() -> None:
 @pytest.mark.parametrize("head_dim", [32, 64, 128])
 def test_cache_shape(head_dim: int) -> None:
     rope = RotaryEmbedding(head_dim, max_seq_len=512)
-    assert rope.cos_cache.shape == (512, head_dim)
-    assert rope.sin_cache.shape == (512, head_dim)
+    assert rope.cos_cache.shape == (1, 512, 1, head_dim)
+    assert rope.sin_cache.shape == (1, 512, 1, head_dim)
 
 
 def test_odd_head_dim_raises() -> None:
@@ -232,7 +232,7 @@ def test_learning_model_with_rope() -> None:
         num_heads=4,
         max_seq_len=64,
         attention_backend="standard",
-        use_rope=True,
+        rope_base=10000,
     )
     # No learned position embedding when RoPE is active
     assert model.position_embedding is None
@@ -251,7 +251,7 @@ def test_learning_model_rope_skips_position_embedding() -> None:
         num_heads=4,
         max_seq_len=64,
         attention_backend="standard",
-        use_rope=True,
+        rope_base=10000,
     )
     model_base = LearningModel(
         vocab_size=256,
@@ -260,7 +260,7 @@ def test_learning_model_rope_skips_position_embedding() -> None:
         num_heads=4,
         max_seq_len=64,
         attention_backend="standard",
-        use_rope=False,
+        rope_base=None,
     )
     assert model_rope.position_embedding is None
     assert model_base.position_embedding is not None
@@ -277,10 +277,10 @@ def test_learning_model_from_config_with_rope() -> None:
         num_layers=2,
         num_heads=4,
         norm_type="rms",
-        use_rope=True,
+        rope_base=10000,
     )
     model = LearningModel.from_config(config, attention_backend="standard")
-    assert model.use_rope is True
+    assert model.position_embedding is None
     assert model.position_embedding is None
     x = torch.randint(0, 256, (1, 32))
     assert model(x).shape == (1, 32, 256)

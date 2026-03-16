@@ -17,7 +17,7 @@ def make_model_config(**overrides: object) -> ModelConfig:
         "vocab_size": 128,
         "max_seq_length": 256,
         "mla_latent_dim": 64,
-        "rope_base": 10000,
+        "rope_base": None,
         "intermediate_size": None,
         "num_experts": 1,
         "experts_per_token": 1,

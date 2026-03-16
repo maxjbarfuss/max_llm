@@ -57,8 +57,7 @@ class LearningModel(nn.Module):
         embedding_dim: int | None = None,
         share_layer_weights: bool = False,
         norm_type: str = "layer",
-        use_rope: bool = False,
-        rope_base: int = 10000,
+        rope_base: int | None = None,
     ) -> None:
         super().__init__()
         assert (
@@ -70,7 +69,6 @@ class LearningModel(nn.Module):
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.share_layer_weights = share_layer_weights
-        self.use_rope = use_rope
 
         # Factorized embeddings: use smaller embedding_dim if specified
         self.embedding_dim = embedding_dim or d_model
@@ -79,13 +77,13 @@ class LearningModel(nn.Module):
         # Embeddings: RoPE replaces learned position embedding (no additive pos bias needed)
         self.token_embedding = TokenEmbedding(vocab_size, self.embedding_dim)
         self.position_embedding: LearnedPositionEmbedding | None = (
-            None if use_rope else LearnedPositionEmbedding(max_seq_len, d_model)
+            None if rope_base is not None else LearnedPositionEmbedding(max_seq_len, d_model)
         )
 
         # Shared RoPE instance (no parameters — all blocks reuse the same cache)
         head_dim = d_model // num_heads
         rope: RotaryEmbedding | None = (
-            RotaryEmbedding(head_dim, max_seq_len, rope_base) if use_rope else None
+            RotaryEmbedding(head_dim, max_seq_len, rope_base) if rope_base is not None else None
         )
 
         # Projection layer for factorized embeddings
@@ -214,6 +212,5 @@ class LearningModel(nn.Module):
             embedding_dim=config.embedding_dim,
             share_layer_weights=config.share_layer_weights,
             norm_type=config.norm_type,
-            use_rope=config.use_rope,
             rope_base=config.rope_base,
         )

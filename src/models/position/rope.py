@@ -32,10 +32,10 @@ def _apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.
 
     Args:
         x:   (B, T, num_heads, head_dim)
-        cos: (1, T, 1, head_dim) — broadcast over batch and heads
+        cos: (1, T, 1, head_dim) — already cast to x.dtype, broadcast over batch and heads
         sin: (1, T, 1, head_dim)
     """
-    return (x * cos + _rotate_half(x) * sin).to(x.dtype)
+    return x * cos + _rotate_half(x) * sin
 
 
 class RotaryEmbedding(nn.Module):
@@ -47,8 +47,8 @@ class RotaryEmbedding(nn.Module):
         base:        Frequency base θ (default: 10000, as in original paper).
     """
 
-    cos_cache: torch.Tensor
-    sin_cache: torch.Tensor
+    cos_cache: torch.Tensor  # (1, max_seq_len, 1, head_dim)
+    sin_cache: torch.Tensor  # (1, max_seq_len, 1, head_dim)
 
     def __init__(self, head_dim: int, max_seq_len: int = 2048, base: int = 10000) -> None:
         super().__init__()
@@ -58,9 +58,10 @@ class RotaryEmbedding(nn.Module):
         t = torch.arange(max_seq_len, dtype=inv_freq.dtype)
         freqs = torch.outer(t, inv_freq)  # (max_seq_len, head_dim//2)
 
-        # Llama-style: concat freqs with itself so cos/sin shape = (max_seq_len, head_dim)
-        cos = torch.cat([freqs.cos(), freqs.cos()], dim=-1)
-        sin = torch.cat([freqs.sin(), freqs.sin()], dim=-1)
+        # Llama-style: concat freqs with itself so shape = (1, max_seq_len, 1, head_dim)
+        # Pre-shaped for broadcasting over (B, T, num_heads, head_dim) — no hot-path unsqueezes.
+        cos = torch.cat([freqs.cos(), freqs.cos()], dim=-1).unsqueeze(0).unsqueeze(2)
+        sin = torch.cat([freqs.sin(), freqs.sin()], dim=-1).unsqueeze(0).unsqueeze(2)
 
         # Non-persistent: recomputed on device transfer, not saved in state_dict
         self.register_buffer("cos_cache", cos, persistent=False)
@@ -74,9 +75,10 @@ class RotaryEmbedding(nn.Module):
             k: (B, T, num_heads, head_dim)
 
         Returns:
-            Rotated (q, k) with same shape.
+            Rotated (q, k) with same shape and dtype.
         """
         T = q.shape[1]
-        cos = self.cos_cache[:T].unsqueeze(0).unsqueeze(2)  # (1, T, 1, head_dim)
-        sin = self.sin_cache[:T].unsqueeze(0).unsqueeze(2)
+        # Cast to input dtype here so _apply_rope stays in q/k dtype throughout (no upcast).
+        cos = self.cos_cache[:, :T].to(q.dtype)  # (1, T, 1, head_dim)
+        sin = self.sin_cache[:, :T].to(q.dtype)
         return _apply_rope(q, cos, sin), _apply_rope(k, cos, sin)
