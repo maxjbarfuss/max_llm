@@ -6,6 +6,8 @@ import pytest
 import torch
 
 from src.models.attention.causal_mha import CausalMultiHeadAttention
+from src.models.attention.residual_linear_attention import ResidualLinearAttention
+from src.models.attention.sliding_window_attention import SlidingWindowAttention
 
 
 class TestCausalMultiHeadAttention:
@@ -261,3 +263,128 @@ class TestGQAMQA:
         gqa(x).sum().backward()
         assert x.grad is not None
         assert not torch.allclose(x.grad, torch.zeros_like(x.grad))
+
+
+class TestSlidingWindowAttention:
+    """Tests for SlidingWindowAttention."""
+
+    def test_output_shape(self) -> None:
+        swa = SlidingWindowAttention(d_model=64, num_heads=4, window_size=4, attention_backend="standard")
+        x = torch.randn(2, 16, 64)
+        assert swa(x).shape == (2, 16, 64)
+
+    def test_causal_masking_preserved(self) -> None:
+        """Token at position t must not depend on tokens at positions > t."""
+        torch.manual_seed(0)
+        swa = SlidingWindowAttention(d_model=32, num_heads=2, window_size=8, attention_backend="standard")
+        swa.eval()
+        x = torch.randn(1, 6, 32)
+        out1 = swa(x)
+        x_mod = x.clone()
+        x_mod[0, 5, :] = torch.randn(32)
+        out2 = swa(x_mod)
+        assert torch.allclose(out1[0, 0], out2[0, 0], atol=1e-6)
+        assert torch.allclose(out1[0, 4], out2[0, 4], atol=1e-6)
+        assert not torch.allclose(out1[0, 5], out2[0, 5], atol=1e-6)
+
+    def test_window_constraint(self) -> None:
+        """Tokens outside the window must not affect the output."""
+        torch.manual_seed(1)
+        window_size = 3
+        swa = SlidingWindowAttention(d_model=32, num_heads=2, window_size=window_size, attention_backend="standard")
+        swa.eval()
+        x = torch.randn(1, 8, 32)
+        out1 = swa(x)
+        # Modify position 0 — it is outside the window for position 4 (gap=4 >= window_size=3)
+        x_mod = x.clone()
+        x_mod[0, 0, :] = torch.randn(32)
+        out2 = swa(x_mod)
+        assert torch.allclose(out1[0, 4], out2[0, 4], atol=1e-5), (
+            "Position 4 should not depend on position 0 when window_size=3"
+        )
+
+    def test_gradient_flows(self) -> None:
+        swa = SlidingWindowAttention(d_model=32, num_heads=2, window_size=4, attention_backend="standard")
+        x = torch.randn(1, 8, 32, requires_grad=True)
+        swa(x).sum().backward()
+        assert x.grad is not None
+        assert not torch.allclose(x.grad, torch.zeros_like(x.grad))
+
+    def test_gqa_output_shape(self) -> None:
+        """GQA variant should produce same output shape."""
+        swa = SlidingWindowAttention(
+            d_model=64, num_heads=4, window_size=4, num_kv_heads=2, attention_backend="standard"
+        )
+        x = torch.randn(2, 8, 64)
+        assert swa(x).shape == (2, 8, 64)
+
+    def test_window_size_1_equals_self_attention_only(self) -> None:
+        """window_size=1 means each token attends only to itself (diagonal)."""
+        swa = SlidingWindowAttention(d_model=32, num_heads=2, window_size=1, attention_backend="standard")
+        swa.eval()
+        x = torch.randn(1, 4, 32)
+        out = swa(x)
+        assert out.shape == (1, 4, 32)
+
+    def test_window_size_assertion(self) -> None:
+        with pytest.raises(AssertionError):
+            SlidingWindowAttention(d_model=32, num_heads=2, window_size=0, attention_backend="standard")
+
+
+class TestResidualLinearAttention:
+    """Tests for ResidualLinearAttention."""
+
+    def test_output_shape(self) -> None:
+        rla = ResidualLinearAttention(d_model=64, num_heads=4)
+        x = torch.randn(2, 16, 64)
+        assert rla(x).shape == (2, 16, 64)
+
+    def test_output_dtype_float32(self) -> None:
+        rla = ResidualLinearAttention(d_model=64, num_heads=4)
+        x = torch.randn(1, 8, 64)
+        assert rla(x).dtype == torch.float32
+
+    def test_causal_masking(self) -> None:
+        """Output at position t must not depend on inputs at positions > t."""
+        torch.manual_seed(42)
+        rla = ResidualLinearAttention(d_model=32, num_heads=2)
+        rla.eval()
+        x = torch.randn(1, 6, 32)
+        out1 = rla(x)
+        x_mod = x.clone()
+        x_mod[0, 5, :] = torch.randn(32)
+        out2 = rla(x_mod)
+        assert torch.allclose(out1[0, 0], out2[0, 0], atol=1e-6)
+        assert torch.allclose(out1[0, 4], out2[0, 4], atol=1e-6)
+        assert not torch.allclose(out1[0, 5], out2[0, 5], atol=1e-6)
+
+    def test_rope_raises(self) -> None:
+        """RoPE must be rejected with a clear error."""
+        from src.models.position.rope import RotaryEmbedding
+
+        rope = RotaryEmbedding(head_dim=16, max_seq_len=64, base=10000)
+        with pytest.raises(ValueError, match="RoPE"):
+            ResidualLinearAttention(d_model=64, num_heads=4, rope=rope)
+
+    def test_gradient_flows(self) -> None:
+        rla = ResidualLinearAttention(d_model=32, num_heads=2)
+        x = torch.randn(1, 8, 32, requires_grad=True)
+        rla(x).sum().backward()
+        assert x.grad is not None
+        assert not torch.allclose(x.grad, torch.zeros_like(x.grad))
+
+    def test_has_residual_projection(self) -> None:
+        rla = ResidualLinearAttention(d_model=64, num_heads=4)
+        assert hasattr(rla, "res_proj")
+        assert isinstance(rla.res_proj, torch.nn.Linear)
+
+    def test_gqa_output_shape(self) -> None:
+        rla = ResidualLinearAttention(d_model=64, num_heads=4, num_kv_heads=2)
+        x = torch.randn(2, 8, 64)
+        assert rla(x).shape == (2, 8, 64)
+
+    def test_different_inputs_different_outputs(self) -> None:
+        rla = ResidualLinearAttention(d_model=64, num_heads=4)
+        x1 = torch.randn(1, 8, 64)
+        x2 = torch.randn(1, 8, 64)
+        assert not torch.allclose(rla(x1), rla(x2))

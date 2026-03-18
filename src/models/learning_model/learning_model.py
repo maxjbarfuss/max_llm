@@ -107,6 +107,8 @@ class LearningModel(nn.Module):
         rope_base: int | None = None,
         pos_type: str = "learned",
         rel_pos_num_buckets: int = 32,
+        attn_type: str = "mha",
+        swa_window_size: int = 256,
     ) -> None:
         super().__init__()
         assert (
@@ -159,6 +161,8 @@ class LearningModel(nn.Module):
                 norm_type=norm_type,
                 rope=rope,
                 attn_bias=attn_bias,
+                attn_type=attn_type,
+                window_size=swa_window_size,
             )
 
         if self.share_layer_weights:
@@ -261,4 +265,6 @@ class LearningModel(nn.Module):
             rope_base=config.rope_base,
             pos_type=config.pos_type,
             rel_pos_num_buckets=config.rel_pos_num_buckets,
+            attn_type=config.attn_type,
+            swa_window_size=config.swa_window_size,
         )

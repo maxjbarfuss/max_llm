@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 
-from src.models.attention.causal_mha import CausalMultiHeadAttention
+from src.models.attention import make_attention
 from src.models.feedforward import make_ffn
 from src.models.norm import _VALID_NORM_TYPES, make_norm
 from src.models.position.add_rope import AdditiveRoPE
@@ -16,7 +16,7 @@ class TransformerBlock(nn.Module):
     """Transformer block with pre-norm, causal attention, and feedforward.
 
     Architecture (pre-norm with residual connections):
-    1. norm1 → Causal Multi-Head Attention → Residual Add
+    1. norm1 → Attention → Residual Add
     2. norm2 → FeedForward → Residual Add
 
     Args:
@@ -28,10 +28,12 @@ class TransformerBlock(nn.Module):
                            intermediate_size is provided explicitly.
         attention_backend: One of "flash", "sage", "xformers", "standard" (default: "flash").
         norm_type:         One of "layer", "rms", "flash", "dyt", "crms" (default: "layer").
-        rope:              Optional RotaryEmbedding to apply to Q/K.
+        rope:              Optional RotaryEmbedding to apply to Q/K (MHA/SWA only).
         ffn_type:          One of "gelu", "swiglu", "relu2", "xielu" (default: "gelu").
         intermediate_size: FFN hidden dimension. Overrides ff_expansion_ratio when set.
         attn_bias:         Optional ALiBi or RelativePositionBias to add to attention logits.
+        attn_type:         One of "mha", "swa", "rla" (default: "mha").
+        window_size:       Sliding-window width; used when attn_type="swa" (default: 256).
     """
 
     def __init__(
@@ -48,6 +50,8 @@ class TransformerBlock(nn.Module):
         ffn_type: str = "gelu",
         intermediate_size: int | None = None,
         attn_bias: ALiBi | RelativePositionBias | None = None,
+        attn_type: str = "mha",
+        window_size: int = 256,
     ) -> None:
         super().__init__()
         self._validate_init(d_model, num_heads, norm_type)
@@ -58,7 +62,8 @@ class TransformerBlock(nn.Module):
         self.norm1 = make_norm(norm_type, d_model)
         self.norm2 = make_norm(norm_type, d_model)
 
-        self.attention = CausalMultiHeadAttention(
+        self.attention = make_attention(
+            attn_type=attn_type,
             d_model=d_model,
             num_heads=num_heads,
             num_kv_heads=num_kv_heads,
@@ -67,6 +72,7 @@ class TransformerBlock(nn.Module):
             num_layers=num_layers,
             rope=rope,
             attn_bias=attn_bias,
+            window_size=window_size,
         )
 
         _intermediate = (

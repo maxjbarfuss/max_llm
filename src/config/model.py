@@ -9,6 +9,7 @@ from .toml_utils import load_toml, section_or_root
 _VALID_NORM_TYPES = {"layer", "rms", "flash", "dyt", "crms"}
 _VALID_FFN_TYPES = {"gelu", "swiglu", "relu2", "xielu"}
 _VALID_POS_TYPES = {"learned", "rope", "add_rope", "alibi", "rel_pos"}
+_VALID_ATTN_TYPES = {"mha", "swa", "rla"}
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,8 @@ class ModelConfig:
     ffn_type: str = "gelu"  # "gelu" | "swiglu" | "relu2" | "xielu"
     pos_type: str = "learned"  # "learned" | "rope" | "add_rope" | "alibi" | "rel_pos"
     rel_pos_num_buckets: int = 32  # used when pos_type == "rel_pos"
+    attn_type: str = "mha"  # "mha" = standard MHA; "swa" = sliding window; "rla" = residual linear
+    swa_window_size: int = 256  # window width used when attn_type == "swa"
 
     def __post_init__(self) -> None:
         """Validate model configuration."""
@@ -83,6 +86,7 @@ class ModelConfig:
         if self.ffn_type not in _VALID_FFN_TYPES:
             raise ValueError(f"ffn_type must be one of {_VALID_FFN_TYPES}, got '{self.ffn_type}'")
         self._validate_pos_type()
+        self._validate_attn_type()
 
     @staticmethod
     def _validate_positive(name: str, value: int) -> None:
@@ -96,6 +100,22 @@ class ModelConfig:
         if self.pos_type in {"rope", "add_rope"} and self.rope_base is None:
             raise ValueError(
                 f"pos_type='{self.pos_type}' requires rope_base to be set (e.g. rope_base = 10000)"
+            )
+
+    def _validate_attn_type(self) -> None:
+        """Validate attention type and cross-field constraints."""
+        if self.attn_type not in _VALID_ATTN_TYPES:
+            raise ValueError(
+                f"attn_type must be one of {_VALID_ATTN_TYPES}, got '{self.attn_type}'"
+            )
+        if self.attn_type == "swa" and self.swa_window_size < 1:
+            raise ValueError(
+                f"swa_window_size must be >= 1 when attn_type='swa', got {self.swa_window_size}"
+            )
+        if self.attn_type == "rla" and self.pos_type in {"rope", "add_rope"}:
+            raise ValueError(
+                "attn_type='rla' is incompatible with RoPE — the ELU+1 kernel breaks "
+                "rotation equivariance. Use pos_type='learned' or 'alibi' instead."
             )
 
     def _validate_dims(self) -> None:
