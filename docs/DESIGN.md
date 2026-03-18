@@ -22,7 +22,7 @@
 | **6** | MoE + MLA | MLA (latent KV compression), sparse MoE, top-k gating, load-balance loss, continual expert specialization | Partitioned SFT + preference (1–5M pairs) with curriculum; expert utilization tracking |
 | **7** | Dual-Stream Reasoning | GRU Reasoning Stream + GRU Combiner (gated fusion); scheduled teacher forcing (100%→0%); STaR bootstrap; reasoning accuracy delta | 50K–500K (input, trace, answer) triples (GSM8K, MATH, ARC-Challenge, OpenOrca); STaR traces; 60% reasoned / 40% direct |
 
-**Status**: Phase 4 in progress — RMSNorm ✅, RoPE ✅, FFN variants (SwiGLU/ReLU²/xIELU) ✅, position encoding A/B suite (AddRoPE/ALiBi/RelPosBias) ✅; GQA pending; A/B runs active.
+**Status**: Phase 4 in progress — RMSNorm ✅, RoPE ✅, FFN variants (SwiGLU/ReLU²/xIELU) ✅, position encoding A/B suite (AddRoPE/ALiBi/RelPosBias) ✅, norm variants (FlashNorm/DyT/CRMSNorm) ✅, GQA/MQA ✅ (`num_kv_heads`); 30K-step best-in-breed run active (p4_llama_20k, val≈3.62 @ step 9500).
 
 ---
 
@@ -189,10 +189,10 @@ graph TD
 | Tokenizer | 2 | 2–7 | Char (P2), Unigram 8K (P3+); BPE benchmarked but Unigram wins on convergence speed |
 | Embeddings | 2 | 2–7 | Token + positional; P2–3: learned additive table; P4+: `pos_type` selects from `learned`/`rope`/`add_rope`/`alibi`/`rel_pos` |
 | Transformer block | 3 | 3–7 | Pre-norm, causal attention, residual FFN |
-| RMSNorm | 4 | 4–7 | Replaces LayerNorm; no mean centering, learnable gain; `F.rms_norm` fused kernel |
+| Norm variants | 4 | 4–7 | `norm_type` selects: `rms` (RMSNorm, P4 default); `flash` (param-free RMSNorm); `dyt` (Dynamic Tanh, Zhai 2025); `crms` (Centered RMSNorm); `layer` (LayerNorm, P3 legacy) |
 | RoPE | 4 | 4–7 | Rotary Q/K encoding; `pos_type = "rope"`; A/B alternatives: AddRoPE, ALiBi, RelPosBias |
 | FFN variants | 4 | 4–7 | SwiGLU (Llama, default P4+); ReLU² (sparse ~50%); xIELU (piecewise quad/exp, 2 params); GELU (legacy) |
-| GQA | 4 | 4–5 | Multi-query attention; replaced by MLA in P6 |
+| GQA | 4 | 4–5 | Grouped-query attention via `num_kv_heads` (`null`=MHA, `1`=MQA, `N`=GQA); replaced by MLA in P6 |
 | KV-cache | 5 | 5–7 | Cached K/V for autoregressive generation |
 | LoRA | 5 | 5–7 | Low-rank adaptation (<1% params) |
 | Reward model | 5 | 5–7 | Learned reward for PPO/GRPO |

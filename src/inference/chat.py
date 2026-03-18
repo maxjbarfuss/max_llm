@@ -117,6 +117,9 @@ def chat_mode(
                     if device.type == "cuda"
                     else torch.no_grad()
                 )
+                print("🤖 ", end="", flush=True)
+                gen_start = len(tokens)
+                prev_decoded_len = 0
                 with torch.no_grad(), autocast_ctx:
                     for _ in range(max_new_tokens):
                         input_ids = torch.tensor(
@@ -129,8 +132,11 @@ def chat_mode(
                             top_k=top_k,
                         )
                         tokens.append(next_token)
+                        decoded = tokenizer.decode(tokens[gen_start:])
+                        print(decoded[prev_decoded_len:], end="", flush=True)
+                        prev_decoded_len = len(decoded)
 
-                print(f"🤖 {tokenizer.decode(tokens)}\n")
+                print("\n")
             except Exception as e:
                 print(f"❌ Generation error: {e}\n")
                 import traceback

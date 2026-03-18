@@ -74,6 +74,7 @@ class LearningModel(nn.Module):
         d_model: Model dimension (embedding and hidden size).
         num_layers: Number of transformer blocks.
         num_heads: Number of attention heads.
+        num_kv_heads: K/V heads for GQA/MQA (None = MHA, 1 = MQA, N = GQA).
         dropout: Dropout probability (default: 0.0).
         ff_expansion_ratio: Expansion ratio for FFN hidden dimension (default: 4).
         max_seq_len: Maximum sequence length (default: 2048).
@@ -93,6 +94,7 @@ class LearningModel(nn.Module):
         d_model: int,
         num_layers: int,
         num_heads: int,
+        num_kv_heads: int | None = None,
         dropout: float = 0.0,
         ff_expansion_ratio: int = 4,
         intermediate_size: int | None = None,
@@ -147,6 +149,7 @@ class LearningModel(nn.Module):
             return TransformerBlock(
                 d_model=d_model,
                 num_heads=num_heads,
+                num_kv_heads=num_kv_heads,
                 dropout=dropout,
                 ff_expansion_ratio=ff_expansion_ratio,
                 intermediate_size=intermediate_size,
@@ -199,14 +202,7 @@ class LearningModel(nn.Module):
         else:
             h = tok_emb
 
-        # Apply transformer blocks
-        if self.share_layer_weights:
-            shared_block = self.blocks[0]
-            for _ in range(self.num_layers):
-                h = shared_block(h)
-        else:
-            for block in self.blocks:
-                h = block(h)
+        h = self._apply_transformer_blocks(h)
 
         # Final layer norm (skipped for num_layers=0 to support Phase 2 MLP-only models)
         if self.final_norm is not None:
@@ -221,6 +217,18 @@ class LearningModel(nn.Module):
             self.vocab_size,
         ), f"LearningModel output shape mismatch: expected {(B, T, self.vocab_size)}, got {logits.shape}"
         return logits
+
+    def _apply_transformer_blocks(self, h: torch.Tensor) -> torch.Tensor:
+        """Apply transformer stack, honoring optional cross-layer parameter sharing."""
+        if self.share_layer_weights:
+            shared_block = self.blocks[0]
+            for _ in range(self.num_layers):
+                h = shared_block(h)
+            return h
+
+        for block in self.blocks:
+            h = block(h)
+        return h
 
     def load_state_dict(
         self,
@@ -241,6 +249,7 @@ class LearningModel(nn.Module):
             d_model=config.hidden_size,
             num_layers=config.num_layers,
             num_heads=config.num_heads,
+            num_kv_heads=config.num_kv_heads,
             dropout=config.dropout,
             intermediate_size=config.intermediate_size,
             ffn_type=config.ffn_type,

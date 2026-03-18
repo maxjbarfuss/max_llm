@@ -244,31 +244,29 @@ Evaluation and quality:
 **Kill Criteria**: Stop if Llama architecture degrades perplexity vs Phase 3 baseline OR if multi-GPU loss diverges from single-GPU by >5% at same seed after 100 steps.
 **Out of Scope**: Fine-tuning, RL alignment, MoE/MLA upgrades.
 **Decision Log**: Record decisions as `P4-DEC-<n>` in Running Session Log.
-- **P4-DEC-1** (2026-03-16): RMSNorm confirmed as default norm for Phase 4.
-- **P4-DEC-2** (2026-03-16): RoPE implemented; length extrapolation is inherent (no extra code). Initial run at lr=0.0042 showed grad norm instability — RoPE requires lower LR (0.0018–0.0025) and longer warmup (600–800 steps). Advantages (relative position, long-context coherency) emerge at 12L+/2048ctx/10K+ steps, not at the 2K-step A/B scale. A/B vs LayerNorm (6L/1024H, 2K steps, same LR/data/seed): lower peak memory, similar throughput at this scale, slightly noisier early loss curve (expected — no mean centering; stabilizes at longer runs). Speed advantage expected to grow at 12L+. LR may need slight reduction at larger scale.
-- **P4-DEC-4** (2026-03-16): Three position encoding alternatives implemented for A/B testing: AddRoPE (additive sinusoidal Q/K, no params), ALiBi (linear biases, no params, flash-native), RelPosBias (T5 learned bucket bias, n_heads×n_buckets params). Canonical config field: `pos_type`; back-compat for existing `rope_base`-only configs.
-- **P4-DEC-3** (2026-03-16): Three FFN activation variants implemented: SwiGLU (Llama-style, no bias, hidden=4×d/3×2 rounded to 256), ReLU² (relu(x)², ~50% sparsity, no extra params), xIELU (arXiv:2411.13010, piecewise quadratic/exponential, 2 shared trainable scalars). Factory `make_ffn` dispatches via `ffn_type` config field. ReLU² A/B run (6L/1024H/2K steps, no RoPE, same baseline) in progress.
 
 **Tasks**:
 
 Data:
-- ☐ Prepare OpenWebText subset (10–50M tokens); document deduplication rate
-- ☐ Download and prepare FineWeb / FineWeb-Edu subset (~50–100M tokens) with BPE tokenizer
-- ☐ Implement heuristic data filters for length, language, and perplexity
+- ✅ Prepare OpenWebText subset; prepared and used in 27B corpus (673M train tokens, 9.5M docs) — OWT is pre-deduplicated; deduplication rate N/A for this source
+- ✅ Download and prepare FineWeb-Edu subset (>100M tokens); 1.57B train tokens, 1.3M docs in 27B corpus (Unigram 8K tokenizer; BPE qualifier was stale — Phase 4 runs use same Unigram data)
+- ✅ Memory-mapped data reads and DataLoader shuffling at scale — `load_tokens()` returns `np.memmap`; `TokenDataset` yields (x,y) lazily; `set_epoch()` randomizes start offset; I/O verified not bottlenecking training (see `docs/OPTIMIZATION.md`)
+- ✅ Implement dynamic data mixing and sampling weights by curriculum stage — `MixingStrategy`, `source_ratios`, `weight_by`, `CurriculumStrategy` (length-based, domain-progression, custom) all implemented in `src/data/preparation/`
+- ☐ Implement heuristic data filters for language and perplexity — length filtering done (`min_length`/`max_length` in `DataSource`); language detection and perplexity-based filtering not implemented
 - ☐ `HuggingFaceDownloader`: `download(dataset_name, cache_dir)` + `discover_schema()` → discovery report; add `--discover` mode to data CLI
-- ☐ Formalize `DatasetProcessor` ABC and `WikiTextProcessor` wrapping `normalize_wikitext.py`
 - ☐ Intermediate Parquet schema for normalized docs: doc_id, text, split, char_count (replaces .txt cache; enables efficient doc-level queries)
-- ☐ Memory-mapped data reads and DataLoader shuffling at scale; verify I/O does not bottleneck training
 - ☐ `ChunkedTokenCache(slow_dir, fast_dir, chunk_size_mb)`: slow→fast staging with LRU eviction and async background prefetch
 - ☐ `CachedTokenDataset`: lazy-load via `ChunkedTokenCache`; prefetch next chunk at 80% consumption
 - ☐ Upgrade token metadata to Parquet: chunk_id, token_count, byte_offset, split, sha256 hash
-- ☐ Assemble 100–500M token corpus with staged curriculum: 75% FineWeb/Wikipedia/GitHub/UCI + curated data (Cosmopedia), 20% adult/controversial, 5% harmful
-- ☐ Create source manifest (URLs, licenses, curriculum stage assignments, deduplication stats)
-- ☐ Implement dynamic data mixing and sampling weights by curriculum stage
+- ☐ Assemble 100–500M token corpus with staged curriculum: 75% FineWeb/Wikipedia/GitHub/UCI + curated data (Cosmopedia), 20% adult/controversial, 5% harmful — existing 27B corpus uses OWT/FineWeb-Edu/WikiText/TinyStories; GitHub/UCI/Cosmopedia/content-mix not yet assembled
+- ☐ Create source manifest (URLs, licenses, curriculum stage assignments, deduplication stats) — basic stats/manifest JSON exists; no URLs, licenses, or curriculum stage assignments
 - ☐ Validate curriculum with per-stage loss curves and stage-transition logs; benchmark vs random mixing
 
 Components:
 - ✅ RMSNorm (replace LayerNorm, no mean, learnable gain) — `src/models/norm/rms_norm.py`; `F.rms_norm` fused kernel; `make_norm` factory; 26 unit tests
+- ✅ FlashNorm (parameter-free RMSNorm; scale absorbed into adjacent linear weights) — `src/models/norm/flash_norm.py`; `norm_type = "flash"`
+- ✅ DyT (Dynamic Tanh: `γ⊙tanh(α·x)`; replaces norm with bounded nonlinearity; Zhai et al. 2025) — `src/models/norm/dyt.py`; `norm_type = "dyt"`
+- ✅ CRMSNorm (Centered RMSNorm: mean-subtract then RMSNorm; bridges RMSNorm and LayerNorm) — `src/models/norm/crms_norm.py`; `norm_type = "crms"`
 - ✅ RoPE on Q/K with explicit formulation (sin/cos pairs, rotate-half trick) — `src/models/position/rope.py`; pre-shaped cache; `rope_base: int | None` config field; 25 unit tests; length extrapolation inherent (P4-DEC-2)
 - ✅ RoPE length extrapolation beyond training context — inherent property; no extra code needed
 - ✅ AddRoPE (additive sinusoidal on Q/K, no rotation) — `src/models/position/add_rope.py`; `pos_type = "add_rope"`
@@ -279,7 +277,7 @@ Components:
 - ✅ ReLU² FFN (relu(x)²; ~50% sparsity; no extra params) — `src/models/feedforward/relu2_ffn.py`
 - ✅ xIELU FFN (piecewise quadratic/exp, 2 trainable scalars; best ppl in paper) — `src/models/feedforward/xielu_ffn.py`
 - ✅ `make_ffn` factory; `ffn_type` config field in `ModelConfig`; `FeedForward` extended to accept `intermediate_size` directly
-- ☐ GQA with configurable KV head count (1 = MQA, N = MHA, between = GQA)
+- ✅ GQA with configurable KV head count (`num_kv_heads`: 1 = MQA, `null`/N = MHA, between = GQA) — implemented in `CausalMultiHeadAttention` with backend-aware KV expansion; wired through ModelConfig → LearningModel → TransformerBlock
 
 Training infrastructure:
 - ☐ FSDP for models >300M params (model sharding, ZeRO-style optimizer sharding)
@@ -287,7 +285,7 @@ Training infrastructure:
 - ☐ Multi-node DDP setup (4+ GPUs across multiple machines)
 
 Evaluation and quality:
-- ✅ Per-component unit tests: RMSNorm (26 tests), RoPE (25 tests), FFN variants (39 tests), pos variants (25 tests); ☐ GQA pending
+- ✅ Per-component unit tests: RMSNorm (26 tests), RoPE (25 tests), FFN variants (39 tests), pos variants (25 tests), norm variants (29 tests), GQA/MQA attention coverage in `tests/unit/test_attention.py`
 - ✅ LayerNorm vs RMSNorm A/B (6L/1024H, 2K steps, Flash+DDP): RMSNorm lower memory, similar speed, slightly noisier early curve — **RMSNorm confirmed as Phase 4 default** (P4-DEC-1)
 - ⏳ ReLU² vs GELU A/B (6L/1024H, 2K steps, no RoPE) — run complete, analysis pending
 - ☐ SwiGLU, xIELU, AddRoPE, ALiBi, RelPosBias A/B runs (same baseline)

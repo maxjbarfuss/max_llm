@@ -32,8 +32,9 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `max_seq_length` | int | ✅ required | Maximum context length; must be ≥ `data.max_length` |
 | `num_layers` | int | `0` | Transformer depth; `0` = embedding-only (Phase 2 baseline) |
 | `num_heads` | int | `4` | Attention heads; `hidden_size` must be divisible by `num_heads` |
+| `num_kv_heads` | int \\| `null` | `null` | K/V head count for grouped-query attention: `null` = MHA (`num_kv_heads = num_heads`), `1` = MQA, `1 < N < num_heads` = GQA; must divide `num_heads` |
 | `dropout` | float | `0.0` | Dropout probability applied in attention and FFN |
-| `norm_type` | `"layer"` \| `"rms"` | `"layer"` | Normalization: `"layer"` = LayerNorm (P3 default); `"rms"` = RMSNorm (P4+ recommended — lower memory, no mean centering) |
+| `norm_type` | `"layer"` \| `"rms"` \| `"flash"` \| `"dyt"` \| `"crms"` | `"layer"` | Normalization variant: `"layer"` = LayerNorm (P3 default); `"rms"` = RMSNorm (P4+ recommended); `"flash"` = parameter-free RMSNorm (scale absorbed into adjacent linear weights); `"dyt"` = Dynamic Tanh `γ⊙tanh(α·x)`, replaces norm with bounded nonlinearity (Zhai et al. 2025); `"crms"` = Centered RMSNorm (mean-subtract then RMSNorm, bridges RMSNorm and LayerNorm) |
 | `ffn_type` | `"gelu"` \| `"swiglu"` \| `"relu2"` \| `"xielu"` | `"gelu"` | FFN activation variant: `"swiglu"` (Llama, no bias, hidden=4d×2/3); `"relu2"` (sparse ~50%, no params); `"xielu"` (piecewise quad/exp, 2 trainable scalars) |
 | `intermediate_size` | int | `4 × hidden_size` | FFN hidden dimension; overrides the 4× default; for SwiGLU use `swiglu_intermediate_size(hidden_size)` (rounds to 256 multiple) |
 | `pos_type` | string | `"learned"` | Positional encoding: `"learned"` (additive table), `"rope"` (rotary), `"add_rope"` (additive sinusoidal on Q/K), `"alibi"` (linear bias, no params), `"rel_pos"` (learned T5-style bucket bias) |

@@ -100,9 +100,10 @@ class TestCausalMultiHeadAttention:
         assert out.shape == (16, 8, 32)
 
     def test_projection_layer_exists(self) -> None:
-        """Should have fused QKV projection layer."""
+        """Should have separate Q and KV projection layers."""
         mha = CausalMultiHeadAttention(d_model=64, num_heads=4, attention_backend="standard")
-        assert hasattr(mha, "qkv_proj")
+        assert hasattr(mha, "q_proj")
+        assert hasattr(mha, "kv_proj")
 
     def test_output_projection_exists(self) -> None:
         """Should have an output projection layer."""
@@ -139,9 +140,10 @@ class TestCausalMultiHeadAttention:
         # Forward pass to trigger any internal caching
         _ = mha(x)
 
-        # Manually compute Q, K via fused projection
-        qkv = mha.qkv_proj(x)  # (B, T, 3*d_model)
-        q, k, _ = qkv.chunk(3, dim=-1)  # each (B, T, d_model)
+        # Manually compute Q, K via separate projections
+        q = mha.q_proj(x)  # (B, T, d_model)
+        kv = mha.kv_proj(x)  # (B, T, 2*d_model)
+        k, _ = kv.chunk(2, dim=-1)  # each (B, T, d_model)
 
         B, T, d_model = x.shape
         head_dim = d_model // mha.num_heads
@@ -181,3 +183,81 @@ class TestCausalMultiHeadAttention:
 
         mha2 = CausalMultiHeadAttention(d_model=64, num_heads=4, attention_backend="standard")
         assert mha2.head_dim == 16
+
+
+class TestGQAMQA:
+    """Tests for Grouped Query Attention and Multi-Query Attention."""
+
+    def test_mqa_output_shape(self) -> None:
+        """MQA (num_kv_heads=1) should produce same output shape as MHA."""
+        mqa = CausalMultiHeadAttention(
+            d_model=64, num_heads=4, num_kv_heads=1, attention_backend="standard"
+        )
+        x = torch.randn(2, 8, 64)
+        out = mqa(x)
+        assert out.shape == (2, 8, 64)
+
+    def test_gqa_output_shape(self) -> None:
+        """GQA (num_kv_heads between 1 and num_heads) should produce same output shape."""
+        gqa = CausalMultiHeadAttention(
+            d_model=64, num_heads=4, num_kv_heads=2, attention_backend="standard"
+        )
+        x = torch.randn(2, 8, 64)
+        out = gqa(x)
+        assert out.shape == (2, 8, 64)
+
+    def test_mha_default_unchanged(self) -> None:
+        """num_kv_heads=None (default) is full MHA — output shape unchanged."""
+        mha = CausalMultiHeadAttention(d_model=64, num_heads=4, attention_backend="standard")
+        assert mha.num_kv_heads == 4
+        assert mha.groups == 1
+        x = torch.randn(2, 8, 64)
+        assert mha(x).shape == (2, 8, 64)
+
+    def test_mqa_has_fewer_kv_params_than_mha(self) -> None:
+        """MQA should have fewer total parameters than MHA (smaller kv_proj)."""
+        mha = CausalMultiHeadAttention(d_model=128, num_heads=8, attention_backend="standard")
+        mqa = CausalMultiHeadAttention(
+            d_model=128, num_heads=8, num_kv_heads=1, attention_backend="standard"
+        )
+        assert sum(p.numel() for p in mqa.parameters()) < sum(p.numel() for p in mha.parameters())
+
+    def test_gqa_kv_proj_shape(self) -> None:
+        """kv_proj output size should be 2 * num_kv_heads * head_dim."""
+        gqa = CausalMultiHeadAttention(
+            d_model=64, num_heads=4, num_kv_heads=2, attention_backend="standard"
+        )
+        assert gqa.kv_proj.out_features == 2 * 2 * 16  # 2 kv_heads * head_dim=16, x2 for k+v
+
+    def test_num_kv_heads_must_divide_num_heads(self) -> None:
+        """num_kv_heads that does not divide num_heads should raise AssertionError."""
+        with pytest.raises(AssertionError):
+            CausalMultiHeadAttention(
+                d_model=64, num_heads=4, num_kv_heads=3, attention_backend="standard"
+            )
+
+    def test_causal_masking_preserved_in_mqa(self) -> None:
+        """MQA should still enforce causal masking (no future token leakage)."""
+        torch.manual_seed(42)
+        mqa = CausalMultiHeadAttention(
+            d_model=32, num_heads=4, num_kv_heads=1, attention_backend="standard"
+        )
+        mqa.eval()
+        x = torch.randn(1, 4, 32)
+        out1 = mqa(x)
+        x_mod = x.clone()
+        x_mod[0, 3, :] = torch.randn(32)
+        out2 = mqa(x_mod)
+        assert torch.allclose(out1[0, 0], out2[0, 0], atol=1e-6)
+        assert torch.allclose(out1[0, 2], out2[0, 2], atol=1e-6)
+        assert not torch.allclose(out1[0, 3], out2[0, 3], atol=1e-6)
+
+    def test_gradient_flows_through_gqa(self) -> None:
+        """Gradients should flow through GQA."""
+        gqa = CausalMultiHeadAttention(
+            d_model=32, num_heads=4, num_kv_heads=2, attention_backend="standard"
+        )
+        x = torch.randn(1, 4, 32, requires_grad=True)
+        gqa(x).sum().backward()
+        assert x.grad is not None
+        assert not torch.allclose(x.grad, torch.zeros_like(x.grad))
