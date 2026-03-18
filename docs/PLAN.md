@@ -278,6 +278,7 @@ Components:
 - ✅ xIELU FFN (piecewise quadratic/exp, 2 trainable scalars; best ppl in paper) — `src/models/feedforward/xielu_ffn.py`
 - ✅ `make_ffn` factory; `ffn_type` config field in `ModelConfig`; `FeedForward` extended to accept `intermediate_size` directly
 - ✅ GQA with configurable KV head count (`num_kv_heads`: 1 = MQA, `null`/N = MHA, between = GQA) — implemented in `CausalMultiHeadAttention` with backend-aware KV expansion; wired through ModelConfig → LearningModel → TransformerBlock
+- ✅ Attention Residuals (`res_type`): replaces fixed additive residuals with learned depth-wise softmax attention over preceding layer outputs; `"full_attn"` (O(L²), all sublayer outputs) and `"block_attn"` (O(N²), N≈8 block summaries; paper: 1.25× compute advantage); zero-init queries; RMSNorm on keys; `attn_res_num_blocks` config field; wired through `ModelConfig` → `LearningModel` → `AttnResidual`; `apply_attn_only`/`apply_ffn_only` sublayer methods on `TransformerBlock`; 34 unit tests. Ref: Kimi Team 2025
 
 Training infrastructure:
 - ☐ FSDP for models >300M params (model sharding, ZeRO-style optimizer sharding)

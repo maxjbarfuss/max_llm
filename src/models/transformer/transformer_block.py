@@ -106,6 +106,20 @@ class TransformerBlock(nn.Module):
     def _apply_feedforward_residual(self, x: torch.Tensor) -> torch.Tensor:
         return x + self.feedforward(self.norm2(x))
 
+    def apply_attn_only(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the attention sublayer output (no residual add).
+
+        Used by AttnRes: the caller accumulates outputs externally.
+        """
+        return self.attention(self.norm1(x))
+
+    def apply_ffn_only(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the FFN sublayer output (no residual add).
+
+        Used by AttnRes: the caller accumulates outputs externally.
+        """
+        return self.feedforward(self.norm2(x))
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         self._validate_input(x)
         in_shape = x.shape

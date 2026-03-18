@@ -4,7 +4,7 @@ Supports Phase 2 (embedding-only, num_layers=0) through Phase 4+ (transformer-ba
 """
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -18,6 +18,7 @@ from src.models.position.alibi import ALiBi
 from src.models.position.learned_position import LearnedPositionEmbedding
 from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
+from src.models.residual.attn_residual import AttnResidual
 from src.models.transformer.transformer_block import TransformerBlock
 
 
@@ -109,6 +110,8 @@ class LearningModel(nn.Module):
         rel_pos_num_buckets: int = 32,
         attn_type: str = "mha",
         swa_window_size: int = 256,
+        res_type: str = "standard",
+        attn_res_num_blocks: int = 8,
     ) -> None:
         super().__init__()
         assert (
@@ -177,6 +180,14 @@ class LearningModel(nn.Module):
                 len(self.blocks) == num_layers
             ), "share_layer_weights=False must create one block per layer"
 
+        # Attention Residuals (optional depth-wise attention over layer outputs)
+        self.res_type = res_type
+        self.attn_res_num_blocks = attn_res_num_blocks
+        self.attn_res: AttnResidual | None = None
+        if res_type in ("full_attn", "block_attn") and num_layers > 0:
+            # 2 sublayers per transformer block (attn + ffn), +1 for final aggregation
+            self.attn_res = AttnResidual(num_sublayers=2 * num_layers, d_model=d_model)
+
         # Final norm (skipped for num_layers=0 to support Phase 2 embedding-only mode)
         self.final_norm: nn.Module | None = (
             make_norm(norm_type, d_model) if num_layers > 0 else None
@@ -223,16 +234,109 @@ class LearningModel(nn.Module):
         return logits
 
     def _apply_transformer_blocks(self, h: torch.Tensor) -> torch.Tensor:
-        """Apply transformer stack, honoring optional cross-layer parameter sharing."""
+        """Dispatch to the appropriate residual variant."""
+        if self.res_type == "full_attn":
+            return self._apply_blocks_full_attn_res(h)
+        if self.res_type == "block_attn":
+            return self._apply_blocks_block_attn_res(h)
+        return self._apply_blocks_standard(h)
+
+    def _apply_blocks_standard(self, h: torch.Tensor) -> torch.Tensor:
+        """Standard pre-norm residual stack (original behaviour)."""
         if self.share_layer_weights:
             shared_block = self.blocks[0]
             for _ in range(self.num_layers):
                 h = shared_block(h)
             return h
-
         for block in self.blocks:
             h = block(h)
         return h
+
+    def _apply_blocks_full_attn_res(self, h: torch.Tensor) -> torch.Tensor:
+        """Full Attention Residuals: each sublayer attends over all prior outputs.
+
+        Each of the 2*L sublayer outputs is stored as a value in a growing list.
+        The input to sublayer l is softmax-attention over values [v_0 ... v_{l-1}].
+        A final aggregation query produces the output representation.
+        """
+        assert self.attn_res is not None
+        ar = self.attn_res
+
+        # v_0 = token embedding (h before any transformer block)
+        values: list[torch.Tensor] = [h]
+        sublayer_idx = 0
+
+        for _block in self.blocks:
+            block = cast(TransformerBlock, _block)
+            # Attention sublayer
+            h_in = ar(sublayer_idx, values)
+            values.append(block.apply_attn_only(h_in))
+            sublayer_idx += 1
+
+            # FFN sublayer
+            h_in = ar(sublayer_idx, values)
+            values.append(block.apply_ffn_only(h_in))
+            sublayer_idx += 1
+
+        # Final aggregation: attend over all values to produce the output
+        return ar(sublayer_idx, values)
+
+    def _apply_blocks_block_attn_res(self, h: torch.Tensor) -> torch.Tensor:
+        """Block Attention Residuals: attend over N block-level summaries.
+
+        Layers are grouped into N = attn_res_num_blocks groups of S = L/N blocks.
+        Within each group, sublayer outputs are accumulated via simple addition
+        (standard intra-block residual). Across groups, softmax attention over the
+        N block-level summaries is used to compute each sublayer's input.
+
+        num_layers must be divisible by attn_res_num_blocks.
+        """
+        assert self.attn_res is not None
+        N = self.attn_res_num_blocks
+        assert self.num_layers % N == 0, (
+            f"num_layers ({self.num_layers}) must be divisible by "
+            f"attn_res_num_blocks ({N}) for res_type='block_attn'"
+        )
+        ar = self.attn_res
+        S = self.num_layers // N  # transformer blocks per group
+
+        # b_0 = token embedding; block_sums grows to [b_0, b_1, ..., b_N]
+        block_sums: list[torch.Tensor] = [h]
+        sublayer_idx = 0
+
+        for group_n in range(N):
+            group_blocks = self.blocks[group_n * S : (group_n + 1) * S]
+            partial_b: torch.Tensor | None = None  # accumulates within-group outputs
+
+            for rel_i, _block in enumerate(group_blocks):
+                block = cast(TransformerBlock, _block)
+                # --- Attention sublayer ---
+                # First sublayer of the group: sources = [b_0, ..., b_{n-1}]
+                # Subsequent sublayers: also include the partial block sum
+                if rel_i == 0 and partial_b is None:
+                    sources = block_sums
+                else:
+                    assert partial_b is not None
+                    sources = [*block_sums, partial_b]
+
+                h_in = ar(sublayer_idx, sources)
+                delta_attn = block.apply_attn_only(h_in)
+                partial_b = delta_attn if partial_b is None else partial_b + delta_attn
+                sublayer_idx += 1
+
+                # --- FFN sublayer ---
+                # partial_b always available here (attn sublayer ran first)
+                assert partial_b is not None
+                h_in = ar(sublayer_idx, [*block_sums, partial_b])
+                delta_ffn = block.apply_ffn_only(h_in)
+                partial_b = partial_b + delta_ffn
+                sublayer_idx += 1
+
+            assert partial_b is not None
+            block_sums.append(partial_b)
+
+        # Final aggregation: attend over all N+1 block summaries
+        return ar(sublayer_idx, block_sums)
 
     def load_state_dict(
         self,
@@ -267,4 +371,6 @@ class LearningModel(nn.Module):
             rel_pos_num_buckets=config.rel_pos_num_buckets,
             attn_type=config.attn_type,
             swa_window_size=config.swa_window_size,
+            res_type=config.res_type,
+            attn_res_num_blocks=config.attn_res_num_blocks,
         )

@@ -22,7 +22,7 @@
 | **6** | MoE + MLA | MLA (latent KV compression), sparse MoE, top-k gating, load-balance loss, continual expert specialization | Partitioned SFT + preference (1–5M pairs) with curriculum; expert utilization tracking |
 | **7** | Dual-Stream Reasoning | GRU Reasoning Stream + GRU Combiner (gated fusion); scheduled teacher forcing (100%→0%); STaR bootstrap; reasoning accuracy delta | 50K–500K (input, trace, answer) triples (GSM8K, MATH, ARC-Challenge, OpenOrca); STaR traces; 60% reasoned / 40% direct |
 
-**Status**: Phase 4 in progress — RMSNorm ✅, RoPE ✅, FFN variants (SwiGLU/ReLU²/xIELU) ✅, position encoding A/B suite (AddRoPE/ALiBi/RelPosBias) ✅, norm variants (FlashNorm/DyT/CRMSNorm) ✅, GQA/MQA ✅ (`num_kv_heads`); 30K-step best-in-breed run active (p4_llama_20k, val≈3.62 @ step 9500).
+**Status**: Phase 4 in progress — RMSNorm ✅, RoPE ✅, FFN variants (SwiGLU/ReLU²/xIELU) ✅, position encoding A/B suite (AddRoPE/ALiBi/RelPosBias) ✅, norm variants (FlashNorm/DyT/CRMSNorm) ✅, GQA/MQA ✅ (`num_kv_heads`), Attention Residuals ✅ (`res_type`: full_attn/block_attn); 30K-step best-in-breed run active (p4_llama_20k, val≈3.62 @ step 9500).
 
 ---
 
