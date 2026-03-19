@@ -55,9 +55,9 @@ class ResidualLinearAttention(nn.Module):
         rope: RotaryEmbedding | AdditiveRoPE | None = None,
     ) -> None:
         super().__init__()
-        assert d_model % num_heads == 0, (
-            f"d_model ({d_model}) must be divisible by num_heads ({num_heads})"
-        )
+        assert (
+            d_model % num_heads == 0
+        ), f"d_model ({d_model}) must be divisible by num_heads ({num_heads})"
         if rope is not None:
             raise ValueError(
                 "ResidualLinearAttention does not support RoPE — the ELU+1 kernel "
@@ -65,9 +65,9 @@ class ResidualLinearAttention(nn.Module):
             )
 
         num_kv_heads = num_kv_heads if num_kv_heads is not None else num_heads
-        assert num_heads % num_kv_heads == 0, (
-            f"num_heads ({num_heads}) must be divisible by num_kv_heads ({num_kv_heads})"
-        )
+        assert (
+            num_heads % num_kv_heads == 0
+        ), f"num_heads ({num_heads}) must be divisible by num_kv_heads ({num_kv_heads})"
 
         self.d_model = d_model
         self.num_heads = num_heads
@@ -135,9 +135,9 @@ class ResidualLinearAttention(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, d_model = x.shape
-        assert d_model == self.d_model, (
-            f"Input d_model ({d_model}) does not match module d_model ({self.d_model})"
-        )
+        assert (
+            d_model == self.d_model
+        ), f"Input d_model ({d_model}) does not match module d_model ({self.d_model})"
 
         q = self.q_proj(x)
         k, v = self.kv_proj(x).chunk(2, dim=-1)

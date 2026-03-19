@@ -37,6 +37,11 @@ class TrainingConfig:
     log_interval: int = 10
     keep_last_n_checkpoints: int = 3
     use_torch_compile: bool = False
+    torch_compile_mode: (
+        Literal["default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"] | None
+    ) = None
+    torch_compile_fullgraph: bool = False
+    torch_compile_dynamic: bool = False
     attention_backend: str = "standard"
     selective_checkpointing: bool = False  # Disabled by default
     resume_from_checkpoint: str | None = None

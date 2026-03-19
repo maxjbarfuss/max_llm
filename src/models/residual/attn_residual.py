@@ -59,11 +59,45 @@ class AttnResidual(nn.Module):
         """
         # V: (B, T, n_src, d)
         V = torch.stack(sources, dim=-2)
+        return self.forward_stacked(query_idx, V, valid_sources=len(sources))
+
+    def forward_stacked(
+        self,
+        query_idx: int,
+        values: torch.Tensor,
+        valid_sources: int,
+    ) -> torch.Tensor:
+        """Compute depth-wise attention from a pre-stacked source tensor.
+
+        This path is compile-friendly for callers that can reuse a fixed-shape
+        source buffer and vary only the number of valid source slots.
+
+        Args:
+            query_idx: Index into self.queries selecting w_l for this layer.
+            values: Source tensor of shape (B, T, max_sources, d_model).
+            valid_sources: Number of valid source slots in values (>=1).
+
+        Returns:
+            Tensor of shape (B, T, d_model): weighted combination of sources.
+        """
+        assert values.ndim == 4, f"AttnResidual expects 4-D values tensor, got {values.shape}"
+        max_sources = values.shape[-2]
+        assert (
+            1 <= valid_sources <= max_sources
+        ), f"valid_sources must be in [1, {max_sources}], got {valid_sources}"
+
         # Normalise keys along the d dimension for stable attention scores
-        K = self.key_norm(V)  # (B, T, n_src, d)
-        q = self.queries[query_idx].to(V.dtype)  # (d,)
-        # Dot-product scores: q · k_i  →  (B, T, n_src)
+        K = self.key_norm(values)  # (B, T, max_sources, d)
+        q = self.queries[query_idx].to(values.dtype)  # (d,)
+        # Dot-product scores: q · k_i  -> (B, T, max_sources)
         scores = (K * q).sum(-1)
-        weights = F.softmax(scores, dim=-1)  # (B, T, n_src)
+
+        # Mask padded slots so callers can pass fixed-size source buffers.
+        # Using dtype min keeps this path friendly to lower-precision dtypes.
+        slot_idx = torch.arange(max_sources, device=values.device)
+        valid_mask = slot_idx < valid_sources
+        scores = scores.masked_fill(~valid_mask.view(1, 1, -1), torch.finfo(scores.dtype).min)
+
+        weights = F.softmax(scores, dim=-1)  # (B, T, max_sources)
         # Weighted sum over sources
-        return (weights.unsqueeze(-1) * V).sum(-2)  # (B, T, d)
+        return (weights.unsqueeze(-1) * values).sum(-2)  # (B, T, d)

@@ -9,7 +9,7 @@ from .toml_utils import load_toml, section_or_root
 _VALID_NORM_TYPES = {"layer", "rms", "flash", "dyt", "crms"}
 _VALID_FFN_TYPES = {"gelu", "swiglu", "relu2", "xielu"}
 _VALID_POS_TYPES = {"learned", "rope", "add_rope", "alibi", "rel_pos"}
-_VALID_ATTN_TYPES = {"mha", "swa", "rla"}
+_VALID_ATTN_TYPES = {"mha", "swa", "rla", "mla"}
 _VALID_RES_TYPES = {"standard", "full_attn", "block_attn"}
 
 
@@ -50,7 +50,7 @@ class ModelConfig:
     ffn_type: str = "gelu"  # "gelu" | "swiglu" | "relu2" | "xielu"
     pos_type: str = "learned"  # "learned" | "rope" | "add_rope" | "alibi" | "rel_pos"
     rel_pos_num_buckets: int = 32  # used when pos_type == "rel_pos"
-    attn_type: str = "mha"  # "mha" = standard MHA; "swa" = sliding window; "rla" = residual linear
+    attn_type: str = "mha"  # "mha" | "swa" | "rla" | "mla"
     swa_window_size: int = 256  # window width used when attn_type == "swa"
     res_type: str = "standard"  # "standard" | "full_attn" | "block_attn" (Attention Residuals)
     attn_res_num_blocks: int = (
@@ -122,6 +122,10 @@ class ModelConfig:
             raise ValueError(
                 "attn_type='rla' is incompatible with RoPE — the ELU+1 kernel breaks "
                 "rotation equivariance. Use pos_type='learned' or 'alibi' instead."
+            )
+        if self.attn_type == "mla" and self.pos_type not in {"rope", "add_rope"}:
+            raise ValueError(
+                "attn_type='mla' requires decoupled RoPE; use pos_type='rope' or 'add_rope'."
             )
 
     def _validate_res_type(self) -> None:

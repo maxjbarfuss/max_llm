@@ -132,6 +132,11 @@ class TestModelConfig:
         with pytest.raises(ValueError, match="must be divisible by num_heads"):
             make_model_config(mla_latent_dim=500, num_heads=12)
 
+    def test_mla_requires_rope_pos_type(self):
+        """MLA must run with decoupled RoPE positional branch."""
+        with pytest.raises(ValueError, match="requires decoupled RoPE"):
+            make_model_config(attn_type="mla", pos_type="learned", rope_base=None)
+
     def test_moe_validation(self):
         """MoE configuration should be validated."""
         # Valid MoE config

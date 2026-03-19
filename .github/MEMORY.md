@@ -8,6 +8,7 @@
 
 ## Thinking Notes
 
+
 ---
 
 ## MEMORY vs SESSION_LOG Pattern (MUST UNDERSTAND)

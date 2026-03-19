@@ -94,6 +94,7 @@ class CausalMultiHeadAttention(nn.Module):
         ), f"attention_backend must be one of {valid_backends}, got {attention_backend}"
 
         self.attention_backend = self._select_attention_backend(attention_backend)
+        self._causal_bias_cache: dict[tuple[int, str, int, torch.dtype], torch.Tensor] = {}
 
         # Separate Q and KV projections to support GQA/MQA (no bias — modern practice)
         self.q_proj = nn.Linear(d_model, num_heads * self.head_dim, bias=False)
@@ -167,8 +168,13 @@ class CausalMultiHeadAttention(nn.Module):
         return self.dropout_p if self.training else 0.0
 
     def _causal_bias(self, T: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-        """Create upper-triangular causal bias with -inf above the diagonal."""
-        return torch.triu(torch.full((T, T), float("-inf"), device=device, dtype=dtype), 1)
+        """Return cached upper-triangular causal bias with -inf above diagonal."""
+        key = (T, device.type, device.index or -1, dtype)
+        cached = self._causal_bias_cache.get(key)
+        if cached is None:
+            cached = torch.triu(torch.full((T, T), float("-inf"), device=device, dtype=dtype), 1)
+            self._causal_bias_cache[key] = cached
+        return cached
 
     def _flash_attention(
         self,
@@ -250,13 +256,14 @@ class CausalMultiHeadAttention(nn.Module):
                 is_causal=True,
             )
         else:
-            causal = self._causal_bias(T, q.device, q.dtype)
-            combined = causal.unsqueeze(0) + attn_bias  # (num_heads, T, T)
+            # SDPA forbids is_causal=True when attn_mask is set;
+            # combine explicit causal bias with the additive position bias.
+            causal = self._causal_bias(T, q_std.device, q_std.dtype)
             out = F.scaled_dot_product_attention(
                 q_std,
                 k_std,
                 v_std,
-                attn_mask=combined,
+                attn_mask=causal + attn_bias,
                 dropout_p=dropout_p,
                 is_causal=False,
             )

@@ -204,20 +204,21 @@ def reduce_dict(data: dict[str, float]) -> dict[str, float]:
 
 def wrap_model_fsdp(
     model: torch.nn.Module,
-    transformer_layer_cls: type,
+    transformer_layer_cls: type | None,
     sharding_strategy: str = "full_shard",
 ) -> torch.nn.Module:
     """Wrap a model with FullyShardedDataParallel.
 
-    Parameters are wrapped at the TransformerBlock granularity so FSDP can
-    overlap communication with the per-layer forward/backward passes.
+    When transformer_layer_cls is None (required for block_attn residuals
+    that call apply_attn_only / apply_ffn_only, bypassing each block's
+    __call__), only the top-level model is wrapped so FSDP's pre-forward
+    hook fires once and makes all parameters available upfront.
 
     Args:
         model: Model to wrap (should already be on the correct device).
-        transformer_layer_cls: The class used for individual transformer blocks
-            (used by the auto-wrap policy to decide wrapping boundaries).
-        sharding_strategy: One of "full_shard" (ZeRO-3, maximum savings) or
-            "shard_grad_op" (ZeRO-2, grad+optimizer only, less communication).
+        transformer_layer_cls: The class for per-block wrapping, or None
+            to wrap only the top-level model.
+        sharding_strategy: One of "full_shard" or "shard_grad_op".
             Default: "full_shard".
 
     Returns:
@@ -236,10 +237,12 @@ def wrap_model_fsdp(
     }
     strategy = _strategies.get(sharding_strategy, ShardingStrategy.FULL_SHARD)
 
-    wrap_policy = partial(
-        transformer_auto_wrap_policy,
-        transformer_layer_cls={transformer_layer_cls},
-    )
+    wrap_policy: Any | None = None
+    if transformer_layer_cls is not None:
+        wrap_policy = partial(
+            transformer_auto_wrap_policy,
+            transformer_layer_cls={transformer_layer_cls},
+        )
     return FSDP(
         model,
         sharding_strategy=strategy,

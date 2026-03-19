@@ -172,6 +172,13 @@ def train_step(
         logits = model(x)  # (B, T, V)
         loss = compute_loss_with_smoothing(logits, y, label_smoothing)
 
+    loss_value = loss.item()
+    if not math.isfinite(loss_value):
+        raise FloatingPointError(
+            "Non-finite loss detected before backward "
+            f"(loss={loss_value}, label_smoothing={label_smoothing})."
+        )
+
     # Scale loss before backward so accumulated gradients equal the full-batch
     # gradient.  Without this, accum_steps × too-large gradients cause the
     # gradient clip to fire too aggressively early in training, and once
@@ -185,7 +192,7 @@ def train_step(
     else:
         loss_scaled.backward()
 
-    return loss.item()  # Return unscaled loss for logging
+    return loss_value  # Return unscaled loss for logging
 
 
 def optimizer_step(
@@ -217,6 +224,12 @@ def optimizer_step(
     if model is not None:
         clip = gradient_clip_norm if gradient_clip_norm is not None else float("inf")
         grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), clip).item()
+        if not math.isfinite(grad_norm):
+            optimizer.zero_grad(set_to_none=True)
+            raise FloatingPointError(
+                "Non-finite gradient norm detected before optimizer step "
+                f"(grad_norm={grad_norm})."
+            )
 
     # Optimizer step
     if use_amp and scaler is not None:
@@ -369,11 +382,13 @@ def train(  # noqa: C901
                 tokens_in_step += x.numel()
 
             is_last_micro_step = (micro_step + 1) % gradient_accumulation_steps == 0
+            is_first_micro_step = micro_step % gradient_accumulation_steps == 0
             accumulate_grad = not is_last_micro_step
 
             # Mark CUDA graph step begin only when using torch.compile, once per
-            # accumulation cycle.  Calling this unconditionally can deadlock DDP.
-            if use_torch_compile and torch.cuda.is_available() and not accumulate_grad:
+            # accumulation cycle at the first micro-step. Calling this
+            # unconditionally can deadlock DDP.
+            if use_torch_compile and torch.cuda.is_available() and is_first_micro_step:
                 torch.compiler.cudagraph_mark_step_begin()
 
             # For DDP: suppress gradient sync on all but the last micro-batch so
@@ -403,6 +418,11 @@ def train(  # noqa: C901
             if micro_step % gradient_accumulation_steps == 0:
                 # Average loss over accumulated micro-batches
                 avg_loss = accumulated_loss / gradient_accumulation_steps
+                if not math.isfinite(avg_loss):
+                    raise FloatingPointError(
+                        "Non-finite averaged loss detected "
+                        f"at step {step + 1}: avg_loss={avg_loss}."
+                    )
 
                 # Optimizer step with gradient clipping (returns grad norm)
                 grad_norm = optimizer_step(

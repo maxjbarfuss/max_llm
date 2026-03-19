@@ -72,6 +72,21 @@ class TestAttnResidual:
         ar = AttnResidual(num_sublayers=6, d_model=32)
         assert ar.queries.shape == (7, 32)
 
+    def test_forward_stacked_matches_list_path(self) -> None:
+        """Stacked fixed-shape path should match list path on valid sources."""
+        B, T, d = 2, 8, 64
+        ar = AttnResidual(num_sublayers=4, d_model=d)
+        sources = [torch.randn(B, T, d) for _ in range(3)]
+
+        # Provide extra padded slots with arbitrary values; they must be masked out.
+        padded = torch.randn(B, T, 5, d)
+        for i, src in enumerate(sources):
+            padded[:, :, i, :] = src
+
+        out_list = ar(0, sources)
+        out_stacked = ar.forward_stacked(0, padded, valid_sources=len(sources))
+        assert torch.allclose(out_list, out_stacked, atol=1e-5)
+
 
 # ---------------------------------------------------------------------------
 # TransformerBlock sublayer methods

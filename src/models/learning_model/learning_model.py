@@ -108,6 +108,7 @@ class LearningModel(nn.Module):
         rope_base: int | None = None,
         pos_type: str = "learned",
         rel_pos_num_buckets: int = 32,
+        mla_latent_dim: int | None = None,
         attn_type: str = "mha",
         swa_window_size: int = 256,
         res_type: str = "standard",
@@ -164,6 +165,7 @@ class LearningModel(nn.Module):
                 norm_type=norm_type,
                 rope=rope,
                 attn_bias=attn_bias,
+                mla_latent_dim=mla_latent_dim,
                 attn_type=attn_type,
                 window_size=swa_window_size,
             )
@@ -299,6 +301,8 @@ class LearningModel(nn.Module):
         )
         ar = self.attn_res
         S = self.num_layers // N  # transformer blocks per group
+        B, T, _ = h.shape
+        max_sources = N + 1
 
         # b_0 = token embedding; block_sums grows to [b_0, b_1, ..., b_N]
         block_sums: list[torch.Tensor] = [h]
@@ -319,7 +323,19 @@ class LearningModel(nn.Module):
                     assert partial_b is not None
                     sources = [*block_sums, partial_b]
 
-                h_in = ar(sublayer_idx, sources)
+                valid_sources = len(sources)
+                stacked_sources = torch.stack(sources, dim=-2)
+                if valid_sources < max_sources:
+                    pad = stacked_sources.new_zeros(
+                        (B, T, max_sources - valid_sources, self.d_model)
+                    )
+                    stacked_sources = torch.cat((stacked_sources, pad), dim=-2)
+
+                h_in = ar.forward_stacked(
+                    sublayer_idx,
+                    stacked_sources,
+                    valid_sources=valid_sources,
+                )
                 delta_attn = block.apply_attn_only(h_in)
                 partial_b = delta_attn if partial_b is None else partial_b + delta_attn
                 sublayer_idx += 1
@@ -327,7 +343,20 @@ class LearningModel(nn.Module):
                 # --- FFN sublayer ---
                 # partial_b always available here (attn sublayer ran first)
                 assert partial_b is not None
-                h_in = ar(sublayer_idx, [*block_sums, partial_b])
+                sources = [*block_sums, partial_b]
+                valid_sources = len(sources)
+                stacked_sources = torch.stack(sources, dim=-2)
+                if valid_sources < max_sources:
+                    pad = stacked_sources.new_zeros(
+                        (B, T, max_sources - valid_sources, self.d_model)
+                    )
+                    stacked_sources = torch.cat((stacked_sources, pad), dim=-2)
+
+                h_in = ar.forward_stacked(
+                    sublayer_idx,
+                    stacked_sources,
+                    valid_sources=valid_sources,
+                )
                 delta_ffn = block.apply_ffn_only(h_in)
                 partial_b = partial_b + delta_ffn
                 sublayer_idx += 1
@@ -369,6 +398,7 @@ class LearningModel(nn.Module):
             rope_base=config.rope_base,
             pos_type=config.pos_type,
             rel_pos_num_buckets=config.rel_pos_num_buckets,
+            mla_latent_dim=config.mla_latent_dim,
             attn_type=config.attn_type,
             swa_window_size=config.swa_window_size,
             res_type=config.res_type,

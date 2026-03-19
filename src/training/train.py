@@ -512,11 +512,21 @@ def main() -> None:  # noqa: C901
         if want_fsdp:
             from src.models.transformer.transformer_block import TransformerBlock
 
-            print_once("Wrapping model with FSDP (sharding_strategy=full_shard)")
+            # block_attn residuals call apply_attn_only / apply_ffn_only which
+            # bypass each TransformerBlock's __call__ and therefore bypass the
+            # FSDP pre-forward hook.  Use outer-model-only wrapping so the
+            # single FSDP pre-forward hook gathers all params before dispatch.
+            uses_block_attn = getattr(config.model, "res_type", "") == "block_attn"
+            layer_cls = None if uses_block_attn else TransformerBlock
+            fsdp_strategy = "shard_grad_op"
+            print_once(
+                f"Wrapping model with FSDP (sharding_strategy={fsdp_strategy}, "
+                f"inner_wrap={'per-block' if layer_cls else 'model-level'})"
+            )
             model = wrap_model_fsdp(
                 model,
-                transformer_layer_cls=TransformerBlock,
-                sharding_strategy="full_shard",
+                transformer_layer_cls=layer_cls,
+                sharding_strategy=fsdp_strategy,
             )  # type: ignore[assignment]
         else:
             print_once("Wrapping model with DistributedDataParallel")
@@ -546,11 +556,36 @@ def main() -> None:  # noqa: C901
         if want_fsdp:
             print_once("Warning: torch.compile + FSDP has known issues; disabling compile")
             use_torch_compile = False
+        elif config.training.attention_backend == "sage":
+            print_once(
+                "Warning: torch.compile with Sage Attention often provides limited benefit; "
+                "disabling compile for stability."
+            )
+            use_torch_compile = False
         else:
-            compile_mode = "default" if want_distributed else "max-autotune"
-            print_once(f"torch.compile: Enabled (mode={compile_mode})")
+            compile_mode = config.training.torch_compile_mode or (
+                "default" if want_distributed else "max-autotune"
+            )
+            if want_distributed and compile_mode.startswith("max-autotune"):
+                print_once(
+                    "Warning: max-autotune with distributed training can deadlock on "
+                    "heterogeneous GPUs; overriding compile mode to 'default'."
+                )
+                compile_mode = "default"
+
+            print_once(
+                "torch.compile: Enabled "
+                f"(mode={compile_mode}, "
+                f"fullgraph={config.training.torch_compile_fullgraph}, "
+                f"dynamic={config.training.torch_compile_dynamic})"
+            )
             try:
-                model = torch.compile(model, mode=compile_mode)  # type: ignore[assignment]
+                model = torch.compile(  # type: ignore[assignment]
+                    model,
+                    mode=compile_mode,
+                    fullgraph=config.training.torch_compile_fullgraph,
+                    dynamic=config.training.torch_compile_dynamic,
+                )
             except Exception as e:
                 print_once(f"Warning: torch.compile failed ({e}), continuing without compilation")
                 use_torch_compile = False

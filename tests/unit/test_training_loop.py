@@ -3,6 +3,7 @@
 import pytest
 import torch
 
+import src.training.loop as loop
 from src.config.model import ModelConfig
 from src.models.learning_model import LearningModel
 from src.training.loop import compute_loss_with_smoothing, optimizer_step, train, train_step
@@ -69,6 +70,18 @@ class TestTrainStep:
             not torch.equal(before, after)
             for before, after in zip(params_before, params_after, strict=True)
         )
+
+    def test_raises_on_non_finite_loss(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """train_step should fail fast if loss becomes non-finite."""
+        model = _make_model()
+        x, y = _make_batch()
+
+        def _nan_loss(*args, **kwargs):
+            return torch.tensor(float("nan"))
+
+        monkeypatch.setattr(loop, "compute_loss_with_smoothing", _nan_loss)
+        with pytest.raises(FloatingPointError, match="Non-finite loss"):
+            train_step(model, x, y, _make_optimizer(model))
 
 
 class TestTrain:
@@ -310,6 +323,21 @@ class TestEnhancedTrainingFeatures:
             gradient_clip_norm=1.0,
             model=model,
         )
+
+    def test_optimizer_step_raises_on_non_finite_grad_norm(self):
+        """optimizer_step should fail fast when grad norm is NaN/Inf."""
+        model = _make_model()
+        optimizer = _make_optimizer(model)
+
+        for param in model.parameters():
+            param.grad = torch.full_like(param, float("nan"))
+
+        with pytest.raises(FloatingPointError, match="Non-finite gradient norm"):
+            optimizer_step(
+                optimizer=optimizer,
+                gradient_clip_norm=1.0,
+                model=model,
+            )
 
     def test_train_with_gradient_accumulation(self):
         """Test training with gradient accumulation."""
