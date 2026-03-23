@@ -17,9 +17,28 @@ from src.data.preparation.strategies import (
 
 from ._corpus import build_tokenizer, load_source_as_text
 from ._save import save_outputs
-from ._spill import _SpilledDocs, read_and_spill
+from ._spill import _cache_paths, _SpilledDocs, read_and_spill
 
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_spill_dir(spill_dir: Path) -> None:
+    """Remove the spill dir but preserve per-source cache files for future resume."""
+    if not spill_dir.exists():
+        return
+    for path in spill_dir.iterdir():
+        name = path.name
+        # Keep: raw bin, offsets, and meta — these form the resume cache
+        if (
+            name.endswith(".bin")
+            or name.endswith(".bin.offsets.npy")
+            or name.endswith(".bin.meta.json")
+        ):
+            continue
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            path.unlink(missing_ok=True)
 
 
 def _split_curriculum(
@@ -67,7 +86,7 @@ class PreparationPipeline:
         try:
             return self._run_with_spill_dir(config, output_dir, spill_dir)
         finally:
-            shutil.rmtree(spill_dir, ignore_errors=True)
+            _cleanup_spill_dir(spill_dir)
 
     def run_from_config_path(self, config_path: str | Path) -> dict[str, Any]:
         return self.run(load_config(config_path))

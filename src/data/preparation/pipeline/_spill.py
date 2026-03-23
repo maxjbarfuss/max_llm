@@ -1,5 +1,6 @@
 """Memory-efficient document spilling to disk via mmap."""
 
+import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
@@ -52,14 +53,65 @@ def _source_limit_reached(
     return False
 
 
+def _cache_paths(bin_path: Path) -> tuple[Path, Path]:
+    """Return (offsets_path, meta_path) for a given spill .bin file."""
+    return bin_path.with_suffix(".bin.offsets.npy"), bin_path.with_suffix(".bin.meta.json")
+
+
+def _load_cached_spill(bin_path: Path) -> _SpilledDocs | None:
+    """Return a _SpilledDocs loaded from disk cache, or None if cache is absent/incomplete."""
+    offsets_path, meta_path = _cache_paths(bin_path)
+    if not (bin_path.exists() and offsets_path.exists() and meta_path.exists()):
+        return None
+    try:
+        meta = json.loads(meta_path.read_text())
+        dtype = np.dtype(meta["dtype"])
+        offsets = np.load(str(offsets_path))
+        total_tokens = int(offsets[-1])
+        if total_tokens == 0:
+            mmap = np.memmap(str(bin_path), dtype=dtype, mode="r", shape=(0,))
+        else:
+            mmap = np.memmap(str(bin_path), dtype=dtype, mode="r", shape=(total_tokens,))
+        return _SpilledDocs(mmap, offsets)
+    except Exception as exc:
+        logger.warning("Failed to load spill cache for %s: %s — will re-tokenize", bin_path, exc)
+        return None
+
+
+def _save_spill_cache(bin_path: Path, offsets: list[int], dtype: np.dtype[Any]) -> None:
+    """Persist offsets and dtype alongside the .bin so future runs can skip tokenization."""
+    offsets_path, meta_path = _cache_paths(bin_path)
+    np.save(str(offsets_path), np.array(offsets, dtype=np.int64))
+    meta_path.write_text(json.dumps({"dtype": str(dtype)}))
+
+
 def read_and_spill(
     source: DataSource,
     reader: FormatReader,
     tokenizer: Any,
     spill_dir: Path,
 ) -> _SpilledDocs:
-    """Stream source docs to a temp binary file; peak RAM is bounded to one flush buffer (~10 MB)."""
+    """Stream source docs to a temp binary file; peak RAM is bounded to one flush buffer (~10 MB).
+
+    If a complete cache (*.bin + *.bin.offsets.npy + *.bin.meta.json) already exists in
+    *spill_dir*, tokenization is skipped and the cached data is returned immediately.
+    """
     bin_path = spill_dir / f"{source.name}.bin"
+
+    cached = _load_cached_spill(bin_path)
+    if cached is not None:
+        logger.info(
+            "Spill cache hit: name=%s docs=%d tokens=%d",
+            source.name,
+            len(cached),
+            cached.total_tokens,
+        )
+        print(
+            f"  {source.name}: cache hit — {len(cached):,} docs  {cached.total_tokens:,} tokens",
+            flush=True,
+        )
+        return cached
+
     dtype: np.dtype[np.unsignedinteger] = np.dtype(np.uint16)  # sufficient for vocab ≤ 65535
     offsets: list[int] = [0]
     buffer: list[np.ndarray] = []
@@ -99,11 +151,13 @@ def read_and_spill(
             pbar.set_postfix(tokens=f"{offsets[-1] / 1e6:.1f}M", done=True)
 
     total_tokens = offsets[-1]
+    _save_spill_cache(bin_path, offsets, dtype)
+
     if total_tokens == 0:
         return _SpilledDocs(
-            np.memmap(bin_path, dtype=dtype, mode="r", shape=(0,)),
+            np.memmap(str(bin_path), dtype=dtype, mode="r", shape=(0,)),
             np.array([0], dtype=np.int64),
         )
 
-    mmap = np.memmap(bin_path, dtype=dtype, mode="r", shape=(total_tokens,))
+    mmap = np.memmap(str(bin_path), dtype=dtype, mode="r", shape=(total_tokens,))
     return _SpilledDocs(mmap, np.array(offsets, dtype=np.int64))

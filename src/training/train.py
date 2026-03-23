@@ -5,8 +5,10 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import random
+import time
 from pathlib import Path
 from typing import cast
 
@@ -38,6 +40,27 @@ from src.training.scheduler import (
     get_wsd_schedule,
 )
 from src.utils import seed_everything, seed_worker
+
+
+def _write_training_status(
+    output_dir: str | Path,
+    step: int,
+    max_steps: int,
+    checkpoint_path: str | Path | None = None,
+    val_loss: float | None = None,
+    done: bool = False,
+) -> None:
+    """Write training_status.json to output_dir for external status monitoring."""
+    status = {
+        "step": step,
+        "max_steps": max_steps,
+        "done": done,
+        "val_loss": val_loss,
+        "checkpoint": str(checkpoint_path) if checkpoint_path else None,
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    path = Path(output_dir) / "training_status.json"
+    path.write_text(json.dumps(status, indent=2))
 
 
 class TokenDataset(Dataset):
@@ -648,6 +671,7 @@ def main() -> None:  # noqa: C901
         and resume_path is not None
         and loaded_step > 0
         and not config.training.resume_scheduler_state
+        and config.training.resume_optimizer_state
     ):
         _resume_ckpt = torch.load(resume_path, map_location="cpu")
         optimizer_state = _resume_ckpt.get("optimizer_state")
@@ -667,12 +691,17 @@ def main() -> None:  # noqa: C901
         use_resume_transition = loaded_step > 0 and not config.training.resume_scheduler_state
 
         if use_resume_transition:
-            if ckpt_lr is None:
-                raise ValueError(
-                    "resume_lr_hold_steps/warmup_steps configured, but checkpoint LR "
-                    "could not be read from optimizer_state"
-                )
-            start_lr_ratio = max(0.0, min(1.0, ckpt_lr / config.training.learning_rate))
+            # If optimizer state is intentionally reset, allow a true warmup from 0 LR.
+            if not config.training.resume_optimizer_state:
+                start_lr_ratio = 0.0
+                ckpt_lr = 0.0
+            else:
+                if ckpt_lr is None:
+                    raise ValueError(
+                        "resume_lr_hold_steps/warmup_steps configured, but checkpoint LR "
+                        "could not be read from optimizer_state"
+                    )
+                start_lr_ratio = max(0.0, min(1.0, ckpt_lr / config.training.learning_rate))
             lr_scheduler = get_resume_hold_ramp_then_wsd_schedule(
                 optimizer=optimizer,
                 num_training_steps=config.training.max_steps,
@@ -772,7 +801,7 @@ def main() -> None:  # noqa: C901
     # Build periodic checkpoint callback (rotating, keeps last N)
     _saved_checkpoints: list[Path] = []
 
-    def _periodic_checkpoint(step: int) -> None:
+    def _periodic_checkpoint(step: int, val_loss: float | None = None) -> None:
         # FSDP: state_dict() is a collective — all ranks must call it together
         # before branching on is_main_process().
         if want_fsdp:
@@ -808,6 +837,13 @@ def main() -> None:  # noqa: C901
             old = _saved_checkpoints.pop(0)
             if old.exists():
                 old.unlink()
+        _write_training_status(
+            config.output_dir,
+            step=step,
+            max_steps=config.training.max_steps,
+            checkpoint_path=ckpt_path,
+            val_loss=val_loss,
+        )
         print_once(f"Checkpoint : {ckpt_path}")
 
     # Train
@@ -857,6 +893,8 @@ def main() -> None:  # noqa: C901
     )
 
     # Save final checkpoint (FSDP requires all ranks to participate in state_dict gather)
+    _val_losses = metrics.get("val_losses", [])
+    final_val_loss: float | None = _val_losses[-1] if _val_losses else None
     if want_fsdp:
         model_sd, opt_sd = collect_fsdp_state_dicts(model, optimizer)
         if is_main_process():
@@ -871,6 +909,14 @@ def main() -> None:  # noqa: C901
                 },
                 ckpt_path,
             )
+            _write_training_status(
+                config.output_dir,
+                step=config.training.max_steps,
+                max_steps=config.training.max_steps,
+                checkpoint_path=ckpt_path,
+                val_loss=final_val_loss,
+                done=True,
+            )
             print(f"Checkpoint : {ckpt_path}")
     elif is_main_process():
         # Unwrap model if DDP
@@ -881,6 +927,14 @@ def main() -> None:  # noqa: C901
             optimizer,
             step=config.training.max_steps,
             output_dir=config.output_dir,
+        )
+        _write_training_status(
+            config.output_dir,
+            step=config.training.max_steps,
+            max_steps=config.training.max_steps,
+            checkpoint_path=ckpt_path,
+            val_loss=final_val_loss,
+            done=True,
         )
         print(f"Checkpoint : {ckpt_path}")
 

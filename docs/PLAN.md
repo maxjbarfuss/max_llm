@@ -252,6 +252,7 @@ Data:
 - ✅ Download and prepare FineWeb-Edu subset (>100M tokens); 1.57B train tokens, 1.3M docs in 27B corpus (Unigram 8K tokenizer; BPE qualifier was stale — Phase 4 runs use same Unigram data)
 - ✅ Memory-mapped data reads and DataLoader shuffling at scale — `load_tokens()` returns `np.memmap`; `TokenDataset` yields (x,y) lazily; `set_epoch()` randomizes start offset; I/O verified not bottlenecking training (see `docs/OPTIMIZATION.md`)
 - ✅ Implement dynamic data mixing and sampling weights by curriculum stage — `MixingStrategy`, `source_ratios`, `weight_by`, `CurriculumStrategy` (length-based, domain-progression, custom) all implemented in `src/data/preparation/`
+- ✅ Data prep spill cache — `read_and_spill()` persists `.bin + .bin.offsets.npy + .bin.meta.json`; subsequent runs skip re-tokenization on cache hit; cleanup preserves cache files while removing temp state
 - ☐ Implement heuristic data filters for language and perplexity — length filtering done (`min_length`/`max_length` in `DataSource`); language detection and perplexity-based filtering not implemented
 - ☐ `HuggingFaceDownloader`: `download(dataset_name, cache_dir)` + `discover_schema()` → discovery report; add `--discover` mode to data CLI
 - ☐ Intermediate Parquet schema for normalized docs: doc_id, text, split, char_count (replaces .txt cache; enables efficient doc-level queries)
@@ -281,6 +282,9 @@ Components:
 - ✅ Attention Residuals (`res_type`): replaces fixed additive residuals with learned depth-wise softmax attention over preceding layer outputs; `"full_attn"` (O(L²), all sublayer outputs) and `"block_attn"` (O(N²), N≈8 block summaries; paper: 1.25× compute advantage); zero-init queries; RMSNorm on keys; `attn_res_num_blocks` config field; wired through `ModelConfig` → `LearningModel` → `AttnResidual`; `apply_attn_only`/`apply_ffn_only` sublayer methods on `TransformerBlock`; 34 unit tests. Ref: Kimi Team 2025
 
 Training infrastructure:
+- ✅ Training status reporting — `_write_training_status()` writes `training_status.json` to `output_dir` on each periodic checkpoint and at completion (step, max_steps, val_loss, checkpoint path, done flag, timestamp); `src.status` module + `make status` for unified data-prep + training run dashboard
+- ✅ val_loss threaded to checkpoint callback — `checkpoint_fn(step, val_loss=val_loss)` for accurate status reporting
+- ✅ Resume fix — `resume_optimizer_state=False` now allows clean 0-LR warmup without requiring `ckpt_lr` from optimizer state
 - ☐ FSDP for models >300M params (model sharding, ZeRO-style optimizer sharding)
 - ☐ Scale DDP to longer runs (10K+ steps) and validate convergence vs single-GPU baseline
 - ☐ Multi-node DDP setup (4+ GPUs across multiple machines)

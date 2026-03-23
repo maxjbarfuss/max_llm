@@ -156,6 +156,9 @@ test-report:
 	@if [ -f "$(PYTEST_COV_SUMMARY)" ]; then echo "📊 Coverage Report:"; cat "$(PYTEST_COV_SUMMARY)"; echo ""; fi
 	@echo "Use make test-cov to generate coverage HTML report"
 
+status:
+	.venv/bin/python -m src.status
+
 # Code Quality
 check: lint test-py-quick
 	@echo "✓ Pre-commit checks passed (format, lint, type, fast tests)"

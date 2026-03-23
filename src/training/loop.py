@@ -551,7 +551,7 @@ def train(  # noqa: C901
                     and checkpoint_fn is not None
                     and (step + 1) % checkpoint_interval == 0
                 ):
-                    checkpoint_fn(step + 1)
+                    checkpoint_fn(step + 1, val_loss=val_loss)
 
                 # Reset for next step
                 accumulated_loss = 0.0
