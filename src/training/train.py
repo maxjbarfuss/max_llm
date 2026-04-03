@@ -37,6 +37,7 @@ from src.training.profiling import log_model_size
 from src.training.scheduler import (
     get_cosine_schedule_with_warmup,
     get_resume_hold_ramp_then_wsd_schedule,
+    get_sgdr_schedule,
     get_wsd_schedule,
 )
 from src.utils import seed_everything, seed_worker
@@ -659,10 +660,10 @@ def main() -> None:  # noqa: C901
                 if isinstance(first_lr, float):
                     ckpt_lr = first_lr
         # LambdaLR with last_epoch >= 0 requires initial_lr in every param group.
-        # Use loaded optimizer lr when resuming so extending max_steps does not
-        # cause an artificial LR jump relative to the checkpoint state.
+        # Always use the config target LR as initial_lr so the scheduler's base_lr
+        # reflects the intended target, not the checkpoint's (possibly different) LR.
         for group in optimizer.param_groups:
-            group["initial_lr"] = group.get("lr", config.training.learning_rate)
+            group["initial_lr"] = config.training.learning_rate
 
     # For resumed runs with schedule restart, read checkpoint LR from optimizer_state
     # metadata if it was not captured while restoring optimizer state.
@@ -688,7 +689,14 @@ def main() -> None:  # noqa: C901
     # If resuming from checkpoint, initialize scheduler at the loaded step
     # to avoid "scheduler.step() before optimizer.step()" warning
     if config.training.scheduler_type == "wsd":
-        use_resume_transition = loaded_step > 0 and not config.training.resume_scheduler_state
+        lr_mismatch = (
+            ckpt_lr is not None
+            and config.training.resume_optimizer_state
+            and abs(ckpt_lr - config.training.learning_rate) > 1e-10
+        )
+        use_resume_transition = loaded_step > 0 and (
+            not config.training.resume_scheduler_state or lr_mismatch
+        )
 
         if use_resume_transition:
             # If optimizer state is intentionally reset, allow a true warmup from 0 LR.
@@ -701,7 +709,7 @@ def main() -> None:  # noqa: C901
                         "resume_lr_hold_steps/warmup_steps configured, but checkpoint LR "
                         "could not be read from optimizer_state"
                     )
-                start_lr_ratio = max(0.0, min(1.0, ckpt_lr / config.training.learning_rate))
+                start_lr_ratio = max(0.0, ckpt_lr / config.training.learning_rate)
             lr_scheduler = get_resume_hold_ramp_then_wsd_schedule(
                 optimizer=optimizer,
                 num_training_steps=config.training.max_steps,
@@ -746,6 +754,21 @@ def main() -> None:  # noqa: C901
                 f"shape={config.training.wsd_decay_shape}, "
                 f"min_lr_ratio={config.training.min_lr_ratio:.3f}"
             )
+    elif config.training.scheduler_type == "sgdr":
+        lr_scheduler = get_sgdr_schedule(
+            optimizer=optimizer,
+            num_training_steps=config.training.max_steps,
+            num_cycles=config.training.sgdr_num_cycles,
+            min_lr_ratio=config.training.min_lr_ratio,
+            cycle_decay=config.training.sgdr_cycle_decay,
+            last_epoch=scheduler_resume_step - 1 if scheduler_resume_step > 0 else -1,
+        )
+        print_once(
+            f"Scheduler  : SGDR cycles={config.training.sgdr_num_cycles} "
+            f"cycle_decay={config.training.sgdr_cycle_decay} "
+            f"min_lr_ratio={config.training.min_lr_ratio} "
+            f"over {config.training.max_steps} steps"
+        )
     else:
         lr_scheduler = get_cosine_schedule_with_warmup(
             optimizer=optimizer,

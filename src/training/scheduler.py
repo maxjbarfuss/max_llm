@@ -2,6 +2,7 @@
 
 import math
 
+import torch.optim
 import torch.optim.lr_scheduler
 
 
@@ -153,8 +154,8 @@ def _validate_resume_params(
         raise ValueError("hold_steps must be >= 0")
     if ramp_steps < 0:
         raise ValueError("ramp_steps must be >= 0")
-    if not (0.0 <= start_lr_ratio <= 1.0):
-        raise ValueError("start_lr_ratio must be in [0, 1]")
+    if start_lr_ratio < 0.0:
+        raise ValueError("start_lr_ratio must be >= 0 (values > 1 are valid for ramp-down)")
     if hold_steps + ramp_steps >= num_training_steps:
         raise ValueError("hold_steps + ramp_steps must be < num_training_steps")
 
@@ -220,5 +221,47 @@ def get_resume_hold_ramp_then_wsd_schedule(
 
         tail_step = current_step - transition_steps
         return _tail_wsd_ratio(tail_step)
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)
+
+
+def get_sgdr_schedule(
+    optimizer: torch.optim.Optimizer,
+    num_training_steps: int,
+    num_cycles: int = 4,
+    min_lr_ratio: float = 0.05,
+    cycle_decay: float = 0.8,
+    last_epoch: int = -1,
+) -> torch.optim.lr_scheduler.LambdaLR:
+    """Cosine annealing with warm restarts (SGDR), with decaying peak LR per cycle.
+
+    Each cycle cosine-decays from ``peak_lr`` to ``min_lr_ratio * base_lr``.
+    The peak multiplier shrinks by ``cycle_decay`` each restart, so later
+    cycles make smaller excursions and converge more finely.
+
+    Args:
+        optimizer: Optimizer to schedule.
+        num_training_steps: Total number of training steps.
+        num_cycles: Number of cosine cycles (restarts).
+        min_lr_ratio: Floor LR as fraction of base LR per cycle.
+        cycle_decay: Multiply peak LR by this factor each cycle (< 1 -> shrinking).
+        last_epoch: Last epoch index for resuming (default: -1).
+    """
+    if num_cycles < 1:
+        raise ValueError("num_cycles must be >= 1")
+    if not (0.0 <= min_lr_ratio < 1.0):
+        raise ValueError("min_lr_ratio must be in [0, 1)")
+    if not (0.0 < cycle_decay <= 1.0):
+        raise ValueError("cycle_decay must be in (0, 1]")
+
+    cycle_length = max(1, num_training_steps // num_cycles)
+
+    def lr_lambda(current_step: int) -> float:
+        cycle = min(current_step // cycle_length, num_cycles - 1)
+        cycle_step = current_step - cycle * cycle_length
+        progress = min(1.0, cycle_step / cycle_length)
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        peak = cycle_decay**cycle  # shrinks each restart
+        return min_lr_ratio + (peak - min_lr_ratio) * cosine
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)

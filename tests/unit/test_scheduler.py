@@ -4,7 +4,11 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.training.scheduler import get_cosine_schedule_with_warmup, get_wsd_schedule
+from src.training.scheduler import (
+    get_cosine_schedule_with_warmup,
+    get_sgdr_schedule,
+    get_wsd_schedule,
+)
 
 
 class DummyModel(nn.Module):
@@ -258,3 +262,77 @@ def test_wsd_decay_shapes_reach_floor(optimizer: torch.optim.Optimizer, shape: s
         scheduler.step()
 
     assert optimizer.param_groups[0]["lr"] == pytest.approx(base_lr * 0.2, rel=1e-5)
+
+
+class TestSGDRSchedule:
+    def test_starts_at_base_lr(self, optimizer: torch.optim.Optimizer) -> None:
+        """First step should be at base_lr (peak of cycle 0)."""
+        get_sgdr_schedule(optimizer, num_training_steps=1000, num_cycles=4)
+        assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-3, rel=1e-5)
+
+    def test_approaches_min_lr_near_end_of_cycle(self, optimizer: torch.optim.Optimizer) -> None:
+        """LR should be close to min_lr_ratio * base_lr near the end of each cycle."""
+        base_lr = 1e-3
+        min_lr_ratio = 0.05
+        num_cycles = 4
+        total_steps = 1000
+        sched = get_sgdr_schedule(
+            optimizer,
+            num_training_steps=total_steps,
+            num_cycles=num_cycles,
+            min_lr_ratio=min_lr_ratio,
+            cycle_decay=1.0,
+        )
+        cycle_length = total_steps // num_cycles  # 250
+        # Step to the last step of the first cycle (not the restart boundary)
+        for _ in range(cycle_length - 1):
+            optimizer.step()
+            sched.step()
+        # At step cycle_length-1, progress ≈ 1.0 so LR should be very close to min_lr
+        assert optimizer.param_groups[0]["lr"] < base_lr * (min_lr_ratio + 0.01)
+
+    def test_peak_decays_each_cycle(self, optimizer: torch.optim.Optimizer) -> None:
+        """Peak LR at the start of each cycle should shrink by cycle_decay."""
+        base_lr = 1e-3
+        cycle_decay = 0.8
+        total_steps = 1000
+        num_cycles = 4
+        cycle_length = total_steps // num_cycles  # 250
+        sched = get_sgdr_schedule(
+            optimizer,
+            num_training_steps=total_steps,
+            num_cycles=num_cycles,
+            min_lr_ratio=0.0,
+            cycle_decay=cycle_decay,
+        )
+        peaks = []
+        for step in range(total_steps):
+            if step % cycle_length == 0:
+                peaks.append(optimizer.param_groups[0]["lr"])
+            optimizer.step()
+            sched.step()
+        # Peak of cycle i should be base_lr * cycle_decay^i
+        for i, peak in enumerate(peaks):
+            assert peak == pytest.approx(base_lr * (cycle_decay**i), rel=1e-4)
+
+    def test_lr_always_non_negative(self, optimizer: torch.optim.Optimizer) -> None:
+        """LR must never go below zero."""
+        sched = get_sgdr_schedule(
+            optimizer,
+            num_training_steps=500,
+            num_cycles=5,
+            min_lr_ratio=0.0,
+            cycle_decay=0.5,
+        )
+        for _ in range(500):
+            assert optimizer.param_groups[0]["lr"] >= 0.0
+            optimizer.step()
+            sched.step()
+
+    def test_invalid_params_raise(self, optimizer: torch.optim.Optimizer) -> None:
+        with pytest.raises(ValueError, match="num_cycles"):
+            get_sgdr_schedule(optimizer, 1000, num_cycles=0)
+        with pytest.raises(ValueError, match="min_lr_ratio"):
+            get_sgdr_schedule(optimizer, 1000, min_lr_ratio=1.0)
+        with pytest.raises(ValueError, match="cycle_decay"):
+            get_sgdr_schedule(optimizer, 1000, cycle_decay=0.0)

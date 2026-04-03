@@ -226,10 +226,9 @@ def optimizer_step(
         grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), clip).item()
         if not math.isfinite(grad_norm):
             optimizer.zero_grad(set_to_none=True)
-            raise FloatingPointError(
-                "Non-finite gradient norm detected before optimizer step "
-                f"(grad_norm={grad_norm})."
-            )
+            if use_amp and scaler is not None:
+                scaler.update()  # reset scaler state so next unscale_() is valid
+            return grad_norm  # caller manages consecutive-bad-step policy
 
     # Optimizer step
     if use_amp and scaler is not None:
@@ -363,6 +362,7 @@ def train(  # noqa: C901
     accumulated_loss = 0.0
     step_start_time = time.time()
     tokens_in_step = 0
+    consecutive_bad_steps = 0
 
     while step < max_steps and not should_stop_early:
         # Per-epoch setup: randomize TokenDataset sequence offsets so successive
@@ -418,13 +418,8 @@ def train(  # noqa: C901
             if micro_step % gradient_accumulation_steps == 0:
                 # Average loss over accumulated micro-batches
                 avg_loss = accumulated_loss / gradient_accumulation_steps
-                if not math.isfinite(avg_loss):
-                    raise FloatingPointError(
-                        "Non-finite averaged loss detected "
-                        f"at step {step + 1}: avg_loss={avg_loss}."
-                    )
 
-                # Optimizer step with gradient clipping (returns grad norm)
+                # Optimizer step with gradient clipping (returns inf grad_norm if non-finite)
                 grad_norm = optimizer_step(
                     optimizer=optimizer,
                     scaler=scaler,
@@ -433,9 +428,30 @@ def train(  # noqa: C901
                     model=model,
                 )
 
-                # LR scheduler step
+                # LR scheduler always steps to keep schedule aligned with step count
                 if lr_scheduler is not None:
                     lr_scheduler.step()
+
+                # Skip isolated bad steps; abort on 3 consecutive non-finite values
+                if not math.isfinite(avg_loss) or not math.isfinite(grad_norm):
+                    consecutive_bad_steps += 1
+                    print(
+                        f"WARNING: non-finite values at step {step + 1} "
+                        f"(loss={avg_loss:.4g}, grad_norm={grad_norm:.4g}); "
+                        f"skipping update ({consecutive_bad_steps}/3)."
+                    )
+                    if consecutive_bad_steps >= 3:
+                        raise FloatingPointError(
+                            f"3 consecutive non-finite steps ending at step {step + 1}; "
+                            f"last: loss={avg_loss:.4g}, grad_norm={grad_norm:.4g}."
+                        )
+                    accumulated_loss = 0.0
+                    tokens_in_step = 0
+                    step_start_time = time.time()
+                    step += 1
+                    continue  # skip logging/checkpointing; outer reset block bypassed
+
+                consecutive_bad_steps = 0
 
                 # Compute metrics
                 perplexity = compute_perplexity(avg_loss)

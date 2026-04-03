@@ -1,5 +1,7 @@
 """Unit tests for the Phase 2/3 training loop."""
 
+import math
+
 import pytest
 import torch
 
@@ -324,20 +326,23 @@ class TestEnhancedTrainingFeatures:
             model=model,
         )
 
-    def test_optimizer_step_raises_on_non_finite_grad_norm(self):
-        """optimizer_step should fail fast when grad norm is NaN/Inf."""
+    def test_optimizer_step_returns_inf_on_non_finite_grad_norm(self):
+        """optimizer_step should return inf grad_norm (not raise) and zero grads."""
         model = _make_model()
         optimizer = _make_optimizer(model)
 
         for param in model.parameters():
             param.grad = torch.full_like(param, float("nan"))
 
-        with pytest.raises(FloatingPointError, match="Non-finite gradient norm"):
-            optimizer_step(
-                optimizer=optimizer,
-                gradient_clip_norm=1.0,
-                model=model,
-            )
+        grad_norm = optimizer_step(
+            optimizer=optimizer,
+            gradient_clip_norm=1.0,
+            model=model,
+        )
+        assert not math.isfinite(grad_norm)
+        # Gradients should have been zeroed
+        for param in model.parameters():
+            assert param.grad is None or not param.grad.any()
 
     def test_train_with_gradient_accumulation(self):
         """Test training with gradient accumulation."""
