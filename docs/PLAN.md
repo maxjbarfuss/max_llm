@@ -289,6 +289,9 @@ Training infrastructure:
 - ☐ Scale DDP to longer runs (10K+ steps) and validate convergence vs single-GPU baseline
 - ☐ Multi-node DDP setup (4+ GPUs across multiple machines)
 
+Training methodology findings:
+- ✅ **Multi-axis perturbation escapes plateaus** (P4-DEC-2): when val loss plateaued after 6K+ steps at constant LR (~3.25), a coordinated intervention — weight soup (averaging step_8K + step_6K checkpoints), data seed reset (3407→9473), and SGDR scheduler restart — produced immediate val loss improvement (3.2247→3.2119 at step 250 of the new run). Hypothesis: simultaneous perturbation of weight space, data order, and LR trajectory jointly escapes local basins more effectively than any single change. **Proposed Phase 5+ protocol**: make this periodic and automatic — every ~1000 steps, soup current weights with the checkpoint N steps prior, reset the data seed, restart the LR cycle. The soup interval, seed delta, and cycle shape become first-class tunable hyperparameters. Too-small N → insufficient weight divergence for meaningful averaging; too-large N → basin already overfit before rescue fires. Tuning methodology is an open research question.
+
 Evaluation and quality:
 - ✅ Per-component unit tests: RMSNorm (26 tests), RoPE (25 tests), FFN variants (39 tests), pos variants (25 tests), norm variants (29 tests), GQA/MQA attention coverage in `tests/unit/test_attention.py`
 - ✅ LayerNorm vs RMSNorm A/B (6L/1024H, 2K steps, Flash+DDP): RMSNorm lower memory, similar speed, slightly noisier early curve — **RMSNorm confirmed as Phase 4 default** (P4-DEC-1)
