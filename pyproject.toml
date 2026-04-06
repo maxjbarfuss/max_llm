@@ -56,7 +56,7 @@ warn_no_return = true
 strict_optional = true
 
 [[tool.mypy.overrides]]
-module = ["flash_attn", "flash_attn.*", "xformers.*", "sageattention", "sageattention.*"]
+module = ["flash_attn", "flash_attn.*", "xformers.*", "sageattention", "sageattention.*", "pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

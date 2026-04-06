@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class _SpilledDocs:
     """Memory-mapped sequence of tokenized documents backed by a temp binary file."""
 
-    def __init__(self, mmap: np.memmap, offsets: np.ndarray) -> None:
+    def __init__(self, mmap: np.ndarray, offsets: np.ndarray) -> None:
         self._mmap = mmap  # shape: (total_tokens,)
         self._offsets = offsets  # shape: (n_docs + 1,) int64
 
@@ -67,11 +67,13 @@ def _load_cached_spill(bin_path: Path) -> _SpilledDocs | None:
         meta = json.loads(meta_path.read_text())
         dtype = np.dtype(meta["dtype"])
         offsets = np.load(str(offsets_path))
+        n_docs = len(offsets) - 1
         total_tokens = int(offsets[-1])
-        if total_tokens == 0:
-            mmap = np.memmap(str(bin_path), dtype=dtype, mode="r", shape=(0,))
-        else:
-            mmap = np.memmap(str(bin_path), dtype=dtype, mode="r", shape=(total_tokens,))
+        if n_docs == 0:
+            # Empty cache from a failed/interrupted run — treat as missing so we re-tokenize.
+            logger.warning("Spill cache for %s has 0 docs — discarding and re-tokenizing", bin_path)
+            return None
+        mmap = np.memmap(str(bin_path), dtype=dtype, mode="r", shape=(total_tokens,))
         return _SpilledDocs(mmap, offsets)
     except Exception as exc:
         logger.warning("Failed to load spill cache for %s: %s — will re-tokenize", bin_path, exc)
@@ -155,7 +157,7 @@ def read_and_spill(
 
     if total_tokens == 0:
         return _SpilledDocs(
-            np.memmap(str(bin_path), dtype=dtype, mode="r", shape=(0,)),
+            np.array([], dtype=dtype),
             np.array([0], dtype=np.int64),
         )
 

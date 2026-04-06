@@ -173,6 +173,37 @@ class JsonlReader(FormatReader):
         return list(self.iter_documents(source, tokenizer))
 
 
+class ParquetReader(FormatReader):
+    def iter_documents(
+        self, source: DataSource, tokenizer: TokenizerLike
+    ) -> Iterator[tuple[str, np.ndarray]]:
+        import pyarrow.parquet as pq
+
+        path = Path(source.path)
+        files = sorted(path.glob("*.parquet")) if path.is_dir() else [path]
+        for file_path in files:
+            table = pq.read_table(file_path, columns=[source.text_field])
+            for batch in table.to_batches(max_chunksize=1000):
+                for val in batch.column(source.text_field):
+                    text = val.as_py()
+                    if not text:
+                        continue
+                    text = _normalize_text(text)
+                    if len(text) < source.min_length:
+                        continue
+                    tokens = _filter_unk(tokenizer.encode(text))
+                    if source.max_length:
+                        tokens = tokens[: source.max_length]
+                    encoded = _token_array(tokens)
+                    if len(encoded) >= source.min_length:
+                        yield (source.name, encoded)
+
+    def read_documents(
+        self, source: DataSource, tokenizer: TokenizerLike
+    ) -> list[tuple[str, np.ndarray]]:
+        return list(self.iter_documents(source, tokenizer))
+
+
 class NpyReader(FormatReader):
     @staticmethod
     def _coerce_token_dtype(tokens: np.ndarray) -> np.ndarray:
@@ -209,6 +240,7 @@ _FORMAT_READERS: dict[str, FormatReader] = {
     "text": TextFormatReader(),
     "utf8_tokens": UTF8TokensReader(),
     "jsonl": JsonlReader(),
+    "parquet": ParquetReader(),
     "npy": NpyReader(),
 }
 
