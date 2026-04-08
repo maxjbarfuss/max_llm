@@ -17,7 +17,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 | **1** | ✅ Done | Foundation | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, env notes |
 | **2** | ✅ Done | Skeleton & Reproducibility | M | Low (scope clarity) | TinyStories + WikiText-103 (1–10M tokens) | Tokenizer, data pipeline, training loop, checkpointing, seed control, overfit test |
 | **3** | ✅ Done | Capable GPT-2-like model (~60M params, coherent output) | L | Medium | Mixed corpus: TinyStories (~10%), WikiText-103 (full), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K tokenizer | Architecture + optimization stack complete. Two milestone runs: p3_final_unigram (ppl 24.0, 12K steps) and p3_final_27b_merge50 (ppl 28.9, 10,836 steps on 27B-token corpus). Coherent output gate passed. [Phase 3 Closeout](PHASE_3_CLOSEOUT.md) |
-| **4** | — | Llama Architecture + Scale-Up Training | XL | High (scale + stability) | OpenWebText/FineWeb 10–500M tokens with staged curriculum | Architecture A/B report, curriculum manifest, throughput benchmarks |
+| **4** | ⏳ | Llama Architecture + Scale-Up Training | L | Medium | Wikipedia → Cosmopedia-v2 → mixed curriculum; existing 27B corpus for P3 comparison | P3 vs P4 ppl comparison, 3-stage curriculum loss curves, final checkpoint |
 | **5** | — | Post-Training | XL | High (forgetting + alignment) | SFT, grounding, preference data | LoRA adapters, grounding benchmark, reward-model card, safety evaluation |
 | **6** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + preference with curriculum | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
 | **7** | — | Dual-Stream Reasoning | XL | High (training-inference mismatch) | Reasoning trace triples + STaR | Dual-stream comparison, reasoning accuracy delta, GRU overhead benchmark |
@@ -237,31 +237,27 @@ Evaluation and quality:
 
 ### Phase 4: Llama Architecture + Scale-Up Training
 
-**Goal**: Llama components (RMSNorm, RoPE, SwiGLU, GQA), FSDP for 300M+ params, scale to 100–500M tokens with curriculum.
+**Goal**: Llama components (RMSNorm, RoPE, SwiGLU, GQA), DDP multi-GPU training, curriculum with Wikipedia → Cosmopedia → mixed corpus, P3 baseline comparison.
 
 **Dependencies**: Phase 3 ~60M param model producing coherent output on Unigram 8K tokenizer.
-**Artifacts**: Architecture A/B report, curriculum manifest, per-stage training curves, memory/perf summary, distributed training logs, throughput benchmark report.
+**Artifacts**: P3 vs P4 perplexity comparison, per-stage curriculum loss curves, final checkpoint.
 **Kill Criteria**: Stop if Llama architecture degrades perplexity vs Phase 3 baseline OR if multi-GPU loss diverges from single-GPU by >5% at same seed after 100 steps.
-**Out of Scope**: Fine-tuning, RL alignment, MoE/MLA upgrades.
+**Out of Scope**: Fine-tuning, RL alignment, MoE/MLA upgrades, FSDP, multi-node, formal A/B logging beyond what's needed for P3 comparison and curriculum validation.
 **Decision Log**: Record decisions as `P4-DEC-<n>` in Running Session Log.
 
 **Tasks**:
 
 Data:
 - ✅ Prepare OpenWebText subset; prepared and used in 27B corpus (673M train tokens, 9.5M docs) — OWT is pre-deduplicated; deduplication rate N/A for this source
-- ✅ Download and prepare FineWeb-Edu subset (>100M tokens); 1.57B train tokens, 1.3M docs in 27B corpus (Unigram 8K tokenizer; BPE qualifier was stale — Phase 4 runs use same Unigram data)
+- ✅ Download and prepare FineWeb-Edu subset (>100M tokens); 1.57B train tokens, 1.3M docs in 27B corpus; standalone 11.21B-token run completed 2026-04-06 (`fw10bt_standalone_20260406`)
 - ✅ Memory-mapped data reads and DataLoader shuffling at scale — `load_tokens()` returns `np.memmap`; `TokenDataset` yields (x,y) lazily; `set_epoch()` randomizes start offset; I/O verified not bottlenecking training (see `docs/OPTIMIZATION.md`)
 - ✅ Implement dynamic data mixing and sampling weights by curriculum stage — `MixingStrategy`, `source_ratios`, `weight_by`, `CurriculumStrategy` (length-based, domain-progression, custom) all implemented in `src/data/preparation/`
 - ✅ Data prep spill cache — `read_and_spill()` persists `.bin + .bin.offsets.npy + .bin.meta.json`; subsequent runs skip re-tokenization on cache hit; cleanup preserves cache files while removing temp state
-- ☐ Implement heuristic data filters for language and perplexity — length filtering done (`min_length`/`max_length` in `DataSource`); language detection and perplexity-based filtering not implemented
-- ☐ `HuggingFaceDownloader`: `download(dataset_name, cache_dir)` + `discover_schema()` → discovery report; add `--discover` mode to data CLI
-- ☐ Intermediate Parquet schema for normalized docs: doc_id, text, split, char_count (replaces .txt cache; enables efficient doc-level queries)
-- ☐ `ChunkedTokenCache(slow_dir, fast_dir, chunk_size_mb)`: slow→fast staging with LRU eviction and async background prefetch
-- ☐ `CachedTokenDataset`: lazy-load via `ChunkedTokenCache`; prefetch next chunk at 80% consumption
-- ☐ Upgrade token metadata to Parquet: chunk_id, token_count, byte_offset, split, sha256 hash
-- ☐ Assemble 100–500M token corpus with staged curriculum: 75% FineWeb/Wikipedia/GitHub/UCI + curated data (Cosmopedia), 20% adult/controversial, 5% harmful — existing 27B corpus uses OWT/FineWeb-Edu/WikiText/TinyStories; GitHub/UCI/Cosmopedia/content-mix not yet assembled
-- ☐ Create source manifest (URLs, licenses, curriculum stage assignments, deduplication stats) — basic stats/manifest JSON exists; no URLs, licenses, or curriculum stage assignments
-- ☐ Validate curriculum with per-stage loss curves and stage-transition logs; benchmark vs random mixing
+- ✅ ParquetReader — `format = "parquet"` support in `FormatReader`; handles single files and directories of shards
+- ☐ Download Wikipedia parquet (HuggingFace `wikimedia/wikipedia`, `20231101.en`) — factual anchor for curriculum stage 1
+- ☐ Download Cosmopedia-v2 slice (~2B tokens, HuggingFace `HuggingFaceTB/cosmopedia-v2`) — synthetic distilled facts + structured explanations for curriculum stage 2; replaces the GitHub/UCI/Cosmopedia/content-mix previously planned
+- ☐ Assemble 3-stage curriculum dataset: stage 1 = Wikipedia (pure encyclopedic), stage 2 = Cosmopedia-v2 (synthetic facts), stage 3 = Cosmopedia + FW-Edu + OWT mixed
+- ☐ Validate curriculum: confirm val loss continues declining across stage transitions (no reset); log per-stage loss curves
 
 Components:
 - ✅ RMSNorm (replace LayerNorm, no mean, learnable gain) — `src/models/norm/rms_norm.py`; `F.rms_norm` fused kernel; `make_norm` factory; 26 unit tests
@@ -285,31 +281,22 @@ Training infrastructure:
 - ✅ Training status reporting — `_write_training_status()` writes `training_status.json` to `output_dir` on each periodic checkpoint and at completion (step, max_steps, val_loss, checkpoint path, done flag, timestamp); `src.status` module + `make status` for unified data-prep + training run dashboard
 - ✅ val_loss threaded to checkpoint callback — `checkpoint_fn(step, val_loss=val_loss)` for accurate status reporting
 - ✅ Resume fix — `resume_optimizer_state=False` now allows clean 0-LR warmup without requiring `ckpt_lr` from optimizer state
-- ☐ FSDP for models >300M params (model sharding, ZeRO-style optimizer sharding)
-- ☐ Scale DDP to longer runs (10K+ steps) and validate convergence vs single-GPU baseline
-- ☐ Multi-node DDP setup (4+ GPUs across multiple machines)
+- ✅ DDP validated on 10K–50K step runs with no divergence or NaN/Inf
 
 Training methodology findings:
 - ✅ **Multi-axis perturbation escapes plateaus** (P4-DEC-2): when val loss plateaued after 6K+ steps at constant LR (~3.25), a coordinated intervention — weight soup (averaging step_8K + step_6K checkpoints), data seed reset (3407→9473), and SGDR scheduler restart — produced immediate val loss improvement (3.2247→3.2119 at step 250 of the new run). Hypothesis: simultaneous perturbation of weight space, data order, and LR trajectory jointly escapes local basins more effectively than any single change. **Proposed Phase 5+ protocol**: make this periodic and automatic — every ~1000 steps, soup current weights with the checkpoint N steps prior, reset the data seed, restart the LR cycle. The soup interval, seed delta, and cycle shape become first-class tunable hyperparameters. Too-small N → insufficient weight divergence for meaningful averaging; too-large N → basin already overfit before rescue fires. Tuning methodology is an open research question.
+- ✅ **Domain transfer causes coherence regression despite PPL improvement** (P4-DEC-3): fine-tuning on FW-Edu 10BT alone (50K steps, val_loss 2.948) improved FW-Edu PPL but degraded factual recall and structural diversity vs the mixed-corpus checkpoint. PPL on a domain-matched val set is a misleading signal for general quality. Solution: curriculum with factual anchoring (Wikipedia → Cosmopedia) before mixing, and domain-diverse val set.
 
 Evaluation and quality:
 - ✅ Per-component unit tests: RMSNorm (26 tests), RoPE (25 tests), FFN variants (39 tests), pos variants (25 tests), norm variants (29 tests), GQA/MQA attention coverage in `tests/unit/test_attention.py`
 - ✅ LayerNorm vs RMSNorm A/B (6L/1024H, 2K steps, Flash+DDP): RMSNorm lower memory, similar speed, slightly noisier early curve — **RMSNorm confirmed as Phase 4 default** (P4-DEC-1)
-- ⏳ ReLU² vs GELU A/B (6L/1024H, 2K steps, no RoPE) — run complete, analysis pending
-- ☐ SwiGLU, xIELU, AddRoPE, ALiBi, RelPosBias A/B runs (same baseline)
-- ☐ Phase 3 vs Phase 4 A/B comparison (same data/seed/param count)
-- ☐ Comparison logs: parameter count, perplexity delta, tokens/sec, peak memory
+- ☐ Phase 3 vs Phase 4 comparison: same data (`p3_27b` corpus), same ~60M param count, same 10K steps — record val ppl delta and tokens/sec
 
 **Exit Criteria**:
-- ☐ Llama-style model achieves lower val perplexity than Phase 3 baseline (same param count, same data, same training steps)
-- ☐ RoPE handles 2× training context length without perplexity degradation > 10%
-- ☐ A/B results logged per Reproducibility Contract; reproducible across runs
-- ☐ OpenWebText subset (10–50M tokens) prepared, deduplicated, and deduplication rate documented
-- ☐ FineWeb subset (50–100M tokens) integrated, deduplicated, and memory-mapped; data loading does not bottleneck training
-- ☐ 100–500M token corpus assembled and partitioned across P4a/P4b/P4c; source manifest complete
-- ☐ Curriculum stage transitions trigger correctly; per-stage loss curves show continued improvement
-- ☐ DDP validated on longer runs: 10K+ steps with no divergence from single-GPU baseline
-- ☐ 50–100M token training for 10K+ steps, no NaN/Inf with distributed training
+- ☐ Phase 4 Llama model achieves lower val perplexity than Phase 3 baseline (same data, same param count, same steps)
+- ☐ 3-stage curriculum assembled and tokenized (Wikipedia, Cosmopedia-v2, mixed)
+- ☐ Curriculum val loss continues declining across stage transitions (no upward reset at stage boundary)
+- ✅ DDP validated on longer runs: 10K+ steps with no divergence or instability
 
 ---
 
