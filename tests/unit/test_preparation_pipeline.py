@@ -10,10 +10,12 @@ import numpy as np
 from src.data.preparation.config import (
     DataPreparationConfig,
     DataSource,
+    MixingConfig,
     OutputConfig,
+    SplitConfig,
     TokenizerConfig,
 )
-from src.data.preparation.pipeline import PreparationPipeline
+from src.data.preparation.pipeline import PreparationPipeline, _summarize_mixing_plan
 
 
 def _write_text(path, content: str) -> None:
@@ -113,3 +115,48 @@ def test_pipeline_shards_large_split_output(tmp_path):
         assert Path(shard_path).exists()
         shard_tokens = np.load(shard_path)
         assert len(shard_tokens) <= 4
+
+
+def test_pipeline_streaming_stratified_path_preserves_source_stats(tmp_path):
+    src_a = tmp_path / "a.txt"
+    src_b = tmp_path / "b.txt"
+    _write_text(src_a, "aa\n\naa\n\naa\n\naa")
+    _write_text(src_b, "bbbb\n\nbbbb\n\nbbbb\n\nbbbb")
+
+    out_dir = tmp_path / "out"
+    cfg = DataPreparationConfig(
+        tokenizer=TokenizerConfig(type="char", vocab_size=256),
+        datasets=[
+            DataSource(name="a", path=str(src_a), min_length=1, weight=0.5),
+            DataSource(name="b", path=str(src_b), min_length=1, weight=0.5),
+        ],
+        splits=SplitConfig(train=1.0, val=0.0, test=0.0, shuffle=True, stratified=True, seed=42),
+        output=OutputConfig(dir=str(out_dir), prefix="streaming", eos_token_id=-1),
+    )
+    cfg.mixing.weight_by = "tokens"
+    cfg.mixing.target_total_tokens = 12
+
+    PreparationPipeline().run(cfg)
+
+    stats = json.loads((out_dir / "streaming_stats.json").read_text(encoding="utf-8"))
+    train_stats = stats["train"]["by_source"]
+    assert set(train_stats) == {"a", "b"}
+    assert stats["train"]["total_tokens"] > 0
+
+
+def test_summarize_mixing_plan_reports_token_targets():
+    cfg = DataPreparationConfig(
+        datasets=[
+            DataSource(name="a", path=__file__, weight=0.25),
+            DataSource(name="b", path=__file__, weight=0.75),
+        ],
+        mixing=MixingConfig(weight_by="tokens", target_total_tokens=1000),
+    )
+
+    lines = _summarize_mixing_plan(cfg)
+
+    assert lines == [
+        "      target budget: 1,000 tokens",
+        "      target a:  25.0% -> 250 tokens",
+        "      target b:  75.0% -> 750 tokens",
+    ]
