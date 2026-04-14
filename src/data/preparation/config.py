@@ -124,7 +124,9 @@ class DataPreparationConfig:
 
         assert len(self.datasets) > 0, "Need at least one dataset"
         for ds in self.datasets:
-            assert Path(ds.path).exists(), f"Not found: {ds.path}"
+            # Allow remote Hugging Face URIs (hf://) as valid paths
+            if not (isinstance(ds.path, str) and ds.path.startswith("hf://")):
+                assert Path(ds.path).exists(), f"Not found: {ds.path}"
             assert ds.weight >= 0, f"Negative weight: {ds.name}"
             if ds.max_docs is not None:
                 assert ds.max_docs > 0, f"max_docs must be > 0: {ds.name}"

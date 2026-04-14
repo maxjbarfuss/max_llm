@@ -546,10 +546,23 @@ def train(  # noqa: C901
 
                 # Logging
                 if log_interval > 0 and (step + 1) % log_interval == 0:
+                    # Estimate ETA and remaining steps/time
+                    steps_done = step + 1
+                    steps_left = max_steps - steps_done
+                    elapsed_total = time.time() - (
+                        step_start_time if steps_done == 1 else start_time
+                    )
+                    avg_step_time = elapsed_total / steps_done if steps_done > 0 else 0.0
+                    eta_seconds = int(avg_step_time * steps_left)
+                    eta_h = eta_seconds // 3600
+                    eta_m = (eta_seconds % 3600) // 60
+                    eta_s = eta_seconds % 60
+                    eta_str = f"{eta_h:02}:{eta_m:02}:{eta_s:02}"
                     log_msg = (
-                        f"step {step + 1:>5}/{max_steps}  "
+                        f"step {steps_done:>5}/{max_steps}  "
                         f"loss={avg_loss:.4f}  ppl={perplexity:.2f}  "
-                        f"lr={current_lr:.2e}"
+                        f"lr={current_lr:.2e}  "
+                        f"ETA={eta_str}  left={steps_left}"
                     )
                     if log_tokens_per_sec:
                         log_msg += f"  tokens/s={tokens_per_sec:.0f}"
@@ -572,6 +585,9 @@ def train(  # noqa: C901
                 # Reset for next step
                 accumulated_loss = 0.0
                 tokens_in_step = 0
+                if step == 0:
+                    # Mark start time after first step for ETA
+                    start_time = step_start_time
                 step_start_time = time.time()
                 step += 1
 

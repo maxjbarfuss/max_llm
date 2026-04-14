@@ -24,6 +24,9 @@ Use **only** the local `git` CLI (`git status`, `git add`, `git commit`, `git di
 ### Virtual environment
 Always activate before any Python command: `source /home/max/dev/max_llm/.venv/bin/activate`. Required for `pytest`, `ruff`, `mypy`, `black`, `pip`, and `make` targets. Do not trial-and-error — activate proactively.
 
+### Hugging Face datasets
+Before any new dataset fetch from Hugging Face, load auth first: `source setup.sh` or `export HF_TOKEN=$(cat .huggingface/.hf_token)`. Also set `HUGGING_FACE_HUB_TOKEN=$HF_TOKEN`. Do not start with anonymous Hugging Face downloads.
+
 ### Test gate
 Run before every commit: `source .venv/bin/activate && make test-quick && ruff check src tests && mypy src && black --check src tests`. All must pass clean.
 

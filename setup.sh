@@ -72,6 +72,27 @@ else
 fi
 echo ""
 
+# Pre-step: Hugging Face Token (for dataset access and higher download limits)
+echo -e "${BLUE}Pre-Step: Hugging Face Token${NC}"
+if [ -n "$HF_TOKEN" ]; then
+    export HUGGING_FACE_HUB_TOKEN="${HUGGING_FACE_HUB_TOKEN:-$HF_TOKEN}"
+    echo -e "${GREEN}✓${NC} Hugging Face token set via HF_TOKEN"
+elif [ -n "$HUGGING_FACE_HUB_TOKEN" ]; then
+    export HF_TOKEN="$HUGGING_FACE_HUB_TOKEN"
+    echo -e "${GREEN}✓${NC} Hugging Face token set via HUGGING_FACE_HUB_TOKEN"
+elif [ -f ".huggingface/.hf_token" ]; then
+    export HF_TOKEN=$(cat ".huggingface/.hf_token")
+    export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
+    echo -e "${GREEN}✓${NC} Hugging Face token loaded from .huggingface/.hf_token"
+else
+    echo -e "${YELLOW}⚠${NC} No Hugging Face token found. For new dataset downloads:"
+    echo -e "  1. Create a Hugging Face access token at https://huggingface.co/settings/tokens"
+    echo -e "  2. Save it to .huggingface/.hf_token (will be in .gitignore)"
+    echo -e "  3. Run: export HF_TOKEN=\$(cat .huggingface/.hf_token)"
+    echo -e "  4. Run: export HUGGING_FACE_HUB_TOKEN=\$HF_TOKEN"
+fi
+echo ""
+
 # Pre-step: Require Python 3.12 with venv support (matches pinned cp312 wheels)
 echo -e "${BLUE}Pre-Step: Python${NC}"
 PYTHON_CMD=""

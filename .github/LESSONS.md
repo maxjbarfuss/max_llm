@@ -138,6 +138,14 @@
 
 ---
 
+## L017 — Authenticate Hugging Face Downloads Before Fetching New Datasets
+
+**Observed behavior**: Agent tried to inspect or download new Hugging Face datasets anonymously, hit rate limits or access failures, and only considered authentication after the fetch had already failed.
+
+**Correct approach**: Before any new Hugging Face dataset lookup or download, load the token first. Preferred repo workflow: keep the token in `.huggingface/.hf_token` (gitignored) and either run `source setup.sh` or `export HF_TOKEN=$(cat .huggingface/.hf_token)` before using Hugging Face tooling. Also mirror it to `HUGGING_FACE_HUB_TOKEN` for compatibility. Do not trial anonymous access first when the dataset source is Hugging Face.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:

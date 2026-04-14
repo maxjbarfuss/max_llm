@@ -289,11 +289,19 @@ def create_simple_loaders(
         seed: Random seed for reproducibility.
         device: Device for pin_memory setting (pinned if CUDA).
         num_workers: Number of data loading workers (default: 0).
+            Recommended: 2–8 for large datasets. Avoid 0 for large datasets to prevent CPU lockup.
         prefetch_factor: Number of batches to prefetch per worker (default: 2).
         persistent_workers: Keep workers alive between epochs (default: False).
+            Recommended: True if num_workers > 0 and training is multi-epoch.
 
     Returns:
         Tuple of (train_loader, val_loader, test_loader_or_none)
+
+    Notes:
+        - Setting num_workers=0 causes all data loading to occur in the main process, which can lock up the CPU for large datasets.
+        - For large datasets (e.g., >100,000 samples), set num_workers >= 2.
+        - persistent_workers=True is only effective if num_workers > 0.
+        - Monitor for warnings about slow data loading or CPU utilization.
     """
     # Create generator for reproducible shuffling
     generator = torch.Generator()
@@ -308,6 +316,16 @@ def create_simple_loaders(
     if total_samples == 0:
         raise ValueError(
             f"Not enough tokens ({len(train_tokens)}) for at least one sample (need {seq_len + 1})"
+        )
+
+    # Warn if num_workers=0 and dataset is large (risk of CPU lockup)
+    if num_workers == 0 and total_samples > 100_000:
+        import warnings
+
+        warnings.warn(
+            f"[Max LLM] num_workers=0 with {total_samples:,} samples: this can cause CPU lockup or unresponsiveness. "
+            "Set num_workers=2 or higher for large datasets.",
+            RuntimeWarning,
         )
 
     def _make_dataset(

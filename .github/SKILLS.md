@@ -68,6 +68,12 @@ Platform-agnostic workflows and patterns for working efficiently on max_llm. Thi
 - **C++**: Use build system introspection to discover targets and tests before invoking terminal builds
 - **Project scaffolding**: Use your platform's workspace or project creation tools where available
 
+### 9. Dataset Acquisition
+- Before fetching any new Hugging Face dataset, load auth first instead of probing anonymously
+- Preferred repo flow: `source setup.sh` or `export HF_TOKEN=$(cat .huggingface/.hf_token)`
+- Export `HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"` as well for tools that look for the alternate variable name
+- Keep dataset discovery bounded to known roots when possible; use Hugging Face auth for remote fetches and `.huggingface/.hf_token` for local secret storage
+
 ---
 
 ## Session Workflow (Required)
@@ -88,6 +94,7 @@ Platform-agnostic workflows and patterns for working efficiently on max_llm. Thi
 - **Track phase progress**: Mark items ✅ in [docs/PLAN.md](../docs/PLAN.md) when completing phase deliverables, update progress percentages
 - **Follow TDD discipline**: Write failing test first → implement → verify test passes
 - **🚨 Git restriction (L001 CRITICAL)**: Use **only** local `git` CLI. Never use GUI wrappers, integrated git extensions, or git server tools of any kind. See [LESSONS.md](LESSONS.md#-l001--never-use-gui-git-wrappers-critical).
+- **🚨 Hugging Face dataset rule (L017)**: Before any new Hugging Face dataset fetch, load `HF_TOKEN` from `.huggingface/.hf_token` or via `source setup.sh`; do not burn time on anonymous retries first
 
 ### File Purposes
 - **MEMORY.md** = working/thinking state (what you're doing now) — see [MEMORY vs SESSION_LOG Pattern](MEMORY.md#memory-vs-session_log-pattern-must-understand)

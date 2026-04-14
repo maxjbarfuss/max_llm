@@ -114,10 +114,22 @@ def read_and_spill(
         )
         return cached
 
+    import time
+
+    import psutil
+
     dtype: np.dtype[np.unsignedinteger] = np.dtype(np.uint16)  # sufficient for vocab ≤ 65535
     offsets: list[int] = [0]
     buffer: list[np.ndarray] = []
     buffered_tokens = 0
+    last_status_time = time.time()
+    last_tokens = 0
+    last_docs = 0
+    last_flush_time = time.time()
+    stall_warned = False
+    N_TOKENS_STATUS = 1_000_000
+    process = psutil.Process()
+    start_time = time.time()
 
     with tqdm(
         desc=f"  {source.name}",
@@ -142,15 +154,54 @@ def read_and_spill(
                     f.flush()
                     buffer = []
                     buffered_tokens = 0
+                    last_flush_time = time.time()
 
                 pbar.update(1)
-                if pbar.n % 5_000 == 0:
-                    pbar.set_postfix(tokens=f"{offsets[-1] / 1e6:.1f}M")
+                now = time.time()
+                # Status every N tokens or 10s
+                if (offsets[-1] // N_TOKENS_STATUS) > (last_tokens // N_TOKENS_STATUS) or (
+                    now - last_status_time
+                ) > 10:
+                    elapsed = now - start_time
+                    tokens = offsets[-1]
+                    docs = len(offsets) - 1
+                    speed = (tokens - last_tokens) / max(now - last_status_time, 1e-6)
+                    docs_speed = (docs - last_docs) / max(now - last_status_time, 1e-6)
+                    mem = process.memory_info().rss / 1024**2
+                    io_counters = process.io_counters()
+                    eta = (tokens and (tokens / max(tokens / elapsed, 1e-6))) or 0
+                    pbar.set_postfix(
+                        tokens=f"{tokens / 1e6:.1f}M",
+                        docs=f"{docs:,}",
+                        speed=f"{speed/1e3:.2f}k/s",
+                        docs_speed=f"{docs_speed:.1f}/s",
+                        mem=f"{mem:.1f}MB",
+                        io_write=f"{io_counters.write_bytes/1024**2:.1f}MB",
+                        eta=f"{eta/60:.1f}m",
+                    )
+                    print(
+                        f"[STATUS] {source.name}: {docs:,} docs, {tokens:,} tokens, {speed/1e3:.2f}k tok/s, {mem:.1f}MB RAM, {io_counters.write_bytes/1024**2:.1f}MB written, ETA {eta/60:.1f}m",
+                        flush=True,
+                    )
+                    last_status_time = now
+                    last_tokens = tokens
+                    last_docs = docs
+                    stall_warned = False
+                # Stall warning if no progress for 60s
+                if not stall_warned and (now - last_status_time) > 60:
+                    print(
+                        f"[WARNING] No progress for 60s in {source.name} (docs={len(offsets)-1:,}, tokens={offsets[-1]:,})",
+                        flush=True,
+                    )
+                    stall_warned = True
+                # Always flush tqdm
+                pbar.refresh()
 
             if buffer:
                 f.write(np.concatenate(buffer).tobytes())
                 f.flush()
             pbar.set_postfix(tokens=f"{offsets[-1] / 1e6:.1f}M", done=True)
+            pbar.refresh()
 
     total_tokens = offsets[-1]
     _save_spill_cache(bin_path, offsets, dtype)

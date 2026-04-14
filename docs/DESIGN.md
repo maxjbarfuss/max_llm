@@ -17,12 +17,12 @@
 | **1** | Foundation | Design, repo setup, config system, build tools, CI, test scaffolding | Setup; no training data |
 | **2** | Skeleton & Reproducibility | Config, seed control, char tokenizer, training loop, checkpointing, metrics | TinyStories + WikiText-103 (1–10M tokens); overfit test |
 | **3** | Capable GPT-2-like model (~60M params, coherent output) | Decoder architecture (8–10L/1024H/16H, Unigram 8K vocab, 2048 ctx); full optimization stack (Flash Attn, BF16, DDP, FSDP, WSD scheduler, AdamW fused, fused QKV, scaled residual init, chunked CE loss, early stopping, label smoothing); training run to coherent text generation | Mixed corpus: TinyStories (~10%), WikiText-103 (full ~100M tokens), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K tokenizer with EOS and NFKC/unk filtering |
-| **4** | Llama Architecture + Scale-Up Training | RMSNorm, RoPE, SwiGLU, GQA, FSDP for 300M+ params, chunked token caching, data filters, A/B comparison vs Phase 3; multi-phase curriculum pretraining | OpenWebText/FineWeb 10–500M tokens with staged ramp (10–50M, 50–100M, 100–500M curriculum stages) |
+| **4** | Llama Architecture + Scale-Up Training | RMSNorm, RoPE, FFN/attention/residual A/B suite (SwiGLU/ReLU²/xIELU, GQA/MQA/MLA, full_attn/block_attn), FSDP for 300M+ params, chunked token caching, data filters, A/B comparison vs Phase 3; multi-phase curriculum pretraining | OpenWebText/FineWeb 10–500M tokens with staged ramp (10–50M, 50–100M, 100–500M curriculum stages) |
 | **5** | Post-Training | KV-cache, SFT, LoRA, grounding (math/logic/world-model/games), DPO or PPO/GRPO, continual learning | 1–5M SFT pairs, 50K–500K grounding (GSM8K, MATH, ARC), 10K–100K preference pairs (HH-RLHF, UltraFeedback) + 5–10% harmful, 5K–10K reward labels |
 | **6** | MoE + MLA | MLA (latent KV compression), sparse MoE, top-k gating, load-balance loss, continual expert specialization | Partitioned SFT + preference (1–5M pairs) with curriculum; expert utilization tracking |
 | **7** | Dual-Stream Reasoning | GRU Reasoning Stream + GRU Combiner (gated fusion); scheduled teacher forcing (100%→0%); STaR bootstrap; reasoning accuracy delta | 50K–500K (input, trace, answer) triples (GSM8K, MATH, ARC-Challenge, OpenOrca); STaR traces; 60% reasoned / 40% direct |
 
-**Status**: Phase 4 in progress — RMSNorm ✅, RoPE ✅, FFN variants (SwiGLU/ReLU²/xIELU) ✅, position encoding A/B suite (AddRoPE/ALiBi/RelPosBias) ✅, norm variants (FlashNorm/DyT/CRMSNorm) ✅, GQA/MQA ✅ (`num_kv_heads`), Attention Residuals ✅ (`res_type`: full_attn/block_attn), MLA ✅ (`mla_latent_dim`); data prep spill cache (skip re-tokenization on resume) ✅; status reporting (`make status`, `training_status.json`) ✅.
+**Status**: Phase 4 in progress — RMSNorm ✅, RoPE ✅, FFN variants (SwiGLU/ReLU²/xIELU) ✅, position encoding A/B suite (AddRoPE/ALiBi/RelPosBias) ✅, norm variants (FlashNorm/DyT/CRMSNorm) ✅, GQA/MQA ✅ (`num_kv_heads`), Attention Residuals ✅ (`res_type`: full_attn/block_attn), MLA ✅ (`mla_latent_dim`); current best-class training profile uses `attn_type="mla"`, `res_type="block_attn"`, and `ffn_type="xielu"` (see `config/ephemeral/p4_llama_12l_bestclass_20260318.toml`); data prep spill cache (skip re-tokenization on resume) ✅; status reporting (`make status`, `training_status.json`) ✅.
 
 ---
 
@@ -76,7 +76,7 @@ graph TD
     A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
-        D[RMSNorm]:::p4 --> E[GQA]:::p4 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[SwiGLU FFN]:::p4 --> I[+ Residual]:::p3
+        D[RMSNorm]:::p4 --> E[MLA]:::p4 --> F[Block-Attn Residual]:::p4 --> G[RMSNorm]:::p4 --> H[xIELU FFN]:::p4 --> I[Block-Attn Residual]:::p4
         RoPE:::p4 -.-> E
     end
     Block --> J[LM Head]:::p3 --> K[Logits]:::io
@@ -88,7 +88,7 @@ graph TD
     classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
 ```
 
-- **Phase 4**: Text → Tokenizer → Token Emb + **RoPE** → [**RMSNorm** → **GQA** → **SwiGLU**] × N → LM Head → Sampler → Text
+- **Phase 4**: Text → Tokenizer → Token Emb + **RoPE** → [**RMSNorm** → **MLA** → **block_attn residual** → **xIELU**] × N → LM Head → Sampler → Text
 
 ---
 
@@ -100,7 +100,7 @@ graph TD
     A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
     subgraph Block[Transformer Block x N]
         direction LR
-        D[RMSNorm]:::p4 --> E[GQA + KV-Cache]:::p4 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[SwiGLU FFN]:::p4 --> I[+ Residual]:::p3
+        D[RMSNorm]:::p4 --> E[MLA + KV-Cache]:::p4 --> F[Block-Attn Residual]:::p4 --> G[RMSNorm]:::p4 --> H[xIELU FFN]:::p4 --> I[Block-Attn Residual]:::p4
         RoPE:::p4 -.-> E
     end
     Block --> J[LM Head]:::p3 --> K[Logits]:::io
@@ -115,7 +115,7 @@ graph TD
     classDef p5 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
 ```
 
-- **Phase 5**: Phase 4 + **KV-cache**, **SFT**, **LoRA**, **grounding**, **DPO**
+- **Phase 5**: Phase 4 stack + **KV-cache**, **SFT**, **LoRA**, **grounding**, **DPO**
 
 ---
 
@@ -192,11 +192,12 @@ graph TD
 | Norm variants | 4 | 4–7 | `norm_type` selects: `rms` (RMSNorm, P4 default); `flash` (param-free RMSNorm); `dyt` (Dynamic Tanh, Zhai 2025); `crms` (Centered RMSNorm); `layer` (LayerNorm, P3 legacy) |
 | RoPE | 4 | 4–7 | Rotary Q/K encoding; `pos_type = "rope"`; A/B alternatives: AddRoPE, ALiBi, RelPosBias |
 | FFN variants | 4 | 4–7 | SwiGLU (Llama, default P4+); ReLU² (sparse ~50%); xIELU (piecewise quad/exp, 2 params); GELU (legacy) |
-| GQA | 4 | 4–5 | Grouped-query attention via `num_kv_heads` (`null`=MHA, `1`=MQA, `N`=GQA); replaced by MLA in P6 |
+| GQA | 4 | 4–5 | Grouped-query attention via `num_kv_heads` (`null`=MHA, `1`=MQA, `N`=GQA); available as a Phase 4 baseline |
 | KV-cache | 5 | 5–7 | Cached K/V for autoregressive generation |
 | LoRA | 5 | 5–7 | Low-rank adaptation (<1% params) |
 | Reward model | 5 | 5–7 | Learned reward for PPO/GRPO |
-| MLA | 6 | 6–7 | Latent KV compression (DeepSeek-style) |
+| MLA | 4 | 4–7 | Latent KV compression (DeepSeek-style); current Phase 4 best-class runs use `attn_type = "mla"` |
+| Attention Residuals | 4 | 4–7 | Learned residual routing via `res_type` (`standard`, `full_attn`, `block_attn`); current Phase 4 best-class runs use `block_attn` |
 | MoE layer | 6 | 6–7 | Sparse routing, expert tracking |
 | GRU Reasoning Stream | 7 | 7 only | Parallel GRU producing per-position reasoning states |
 | GRU Combiner | 7 | 7 only | Gated fusion of transformer + GRU states |

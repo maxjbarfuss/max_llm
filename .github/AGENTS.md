@@ -48,6 +48,7 @@ Key requirements:
 - **Phase-gated development**: Check [PLAN.md](../docs/PLAN.md) phase boundaries before starting cross-phase work. Each phase builds on validated prior work.
 - **Vertical slicing**: A complete feature touches model + data + training + test. Don't land partial slices.
 - **Test-then-commit**: `make test-quick` must pass before any commit. See [tests/README.md](../tests/README.md) for commands and expectations.
+- **Authenticated dataset acquisition**: For new Hugging Face datasets, load `HF_TOKEN` from `.huggingface/.hf_token` or via `source setup.sh` before lookup/download. Also set `HUGGING_FACE_HUB_TOKEN` for compatibility. Do not rely on anonymous access as the default workflow.
 
 ## Technical Skills Required
 

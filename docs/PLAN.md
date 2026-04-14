@@ -237,12 +237,12 @@ Evaluation and quality:
 
 ### Phase 4: Llama Architecture + Scale-Up Training
 
-**Goal**: Llama components (RMSNorm, RoPE, SwiGLU, GQA), DDP multi-GPU training, curriculum with Wikipedia → Cosmopedia → mixed corpus, P3 baseline comparison.
+**Goal**: Llama components and active best-class stack (RMSNorm/FlashNorm family, RoPE, FFN variants including xIELU, attention variants including MLA, attention residuals including block_attn), DDP multi-GPU training, curriculum with Wikipedia → Cosmopedia → mixed corpus, P3 baseline comparison.
 
 **Dependencies**: Phase 3 ~60M param model producing coherent output on Unigram 8K tokenizer.
 **Artifacts**: P3 vs P4 perplexity comparison, per-stage curriculum loss curves, final checkpoint.
 **Kill Criteria**: Stop if Llama architecture degrades perplexity vs Phase 3 baseline OR if multi-GPU loss diverges from single-GPU by >5% at same seed after 100 steps.
-**Out of Scope**: Fine-tuning, RL alignment, MoE/MLA upgrades, FSDP, multi-node, formal A/B logging beyond what's needed for P3 comparison and curriculum validation.
+**Out of Scope**: Fine-tuning, RL alignment, MoE upgrades, multi-node, formal A/B logging beyond what's needed for P3 comparison and curriculum validation.
 **Decision Log**: Record decisions as `P4-DEC-<n>` in Running Session Log.
 
 **Tasks**:
@@ -254,10 +254,11 @@ Data:
 - ✅ Implement dynamic data mixing and sampling weights by curriculum stage — `MixingStrategy`, `source_ratios`, `weight_by`, `CurriculumStrategy` (length-based, domain-progression, custom) all implemented in `src/data/preparation/`
 - ✅ Data prep spill cache — `read_and_spill()` persists `.bin + .bin.offsets.npy + .bin.meta.json`; subsequent runs skip re-tokenization on cache hit; cleanup preserves cache files while removing temp state
 - ✅ ParquetReader — `format = "parquet"` support in `FormatReader`; handles single files and directories of shards
-- ☐ Download Wikipedia parquet (HuggingFace `wikimedia/wikipedia`, `20231101.en`) — factual anchor for curriculum stage 1
-- ☐ Download Cosmopedia-v2 slice (~2B tokens, HuggingFace `HuggingFaceTB/cosmopedia-v2`) — synthetic distilled facts + structured explanations for curriculum stage 2; replaces the GitHub/UCI/Cosmopedia/content-mix previously planned
-- ☐ Assemble 3-stage curriculum dataset: stage 1 = Wikipedia (pure encyclopedic), stage 2 = Cosmopedia-v2 (synthetic facts), stage 3 = Cosmopedia + FW-Edu + OWT mixed
-- ☐ Validate curriculum: confirm val loss continues declining across stage transitions (no reset); log per-stage loss curves
+- ✅ 3-stage curriculum completed and trained: stage 1 = Wikipedia (6L × 1024H, 13K steps), stage 2 = Cosmopedia (12L × 1024H Llama, 26.6K steps, ppl 7.71), stage 3 = mixed corpus (finalish run, 140K steps planned)
+- ✅ Brace-expansion pattern support: downloader now handles `{00..07}` ranges; prevents overly-broad wildcard matches; match-count warning added for patterns > 25 files (see `scripts/setup/download_hf_dataset.py` and unit tests)
+- ⏳ Stage 3 finalish training planning (2026-04-13): **80/20 split** (65% English broad / 20% specialist code/math/logic; optional +15% Spanish monolingual). FineWeb resume: 18/50 shards present, 32 in active download (12% progress). Specialist corpora (code/math/logic) and Spanish sources (OSCAR-2301 gated, Europarl URLs deprecated) require curation; config created `config/ephemeral/p4_final_mixed_27b_unigram8192_20260413_training.toml`
+- ☐ Finalize stage-3 data prep: confirm FineWeb 50/50 complete, prepare specialist sources (code repos, arXiv math, ProofWiki), resolve Spanish corpus access (OSCAR-2301 whitelist or alternative)
+- ☐ Stage-3 training: 140K steps (~1.3 passes on 27B), target final ppl < 6.0; aggressive training (dropout=0, label_smoothing=0, lr=2e-4)
 
 Components:
 - ✅ RMSNorm (replace LayerNorm, no mean, learnable gain) — `src/models/norm/rms_norm.py`; `F.rms_norm` fused kernel; `make_norm` factory; 26 unit tests
@@ -276,6 +277,7 @@ Components:
 - ✅ `make_ffn` factory; `ffn_type` config field in `ModelConfig`; `FeedForward` extended to accept `intermediate_size` directly
 - ✅ GQA with configurable KV head count (`num_kv_heads`: 1 = MQA, `null`/N = MHA, between = GQA) — implemented in `CausalMultiHeadAttention` with backend-aware KV expansion; wired through ModelConfig → LearningModel → TransformerBlock
 - ✅ Attention Residuals (`res_type`): replaces fixed additive residuals with learned depth-wise softmax attention over preceding layer outputs; `"full_attn"` (O(L²), all sublayer outputs) and `"block_attn"` (O(N²), N≈8 block summaries; paper: 1.25× compute advantage); zero-init queries; RMSNorm on keys; `attn_res_num_blocks` config field; wired through `ModelConfig` → `LearningModel` → `AttnResidual`; `apply_attn_only`/`apply_ffn_only` sublayer methods on `TransformerBlock`; 34 unit tests. Ref: Kimi Team 2025
+- ✅ Current best-class training profile: `attn_type = "mla"`, `res_type = "block_attn"`, `ffn_type = "xielu"`, `norm_type = "flash"` (see `config/ephemeral/p4_llama_12l_bestclass_20260318.toml` and continuation configs)
 
 Training infrastructure:
 - ✅ Training status reporting — `_write_training_status()` writes `training_status.json` to `output_dir` on each periodic checkpoint and at completion (step, max_steps, val_loss, checkpoint path, done flag, timestamp); `src.status` module + `make status` for unified data-prep + training run dashboard

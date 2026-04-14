@@ -177,25 +177,97 @@ class ParquetReader(FormatReader):
     def iter_documents(
         self, source: DataSource, tokenizer: TokenizerLike
     ) -> Iterator[tuple[str, np.ndarray]]:
-        import pyarrow.parquet as pq
+        if isinstance(source.path, str) and source.path.startswith("hf://"):
+            # Hugging Face dataset streaming
+            from datasets import load_dataset
 
-        path = Path(source.path)
-        files = sorted(path.glob("*.parquet")) if path.is_dir() else [path]
-        for file_path in files:
-            table = pq.read_table(file_path, columns=[source.text_field])
-            for batch in table.to_batches(max_chunksize=1000):
-                for val in batch.column(source.text_field):
-                    text = val.as_py()
-                    if not text:
-                        continue
-                    text = _normalize_text(text)
-                    if len(text) < source.min_length:
-                        continue
-                    tokens = _filter_unk(tokenizer.encode(text))
-                    if source.max_length:
-                        tokens = tokens[: source.max_length]
-                    encoded = _token_array(tokens)
-                    if len(encoded) >= source.min_length:
+            # Parse URI: hf://namespace/dataset[/config][/split]
+            uri = source.path[len("hf://") :]
+            parts = uri.split("/")
+            namespace = parts[0]
+            dataset_name = parts[1]
+            config = parts[2] if len(parts) > 2 else None
+            split = parts[3] if len(parts) > 3 else "train"
+            ds_id = f"{namespace}/{dataset_name}"
+            kwargs = {"split": split, "streaming": True}
+            if config:
+                kwargs["name"] = config
+            ds = load_dataset(ds_id, **kwargs)
+            for example in ds:
+                text = example.get(source.text_field, "")
+                if not text:
+                    continue
+                text = _normalize_text(text)
+                if len(text) < source.min_length:
+                    continue
+                tokens = _filter_unk(tokenizer.encode(text))
+                if source.max_length:
+                    tokens = tokens[: source.max_length]
+                encoded = _token_array(tokens)
+                if len(encoded) >= source.min_length:
+                    yield (source.name, encoded)
+        else:
+            import sys
+
+            import pyarrow.parquet as pq
+
+            path = Path(source.path)
+            files = sorted(path.glob("*.parquet")) if path.is_dir() else [path]
+            debug_count = 0
+            for file_path in files:
+                table = pq.read_table(file_path, columns=[source.text_field])
+                for batch in table.to_batches(max_chunksize=1000):
+                    for val in batch.column(source.text_field):
+                        text = val.as_py()
+                        if debug_count < 10:
+                            print(
+                                f"[DEBUG] Raw text: {repr(text)[:200]}... (len={len(text) if text else 0})",
+                                file=sys.stderr,
+                            )
+                        if not text:
+                            if debug_count < 10:
+                                print("[DEBUG] Skipped: empty text", file=sys.stderr)
+                            debug_count += 1
+                            continue
+                        text = _normalize_text(text)
+                        if debug_count < 10:
+                            print(
+                                f"[DEBUG] Normalized text: {repr(text)[:200]}... (len={len(text)})",
+                                file=sys.stderr,
+                            )
+                        if len(text) < source.min_length:
+                            if debug_count < 10:
+                                print(
+                                    f"[DEBUG] Skipped: text too short (min_length={source.min_length})",
+                                    file=sys.stderr,
+                                )
+                            debug_count += 1
+                            continue
+                        tokens = _filter_unk(tokenizer.encode(text))
+                        if debug_count < 10:
+                            print(
+                                f"[DEBUG] Tokens: {tokens[:30]}... (len={len(tokens)})",
+                                file=sys.stderr,
+                            )
+                        if not tokens:
+                            if debug_count < 10:
+                                print("[DEBUG] Skipped: no tokens after filtering", file=sys.stderr)
+                            debug_count += 1
+                            continue
+                        if source.max_length and len(tokens) > source.max_length:
+                            tokens = tokens[: source.max_length]
+                        encoded = _token_array(tokens)
+                        if len(encoded) < source.min_length:
+                            if debug_count < 10:
+                                print(
+                                    f"[DEBUG] Skipped: encoded tokens too short (min_length={source.min_length})",
+                                    file=sys.stderr,
+                                )
+                            debug_count += 1
+                            continue
+                        if debug_count < 10:
+                            print(f"[DEBUG] Yielding doc: {len(encoded)} tokens", file=sys.stderr)
+                        debug_count += 1
                         yield (source.name, encoded)
 
     def read_documents(
@@ -404,6 +476,8 @@ class InterleaveMixer(MixingStrategy):
         all_documents: dict[str, Sequence[np.ndarray]],
         config: MixingConfig,
     ) -> list[tuple[str, np.ndarray]]:
+        import sys
+
         docs = _apply_sampling(all_documents, config)
         rng = np.random.RandomState(config.seed)
 
@@ -423,7 +497,15 @@ class InterleaveMixer(MixingStrategy):
 
         mixed: list[tuple[str, np.ndarray]] = []
         pointers = dict.fromkeys(source_docs, 0)
-
+        total_docs = sum(len(lst) for lst in source_docs.values())
+        print(
+            f"[DEBUG] Mixing sources: {[f'{k}: {len(v)}' for k,v in source_docs.items()]}",
+            file=sys.stderr,
+            flush=True,
+        )
+        print(f"[DEBUG] Total docs to mix: {total_docs}", file=sys.stderr, flush=True)
+        step = 0
+        last_report = 0
         while any(pointers[name] < len(source_docs[name]) for name in source_docs):
             for name in source_docs:
                 if pointers[name] < len(source_docs[name]):
@@ -431,7 +513,14 @@ class InterleaveMixer(MixingStrategy):
                         if pointers[name] < len(source_docs[name]):
                             mixed.append((name, source_docs[name][pointers[name]]))
                             pointers[name] += 1
-
+                            step += 1
+                            if step % 100000 == 0 or step == total_docs:
+                                print(
+                                    f"[DEBUG] Mixed {step}/{total_docs} docs. Pointers: {{ {', '.join(f'{k}: {pointers[k]}' for k in pointers)} }}",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+        print(f"[DEBUG] Mixing complete: {len(mixed)} docs", file=sys.stderr, flush=True)
         return mixed
 
 
