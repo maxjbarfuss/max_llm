@@ -361,6 +361,7 @@ def train(  # noqa: C901
     epoch = 0
     accumulated_loss = 0.0
     step_start_time = time.time()
+    start_time = step_start_time
     tokens_in_step = 0
     consecutive_bad_steps = 0
 
@@ -585,9 +586,6 @@ def train(  # noqa: C901
                 # Reset for next step
                 accumulated_loss = 0.0
                 tokens_in_step = 0
-                if step == 0:
-                    # Mark start time after first step for ETA
-                    start_time = step_start_time
                 step_start_time = time.time()
                 step += 1
 

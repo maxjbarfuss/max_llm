@@ -175,7 +175,7 @@ class JsonlReader(FormatReader):
 
 
 class ParquetReader(FormatReader):
-    def iter_documents(
+    def iter_documents(  # noqa: C901
         self, source: DataSource, tokenizer: TokenizerLike
     ) -> Iterator[tuple[str, np.ndarray]]:
         if isinstance(source.path, str) and source.path.startswith("hf://"):
@@ -493,7 +493,7 @@ def _apply_ratio_resampling(
     return resampled
 
 
-def select_source_indices(
+def select_source_indices(  # noqa: C901
     docs: dict[str, Sequence[np.ndarray]],
     config: MixingConfig,
     rng: np.random.RandomState | None = None,
@@ -602,7 +602,7 @@ def select_source_indices(
         )
 
     resampled: dict[str, np.ndarray] = {}
-    for name, items in docs.items():
+    for name, _items in docs.items():
         base = selected[name]
         target = target_counts.get(name, 0)
         if target <= 0:

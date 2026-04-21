@@ -252,7 +252,7 @@ def load_checkpoint(
     return checkpoint.get("step", 0)
 
 
-def create_simple_loaders(
+def create_simple_loaders(  # noqa: C901
     train_tokens: np.ndarray | torch.Tensor,
     seq_len: int,
     batch_size: int,
@@ -326,6 +326,7 @@ def create_simple_loaders(
             f"[Max LLM] num_workers=0 with {total_samples:,} samples: this can cause CPU lockup or unresponsiveness. "
             "Set num_workers=2 or higher for large datasets.",
             RuntimeWarning,
+            stacklevel=2,
         )
 
     def _make_dataset(

@@ -185,7 +185,7 @@ def _source_schedule(
     return source_names, schedule
 
 
-def _save_split_outputs_from_indices(
+def _save_split_outputs_from_indices(  # noqa: C901
     split_name: str,
     split_indices: dict[str, np.ndarray],
     source_documents: dict[str, Any],
