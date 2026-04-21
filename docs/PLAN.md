@@ -290,6 +290,7 @@ Evaluation and quality:
 - ✅ Per-component unit tests: RMSNorm (26 tests), RoPE (25 tests), FFN variants (39 tests), pos variants (25 tests), norm variants (29 tests), GQA/MQA attention coverage in `tests/unit/test_attention.py`
 - ✅ LayerNorm vs RMSNorm A/B (6L/1024H, 2K steps, Flash+DDP): RMSNorm lower memory, similar speed, slightly noisier early curve — **RMSNorm confirmed as Phase 4 default** (P4-DEC-1)
 - ✅ Phase 3 vs Phase 4 comparison: P3 best val ppl 24.0 (val_loss ~3.18); P4 final val_loss 2.660 → ppl ~14.3. **P4 Llama architecture clearly outperforms P3 baseline.**
+- ⏳ **Simplicity anneal** (2026-04-21): re-expose final checkpoint to Wikipedia + fresh Cosmopedia-v2 (~4B unseen tokens, seed=31415) at low LR to consolidate factual patterns. Config: `config/ephemeral/p4_wiki_cosmo_anneal_sgdr_20260421.toml`; 15K steps, SGDR 3 cycles, LR=5e-5, optimizer fresh. Dataprep running; training pending blend step.
 
 **Exit Criteria**:
 - ✅ Phase 4 Llama model achieves lower val perplexity than Phase 3 baseline — P4 ppl ~14.3 vs P3 ppl 24.0
