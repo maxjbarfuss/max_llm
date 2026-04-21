@@ -73,6 +73,8 @@ def chat_mode(
     temperature = config.inference.temperature
     top_p = config.inference.top_p
     top_k = config.inference.top_k
+    repetition_penalty = config.inference.repetition_penalty
+    repetition_window = config.inference.repetition_window
     max_new_tokens = max_tokens or config.inference.max_new_tokens
     max_seq_len = config.model.max_seq_length
 
@@ -82,7 +84,8 @@ def chat_mode(
     )
     print(f"   Data: {config.data.dataset_path}")
     print(
-        f"   Sampling: temp={temperature}, top_p={top_p}, top_k={top_k}, max_tokens={max_new_tokens}"
+        f"   Sampling: temp={temperature}, top_p={top_p}, top_k={top_k}, "
+        f"rep_penalty={repetition_penalty}, max_tokens={max_new_tokens}"
     )
     print("\n💬 Type prompts below (Ctrl+C to exit):\n")
 
@@ -130,6 +133,9 @@ def chat_mode(
                             temperature=temperature,
                             top_p=top_p,
                             top_k=top_k,
+                            repetition_penalty=repetition_penalty,
+                            repetition_window=repetition_window,
+                            context=tokens,
                         )
                         tokens.append(next_token)
                         decoded = tokenizer.decode(tokens[gen_start:])

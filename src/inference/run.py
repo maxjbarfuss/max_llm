@@ -43,6 +43,8 @@ def main() -> None:
     temperature = args.temperature if args.temperature is not None else inference.temperature
     top_p = args.top_p if args.top_p is not None else inference.top_p
     top_k = args.top_k if args.top_k is not None else inference.top_k
+    repetition_penalty = inference.repetition_penalty
+    repetition_window = inference.repetition_window
 
     tokenizer = create_tokenizer_from_data_config(config.data)
 
@@ -72,7 +74,15 @@ def main() -> None:
         for _ in range(max_new_tokens):
             input_ids = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(0)
             logits = model(input_ids)[0, -1]
-            next_token = sample_token(logits, temperature=temperature, top_p=top_p, top_k=top_k)
+            next_token = sample_token(
+                logits,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                repetition_penalty=repetition_penalty,
+                repetition_window=repetition_window,
+                context=tokens,
+            )
             tokens.append(next_token)
 
     print(tokenizer.decode(tokens))

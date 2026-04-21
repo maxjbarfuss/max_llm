@@ -20,6 +20,8 @@ class InferenceConfig:
     top_k: int = 0  # Disabled by default
     use_kv_cache: bool = True
     kv_cache_dtype: Literal["fp8", "bf16"] = "bf16"
+    repetition_penalty: float = 1.0
+    repetition_window: int = 64
 
     def __post_init__(self) -> None:
         """Validate inference configuration."""
@@ -35,6 +37,10 @@ class InferenceConfig:
             raise ValueError("top_p must be in [0, 1]")
         if self.top_k < 0:
             raise ValueError("top_k must be >= 0")
+        if self.repetition_penalty < 1.0:
+            raise ValueError("repetition_penalty must be >= 1.0")
+        if self.repetition_window <= 0:
+            raise ValueError("repetition_window must be positive")
 
     @classmethod
     def from_toml(cls, file_path: str | Path) -> "InferenceConfig":
