@@ -130,82 +130,17 @@ Comparison readout: the Phase 4 checkpoint is materially behind strong 1B–2B p
 
 ---
 
-## Architecture Review: Gaps and Forward Priorities
+## Architecture and Data Review Summary
 
-Notable strengths:
-- MLA + xIELU + block_attn + FlashNorm is an unusual combined stack.
-- P4-DEC-2 established a practical plateau-escape protocol.
-- The anneal used an explicitly measured fresh-data fraction (~77% unseen), not a vague clean-data pass.
+Full findings and forward priorities are documented in [DESIGN.md](DESIGN.md). Key highlights:
 
-### Techniques Not Yet Incorporated (Prioritized)
+**Architecture gaps (priority order)**: rope_base standardization → Z-loss → Muon optimizer → sequence packing → MoD → μP → interleaved SWA. All planned for Phase 5.
 
-| Technique | Phase | Effort | Payoff | Notes |
-|---|---|---|---|---|
-| **YaRN RoPE scaling** | Now | Trivial | Context extension w/o retraining | Current `rope_base=13892` is undocumented; YaRN or `rope_base=500000` fixes this |
-| **Z-loss regularization** | Next run | Trivial | Stability + small PPL improvement | `1e-4 × log(Σexp(logits))²` appended to CE loss; from PaLM/Gemini training |
-| **Muon optimizer** | Next run | Low | ~10–30% sample efficiency vs AdamW | Replace AdamW on 2-D weight matrices only; keep AdamW for embeddings/biases |
-| **Sequence packing** | Data pipeline | Medium | ~20–40% throughput on short-doc corpora | Pack multiple docs per context window with block-diagonal causal mask |
-| **Mixture of Depths (MoD)** | P5 fine-tune | Medium | Variable-compute inference efficiency | Per-layer top-k token router; can be fine-tuned onto frozen base |
-| **μP (Maximal Update Parameterization)** | P5 training | Medium | HP transfer across model sizes | Run LR sweep on 5M proxy; transfer to 300M+ without re-sweep |
-| **Interleaved SWA + full attention** | Next run | Low | Long-context memory efficiency | Already implemented in `src/models/attention/sliding_window_attention.py` |
+**Data problems found**:
+- FineWeb-Edu is a strict subset of FineWeb — current mix double-exposes educational pages.
+- WikiText-103 is fully covered by the Wikipedia dump — 1.07B tokens of pure redundancy.
+- OWT median doc length is 84 tokens — sequence packing is high-leverage.
+- Cosmopedia v2 is Mistral-generated synthetic text (20% of corpus) — provenance not yet documented.
+- Unigram 8K tokenizer trained on Phase 3 distribution, pre-dating the 20% Cosmopedia addition.
 
-### rope_base Audit
-
-`rope_base=13892` in the final anneal config has no documented rationale (likely a warm-start artifact near the default 10000). Recommend `rope_base=500000` (Llama 3 style) for the next training run, or apply YaRN scaling from the current checkpoint for immediate context extension.
-
----
-
-## Data Review: Gaps and Forward Priorities
-
-### Actual Phase 4 Corpus Composition
-
-| Source | Docs | Tokens | % Tokens | Median doc (tokens) |
-|---|---|---|---|---|
-| OpenWebText | 79.6M | 8.87B | 33% | **84** |
-| FineWeb | 7.5M | 6.72B | 25% | 537 |
-| Cosmopedia v2 | 6.2M | 5.37B | 20% | 796 |
-| FineWeb-Edu | 2.3M | 2.68B | **10%** | 717 |
-| Wikipedia | 1.7M | 1.88B | 7% | 532 |
-| WikiText-103 | 7.4M | 1.07B | **4%** | 135 |
-| TinyStories | 2.7M | 0.13B | 0.5% | **48** |
-| stories_young_children | 0.28M | 0.13B | 0.5% | 472 |
-
-### What's Working
-
-- NFKC + control-char stripping.
-- Two-stage UNK filtering.
-- Stratified per-source validation split.
-- Spill-cache tokenization and resume behavior.
-- Factual-first curriculum ordering.
-- Fresh-subset anneal selection (~77% unseen Cosmopedia docs).
-
-### Structural Problems Found
-
-- **FineWeb-Edu duplicates FineWeb**: the corpus currently double-exposes educational pages.
-- **WikiText-103 duplicates Wikipedia**: it adds short noisy fragments already covered by the full dump.
-- **OWT wastes context**: median length is 84 tokens, so packing and stronger filtering are high leverage.
-
-### Data Gaps Not Yet Addressed (Prioritized)
-
-| Gap | Effort | Impact | When |
-|---|---|---|---|
-| Remove WikiText-103 (fully covered by Wikipedia) | Trivial | Med | Next data run |
-| Deduplicate FineWeb ↔ FineWeb-Edu (Edu is a subset) | Low | Med-High | Next data run |
-| Heuristic OWT quality filters (punctuation rate, line repetition, symbol ratio) | Low | High | Next data run |
-| Language detection filter — fastText on OWT/FineWeb | Low | Med | Next data run |
-| Raise OWT min_length to ~100–150 tokens | Trivial | Med | Next data run |
-| MinHash LSH near-dedup within+across OWT/FineWeb | High | High | Phase 5 pre-train |
-| Sequence packing (already planned for P5) | Med | High | Phase 5 |
-| New 32K Unigram tokenizer on Phase 4 distribution | Med | High (Phase 5+) | Phase 5 decision |
-| Add long-form books source (Project Gutenberg) | Low | Med | Phase 5+ |
-| Add code source (The Stack v2) | Low | Med | Phase 5+ |
-| Per-source repetition budget tracking | Low | Med | Next data run |
-| Document Cosmopedia synthetic provenance | Trivial | Low | Now |
-
-### Cosmopedia Note
-
-Cosmopedia v2 (20% of the corpus) is synthetic text generated by HuggingFace with Mistral. That provenance should be recorded anywhere this corpus is described publicly.
-
-### Tokenizer Mismatch
-
-The Unigram 8K tokenizer was trained on the older Phase 3 distribution and missed Cosmopedia, which became 20% of the Phase 4 corpus. A 32K tokenizer trained on the full cleaned Phase 4 distribution is the highest-leverage data investment before more pretraining.
+All data corrections are Wave 0 tasks in [PLAN.md](PLAN.md).

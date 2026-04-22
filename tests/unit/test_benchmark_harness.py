@@ -5,9 +5,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from src.eval.runner import BenchmarkRunner, BenchmarkRunnerConfig
-from src.eval.scoring import _fit_context_window
-from src.eval.types import MCQExample
+from src.eval import BenchmarkRunner, BenchmarkRunnerConfig, MCQExample, _fit_context_window
 
 
 class _FakeTokenizer:
@@ -24,10 +22,8 @@ class _FakeTokenizer:
 
 class _FakeModel(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Strongly prefer token id 1 over others.
         bsz, seq = x.shape
-        vocab = 16
-        logits = torch.zeros((bsz, seq, vocab), dtype=torch.float32, device=x.device)
+        logits = torch.zeros((bsz, seq, 16), dtype=torch.float32, device=x.device)
         logits[..., 1] = 5.0
         return logits
 
@@ -44,10 +40,8 @@ class _FakeTask:
 
 
 def test_fit_context_window_keeps_choice_and_trims_prompt() -> None:
-    prompt = [1, 2, 3, 4]
-    choice = [5, 6, 7]
-    p2, c2 = _fit_context_window(prompt, choice, max_seq_len=5)
-    assert c2 == choice
+    p2, c2 = _fit_context_window([1, 2, 3, 4], [5, 6, 7], max_seq_len=5)
+    assert c2 == [5, 6, 7]
     assert p2 == [3, 4]
 
 
@@ -55,7 +49,7 @@ def test_benchmark_runner_aggregates_accuracy() -> None:
     runner = BenchmarkRunner(
         BenchmarkRunnerConfig(tasks=["fake"], split="validation", max_examples=2)
     )
-    runner._registry = {"fake": _FakeTask()}  # inject test task registry
+    runner._registry = {"fake": _FakeTask()}
 
     result = runner.run(
         model=_FakeModel(),
@@ -64,6 +58,5 @@ def test_benchmark_runner_aggregates_accuracy() -> None:
         device=torch.device("cpu"),
     )
 
-    assert "fake" in result["per_task"]
     assert result["per_task"]["fake"] == 1.0
     assert result["macro_accuracy"] == 1.0

@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 from src.config.experiment import ExperimentConfig
-from src.eval.runner import BenchmarkRunner, BenchmarkRunnerConfig
+from src.eval import BenchmarkRunner, BenchmarkRunnerConfig
 from src.inference.utils import (
     create_tokenizer_from_data_config,
     load_checkpoint_into_model,

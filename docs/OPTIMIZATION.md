@@ -104,12 +104,3 @@ Commands:
 - Missing flash-attn: `pip install flash-attn --no-build-isolation` (fallback is `standard`)
 - NCCL checks: `python -c "import torch; print(torch.cuda.is_available())"`
 
-## Already-Documented Next Steps
-
-- Z-loss regularization
-- Muon optimizer for 2-D weights
-- Sequence packing for short-document efficiency
-- YaRN / RoPE-base standardization for longer context behavior
-- KV-cache path for faster autoregressive decoding
-
-Details and rationale are in `docs/PHASE_4_CLOSEOUT.md`.

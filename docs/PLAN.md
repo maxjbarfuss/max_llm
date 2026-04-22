@@ -159,107 +159,48 @@ Architecture extensions (defer until core Phase 5 stack is stable):
 - ☐ Interleaved SWA + full attention ablation against pure MLA baseline
 
 **Exit Criteria**:
-- ☐ Corpus hygiene: WikiText-103 removed; FineWeb/FineWeb-Edu deduplication decision made and applied; OWT quality filters + min_length raise + language filter all active in pipeline
-- ☐ Near-dedup: MinHash LSH run on OWT + FineWeb; dedup rate documented; updated corpus stats.json committed
-- ☐ Sequence packing: throughput improvement measured and documented against non-packed baseline
-- ☐ Tokenizer decision documented: either new 32K tokenizer trained + validated, or explicit decision to proceed with 8K for LoRA-only Phase 5 with note to revisit for Phase 6
-- ☐ Muon + Z-loss first run: loss curve vs AdamW baseline documented; Z-loss contribution < 5% of total loss and stable
-- ☐ μP proxy sweep: optimal LR found on 5M proxy model; transfer validated on full config with < 10% perplexity error vs direct sweep
-- ☐ YaRN context extension: generation at 2048 tokens (2× training length) produces coherent output without quality collapse
-- ☐ KV-cache provides > 2× generation speedup at sequence length 512
-- ☐ LoRA-tuned model better instruction-following than base
-- ☐ LoRA adds < 1% trainable parameters
-- ☐ SFT dataset (1–5M pairs) successfully formatted and tokenized with ChatML/Alpaca templates
-- ☐ Continual learning replay buffer implemented and functional
-- ☐ Evaluation harness runs successfully on selected benchmarks (e.g., HellaSwag, MMLU)
-- ☐ Catastrophic forgetting metric (Δ) calculated and documented across all fine-tuning stages
-- ☐ Grounding fine-tuning complete: perplexity on held-out grounding examples improves vs pre-grounding baseline
-- ☐ 50K–500K grounding examples curated, tokenized, and validated
-- ☐ DPO model > 60% preference accuracy on held-out pairs
-- ☐ Generation quality better or safer than SFT baseline
-- ☐ Reward margin trend positive throughout training
-- ☐ 10K–100K preference pairs and 5K–10K reward labels curated and validated
-- ☐ Reward model achieves < 0.1 MSE on held-out test set (if applicable)
-- ☐ Safety evaluation: refusal rate on adversarial prompt suite > 80% AND false-refusal rate on benign prompts < 10% (both documented)
+- ☐ Corpus hygiene: WikiText-103 removed; FineWeb/FineWeb-Edu dedup resolved; OWT quality filters + min_length + language filter active
+- ☐ Near-dedup: MinHash LSH run on OWT + FineWeb; dedup rate + updated stats.json committed
+- ☐ Sequence packing: throughput gain vs non-packed baseline measured and documented
+- ☐ Tokenizer decision: 32K trained + validated, or explicit defer with note
+- ☐ Muon + Z-loss first run: curve vs AdamW baseline documented
+- ☐ μP proxy sweep: LR transfer from 5M proxy to 12L/1024H validated
+- ☐ KV-cache: > 2× generation speedup at seq_len 512
+- ☐ YaRN: coherent output at 2048 tokens (2× training length)
+- ☐ LoRA SFT: better instruction-following than base; < 1% trainable parameters
+- ☐ Grounding: ppl improves on held-out grounding examples vs pre-grounding baseline
+- ☐ DPO/GRPO: > 60% preference accuracy on held-out pairs; reward margin trend positive
+- ☐ Safety eval: refusal rate > 80% on adversarial suite; false-refusal < 10% on benign prompts
 
 ---
 
 ### Phase 6: MoE
 
-**Goal**: Sparse MoE on top of the Phase 5 stack, continual expert specialization. (MLA already delivered in Phase 4.)
+**Goal**: Sparse MoE on the Phase 5 stack with continual expert specialization. (MLA already in Phase 4.)
 
-**Dependencies**: Phase 5 post-training baseline available for dense-vs-sparse comparison.
-**Artifacts**: Expert-routing diagnostics, MoE capacity/overflow analysis, dense-vs-sparse comparison report.
-**Kill Criteria**: Stop sparse rollout if token drop >5% or expert collapse persists beyond 3 mitigation attempts.
-**Out of Scope**: Hybrid recurrent architecture and long-context recurrent benchmarking.
-**Decision Log**: Record decisions as `P6-DEC-<n>` in Running Session Log.
-
-**Tasks**:
-
-Data:
-- ☐ Route SFT/preference data through token-to-expert assignments; measure specialization (entropy, load distribution)
-
-Components:
-- ☐ MLA: low-rank KV compression, latent projections, decoupled RoPE, compressed KV-cache path
-- ☐ MoE: N routed experts + 1 shared expert, router network with auxiliary load-balance loss, top-k gating
-- ☐ MoE capacity controls: token capacity factor, overflow handling, expert config (count, k, hidden dim)
-- ☐ Inference routing optimization: efficient expert selection and dispatch during generation
-
-Training and evaluation:
-- ☐ Track per-expert utilization and token-dropping rates
-- ☐ Integrate MLA + MoE (DeepSeek-V2/V3 style)
-- ☐ Measure continual expert-routing drift and load imbalance over phases
-- ☐ Compare against dense baseline (same total params): perplexity, throughput, memory, KV-cache reduction, utilization histograms
+**Dependencies**: Phase 5 baseline available for dense-vs-sparse comparison.
+**Kill Criteria**: Stop if token drop > 5% or expert collapse persists beyond 3 mitigation attempts.
 
 **Exit Criteria**:
-- ☐ MLA achieves smaller KV cache than GQA at comparable perplexity
-- ☐ MoE val perplexity ≤ dense at same FLOPs
-- ☐ Expert utilization balanced (5–30% per expert with 8 experts)
-- ☐ Load-balance loss converges
-- ☐ SFT/preference data successfully partitioned for expert routing
-- ☐ Expert specialization drift documented across curriculum phases
-- ☐ Token dropping rate remains < 1% during training and inference
+- ☐ MoE val ppl ≤ dense baseline at same FLOPs
+- ☐ Expert utilization balanced (5–30% per expert, 8 experts); load-balance loss converges
+- ☐ Token drop < 1% during training and inference
+- ☐ Dense-vs-sparse comparison report committed
 
 ---
 
 ### Phase 7: Dual-Stream Reasoning
 
-**Goal**: GRU Reasoning Stream parallel to Transformer, GRU Combiner for gated fusion, scheduled teacher forcing, STaR bootstrap, inference feedback loop.
+**Goal**: GRU reasoning stream parallel to transformer, gated fusion combiner, STaR bootstrap, inference feedback loop.
 
-**Dependencies**: Phase 6 sparse architecture stabilized with reproducible evaluation pipeline.
-**Artifacts**: Dual-stream vs transformer-only comparison report, reasoning accuracy delta on GSM8K/MATH/ARC, GRU overhead benchmark, STaR bootstrap trace corpus.
-**Kill Criteria**: Stop if reasoning-enabled model fails to exceed GRU-zeroed baseline on GSM8K after Phase 7a; stop if inference overhead exceeds 30% vs transformer-only at seq_len 512.
-**Out of Scope**: New alignment objectives, additional pretraining data curriculum.
-**Decision Log**: Record decisions as `P7-DEC-<n>` in Running Session Log.
-
-**Tasks**:
-
-Architecture (Phase 7a — Dual-stream foundation):
-- ☐ `src/models/rnn/reasoning_gru.py`: GRU cells on input embeddings → per-position reasoning hidden states
-- ☐ `src/models/rnn/gru_combiner.py`: gated fusion `z = σ(W_z·[h_transformer, h_gru])`; update gate learns per-token weighting
-- ☐ `ReasoningDecoderLM` in `src/models/learning_model/`: wires both streams; supports graceful degradation (zero GRU contribution)
-- ☐ Special tokens: `<|reasoning|>`, `<|answer|>` added to tokenizer vocab
-- ☐ Loss masking: answer tokens → main cross-entropy; reasoning tokens → GRU teacher forcing
-- ☐ Scheduled teacher forcing: 100% gold traces → 0% gold over Phase 7a (cosine or linear schedule)
-
-Data:
-- ☐ Curate/download 50K–500K reasoning trace triples: GSM8K, MATH, ARC-Challenge, OpenOrca/Orca-2
-- ☐ `ReasoningDataset`: parse (input, reasoning_trace, answer) triples; emit with/without trace per batch ratio
-- ☐ Training mix: 60% reasoned (gold trace) / 40% direct (GRU zeroed)
-
-Training (Phase 7b — Feedback loop + bootstrap):
-- ☐ Inference feedback: prediction tokens feed back as GRU next input at each generation step
-- ☐ STaR bootstrap: generate reasoning traces on problems model answers correctly; SFT on self-generated traces
-- ☐ Evaluate: reasoning-enabled accuracy vs GRU-zeroed accuracy on held-out GSM8K/MATH/ARC
-- ☐ Latency benchmark: GRU-enabled vs transformer-only (target: <20% overhead at seq_len 512)
+**Dependencies**: Phase 6 sparse architecture stabilized.
+**Kill Criteria**: Stop if reasoning model fails to beat GRU-zeroed baseline on GSM8K, or if inference overhead > 30%.
 
 **Exit Criteria**:
-- ☐ Reasoning-enabled model >10% accuracy improvement over Phase 6 baseline on GSM8K
+- ☐ Reasoning-enabled model > 10% accuracy improvement over Phase 6 baseline on GSM8K
 - ☐ GRU-zeroed model matches Phase 6 baseline (graceful degradation verified)
-- ☐ GRU inference overhead <20% vs transformer-only at seq_len 512
-- ☐ 50K–500K reasoning trace triples curated and validated
-- ☐ STaR bootstrap corpus generated and SFT training completed
-- ☐ Scheduled teacher forcing convergence documented (reasoning quality vs gold-trace ratio curve)
+- ☐ GRU inference overhead < 20% vs transformer-only at seq_len 512
+- ☐ STaR bootstrap completed; scheduled teacher forcing curve documented
 
 ---
 
