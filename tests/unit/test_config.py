@@ -218,6 +218,35 @@ class TestTrainingConfig:
         with pytest.raises(ValueError, match="wsd_lowered_linear_alpha"):
             make_training_config(wsd_lowered_linear_alpha=0.0)
 
+    def test_benchmark_defaults(self):
+        config = make_training_config()
+        assert config.benchmark_tasks == []
+        assert config.benchmark_eval_interval == 0
+        assert config.benchmark_max_examples == 128
+        assert config.benchmark_split == "validation"
+        assert config.benchmark_length_normalize is True
+
+    def test_benchmark_interval_negative_raises(self):
+        with pytest.raises(ValueError, match="benchmark_eval_interval"):
+            make_training_config(benchmark_eval_interval=-1)
+
+    def test_benchmark_max_examples_zero_raises(self):
+        with pytest.raises(ValueError, match="benchmark_max_examples"):
+            make_training_config(benchmark_max_examples=0)
+
+    def test_benchmark_split_empty_raises(self):
+        with pytest.raises(ValueError, match="benchmark_split"):
+            make_training_config(benchmark_split="")
+
+    def test_benchmark_tasks_list_accepted(self):
+        config = make_training_config(
+            benchmark_tasks=["hellaswag", "piqa"],
+            benchmark_eval_interval=500,
+            benchmark_max_examples=64,
+        )
+        assert config.benchmark_tasks == ["hellaswag", "piqa"]
+        assert config.benchmark_eval_interval == 500
+
 
 class TestInferenceConfig:
     """Tests for InferenceConfig validation."""
