@@ -6,7 +6,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 1. Read [MEMORY.md](../.github/MEMORY.md) first — current focus and agent working state; read [SESSION_LOG.md](../.github/SESSION_LOG.md) for completed-session history
 2. Check Phase Progress table and the current phase's task list for execution detail
 3. For architecture and design decisions: [DESIGN.md](DESIGN.md)
-4. For completed phases: [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md) | [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md)
+4. For completed phases: [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md) | [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md) | [PHASE_4_CLOSEOUT.md](PHASE_4_CLOSEOUT.md)
 
 ---
 
@@ -17,7 +17,7 @@ Purpose: phased execution roadmap for human contributors and AI agents.
 | **1** | ✅ Done | Foundation | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, env notes |
 | **2** | ✅ Done | Skeleton & Reproducibility | M | Low (scope clarity) | TinyStories + WikiText-103 (1–10M tokens) | Tokenizer, data pipeline, training loop, checkpointing, seed control, overfit test |
 | **3** | ✅ Done | Capable GPT-2-like model (~60M params, coherent output) | L | Medium | Mixed corpus: TinyStories (~10%), WikiText-103 (full), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K tokenizer | Architecture + optimization stack complete. Two milestone runs: p3_final_unigram (ppl 24.0, 12K steps) and p3_final_27b_merge50 (ppl 28.9, 10,836 steps on 27B-token corpus). Coherent output gate passed. [Phase 3 Closeout](PHASE_3_CLOSEOUT.md) |
-| **4** | ✅ Done | Llama Architecture + Scale-Up Training | L | Medium | Wikipedia → Cosmopedia-v2 → mixed curriculum; existing 27B corpus for P3 comparison | P3 vs P4 ppl comparison, 5-stage curriculum loss curves, final checkpoint (`p4_final_mixed_27b_wsd_20260416`, val_loss 2.660, ppl ~14.3) |
+| **4** | ✅ Done | Llama Architecture + Scale-Up Training | L | Medium | Wikipedia → Cosmopedia-v2 → mixed curriculum; existing 27B corpus for P3 comparison | P3 vs P4 ppl comparison, 5-stage curriculum loss curves, simplicity anneal; final checkpoint (`p4_final_anneal_20260422`, val_loss 2.323, ppl ~9.2). [Phase 4 Closeout](PHASE_4_CLOSEOUT.md) |
 | **5** | — | Post-Training | XL | High (forgetting + alignment) | SFT, grounding, preference data | LoRA adapters, grounding benchmark, reward-model card, safety evaluation |
 | **6** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + preference with curriculum | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
 | **7** | — | Dual-Stream Reasoning | XL | High (training-inference mismatch) | Reasoning trace triples + STaR | Dual-stream comparison, reasoning accuracy delta, GRU overhead benchmark |
@@ -290,7 +290,7 @@ Evaluation and quality:
 - ✅ Per-component unit tests: RMSNorm (26 tests), RoPE (25 tests), FFN variants (39 tests), pos variants (25 tests), norm variants (29 tests), GQA/MQA attention coverage in `tests/unit/test_attention.py`
 - ✅ LayerNorm vs RMSNorm A/B (6L/1024H, 2K steps, Flash+DDP): RMSNorm lower memory, similar speed, slightly noisier early curve — **RMSNorm confirmed as Phase 4 default** (P4-DEC-1)
 - ✅ Phase 3 vs Phase 4 comparison: P3 best val ppl 24.0 (val_loss ~3.18); P4 final val_loss 2.660 → ppl ~14.3. **P4 Llama architecture clearly outperforms P3 baseline.**
-- ⏳ **Simplicity anneal** (2026-04-21): re-expose final checkpoint to Wikipedia + fresh Cosmopedia-v2 (~4B unseen tokens, seed=31415) at low LR to consolidate factual patterns. Config: `config/ephemeral/p4_wiki_cosmo_anneal_sgdr_20260421.toml`; 15K steps, SGDR 3 cycles, LR=5e-5, optimizer fresh. Dataprep running; training pending blend step.
+- ✅ **Simplicity anneal** (2026-04-22): Wikipedia (7.4B) + fresh Cosmopedia-v2 (3.98B, seed=31415, ~77% unseen), 15K SGDR steps. Final val_loss 2.323, ppl ~9.2. Config: `config/milestones/p4_final_anneal_20260422.toml`; checkpoint: `outputs/milestones/p4_final_anneal_20260422/checkpoint.pt`.
 
 **Exit Criteria**:
 - ✅ Phase 4 Llama model achieves lower val perplexity than Phase 3 baseline — P4 ppl ~14.3 vs P3 ppl 24.0

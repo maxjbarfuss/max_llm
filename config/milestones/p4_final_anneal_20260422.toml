@@ -1,0 +1,103 @@
+# Phase 4 Anneal — Wikipedia + fresh Cosmopedia v2, SGDR schedule
+#
+# Goal: "simplicity annealing" — expose the final mixed-corpus checkpoint to
+# cleaner, more structured text so the model consolidates factual/narrative
+# patterns at a lower-entropy regime. Short run at low LR.
+#
+# Corpus (train):
+#   Wikipedia EN 2026-03-01   7.403B tokens   (full; already tokenized)
+#   Cosmopedia v2 (fresh)     ~3.980B tokens  (seed=31415; ~77% unseen vs prior 7B run)
+#   TOTAL                     ~11.4B tokens
+#
+# Build blended dataset before launching:
+#   source .venv/bin/activate
+#   python3 - <<'PY'
+#   import numpy as np
+#   wiki  = np.load("data/fast/p4_wikipedia_en_20260301_unigram8192_train.npy", mmap_mode="r")
+#   cosmo = np.load("data/fast/p4_cosmopedia_v2_4b_fresh_unigram8192_20260421_train.npy", mmap_mode="r")
+#   blend = np.concatenate([wiki, cosmo])
+#   np.save("data/fast/p4_wiki_cosmo_anneal_unigram8192_20260421_train.npy", blend)
+#   print(f"Saved {len(blend):,} tokens")
+#   PY
+#
+# Val set: Wikipedia val (clean factual signal; avoids mixed-corpus noise).
+#
+# Schedule shape (SGDR, 3 cycles):
+#   warmup   :   200 steps   — short ramp from final checkpoint
+#   cycle 1  : 4,933 steps   @ LR 5e-5  → 2.5e-6 (cosine)
+#   cycle 2  : 4,933 steps   @ LR 4e-5  → 2.5e-6 (0.8× decay)
+#   cycle 3  : 4,934 steps   @ LR 3.2e-5 → 2.5e-6 (0.8× decay again)
+#   total    : 15,000 steps  (~4.9B tokens, ~0.43 passes over blend)
+#
+# Tokens/step: 10 batch × 16 accum × 1024 seq × 2 GPUs = 327,680
+
+[experiment]
+name = "p4-wiki-cosmo-anneal-sgdr-20260421"
+output_dir = "./outputs/ephemeral/p4_wiki_cosmo_anneal_sgdr_20260421"
+
+[model]
+hidden_size = 1024
+num_heads = 16
+num_kv_heads = 4
+vocab_size = 8192
+max_seq_length = 1024
+num_layers = 12
+norm_type = "flash"
+dropout = 0.0
+ffn_type = "xielu"
+intermediate_size = 4096
+mla_latent_dim = 512
+pos_type = "rope"
+rope_base = 13892
+attn_type = "mla"
+res_type = "block_attn"
+attn_res_num_blocks = 6
+
+[training]
+batch_size = 10
+gradient_accumulation_steps = 16
+max_steps = 15000
+warmup_steps = 200
+scheduler_type = "sgdr"
+sgdr_num_cycles = 3
+sgdr_cycle_decay = 0.8
+learning_rate = 5e-5
+min_lr_ratio = 0.05             # floor = 2.5e-6
+weight_decay = 0.05
+betas = [0.9, 0.95]
+epsilon = 1e-8
+gradient_clip_norm = 1.0
+label_smoothing = 0.0
+precision_schedule = [[0, -1, "bf16"]]
+checkpoint_interval = 1000
+eval_interval = 500
+eval_max_batches = 50
+log_interval = 25
+use_torch_compile = true
+use_distributed = true
+distributed_backend = "ddp"
+attention_backend = "flash"
+resume_from_checkpoint = "./outputs/ephemeral/p4_wiki_cosmo_anneal_sgdr_20260421/checkpoint_step_1000.pt"
+resume_optimizer_state = true
+resume_scheduler_state = true
+
+[inference]
+temperature = 0.25
+top_p = 0.5
+top_k = 40
+max_new_tokens = 512
+repetition_penalty = 1.15
+repetition_window = 256
+
+[data]
+dataset_path = "data/fast/p4_wiki_cosmo_anneal_unigram8192_20260421_train.npy"
+validation_dataset_path = "data/fast/p4_wikipedia_en_20260301_unigram8192_val.npy"
+tokenizer_name = "unigram"
+tokenizer_mode = "utf8"
+tokenizer_vocab_size = 8192
+tokenizer_backend = "unigram"
+unigram_model_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_tokenizer.model"
+max_length = 1024
+num_workers = 4
+prefetch_factor = 4
+seed = 7777
