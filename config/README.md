@@ -114,6 +114,18 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `eval_on_test` | bool | `false` | Also evaluate on `data.test_dataset_path` at each eval interval |
 | `log_interval` | int | `10` | Print training stats every N steps |
 
+### External Benchmarks (MCQ Harness)
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `benchmark_tasks` | `[string, ...]` | `[]` | Task names to run periodically (currently: `"hellaswag"`, `"piqa"`, `"arc_easy"`) |
+| `benchmark_eval_interval` | int | `0` | Run benchmarks every N train steps; `0` disables periodic benchmark runs |
+| `benchmark_max_examples` | int | `128` | Max examples per task per run (keep small during training for low overhead) |
+| `benchmark_split` | string | `"validation"` | Split passed to dataset loader (e.g. `validation`) |
+| `benchmark_length_normalize` | bool | `true` | Use average token log-probability per option (reduces length bias) |
+
+When enabled, benchmark snapshots are appended to `output_dir/benchmark_curve.jsonl` and also logged to TensorBoard under `eval_benchmark/*`.
+
 ### Early Stopping and Regularization
 
 | Field | Type | Default | Notes |

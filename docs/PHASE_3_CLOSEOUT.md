@@ -102,26 +102,16 @@ early stopping patience=5) confirms all safety infrastructure works.
 
 ## Technology Stack
 
-| Feature | Status | Key Result |
-|---|---|---|
-| Flash Attention 2 | ✅ | Throughput 50K → 165K tok/s |
-| BF16 mixed precision | ✅ | Stable 15K+ steps, no NaN/Inf |
-| Gradient accumulation | ✅ | Eff. batch up to 120 (12×10), smooth convergence |
-| Early stopping | ✅ | Patience counter working (triggers at plateau) |
-| Label smoothing ε=0.1 | ✅ | Smoother loss curves, no sudden jumps |
-| Selective weight decay | ✅ | Bias/LayerNorm excluded (ndim < 2); works with DDP |
-| torch.compile | ✅ | AOT compilation ready; ~126K tok/s measured |
-| Reproducibility | ✅ | Identical seeds → identical trajectories |
-| AdamW fused | ✅ | Fused CUDA kernel, β=(0.9, 0.95); replaces Adam (P3) |
-| WSD scheduler | ✅ | Warmup-Stable-Decay with sqrt/linear/lowered-linear shapes; supports run continuation (P3) |
-| Fused QKV | ✅ | Single `nn.Linear(d, 3d)` + `.chunk(3)`; no Q/K/V bias; fewer kernel launches (P3.8) |
-| Scaled residual init | ✅ | `out_proj` + FFN `linear2`: `N(0, 0.02/√(2L))` GPT-2 style; prevents variance explosion at depth (P3.8) |
-| Gradient norm logging | ✅ | `grad_norm` in CSV + TensorBoard; enables stability monitoring (P3.8) |
-| Chunked CE loss | ✅ | Iterates (B·T, V) in 4096-token chunks; saves ~800 MB at B=24, T=2048, V=8192 (P3.9) |
-| FSDP | ✅ | Model sharding integrated alongside DDP; advanced from P4 (P3.9) |
-| Random sequence offset | ✅ | `TokenDataset.set_epoch(epoch)` varies sequence boundaries each epoch (P3) |
-| NFKC/unk filtering | ✅ | Unicode normalization + unknown token filtering in data prep; cleaner corpus (P3.9) |
-| DistributedSampler | ✅ | Proper data sharding across DDP ranks; `set_epoch` called per epoch (P3) |
+Phase 3 validated the first stable full training stack for the project:
+
+- Flash Attention 2 + bf16 mixed precision for throughput and memory efficiency
+- Gradient accumulation, selective weight decay, and gradient clipping for stable optimization
+- AdamW fused + WSD scheduler as the long-run optimizer/scheduler baseline
+- torch.compile, fused QKV, scaled residual init, and chunked CE loss as the main efficiency upgrades
+- DDP/FSDP, DistributedSampler, gradient norm logging, and resume hardening for scale and observability
+- NFKC normalization, unknown-token filtering, and random sequence offset variation for cleaner and more robust data flow
+
+The canonical project-wide optimization summary now lives in [OPTIMIZATION.md](OPTIMIZATION.md). This closeout keeps only the Phase 3 validation outcomes and milestone evidence.
 
 **Root cause of Phase 2 BPE failure**: SimpleLM head is rank-128 into 50K-dim vocab — structurally
 impossible. DecoderLM's multi-head attention produces implicit high-rank representations.

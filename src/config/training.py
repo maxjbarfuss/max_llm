@@ -1,6 +1,6 @@
 """TrainingConfig definition."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -55,11 +55,17 @@ class TrainingConfig:
     label_smoothing: float = 0.0
     eval_on_test: bool = False
     eval_max_batches: int = 0  # 0 = no limit; set to cap expensive eval on large val sets
+    benchmark_tasks: list[str] = field(default_factory=list)
+    benchmark_eval_interval: int = 0
+    benchmark_max_examples: int = 128
+    benchmark_split: str = "validation"
+    benchmark_length_normalize: bool = True
 
     def __post_init__(self) -> None:
         """Validate training configuration."""
         self._coerce_toml_types()
         self._validate_basics()
+        self._validate_benchmark()
         self._validate_wsd()
         self._validate_schedule()
 
@@ -88,6 +94,15 @@ class TrainingConfig:
             raise ValueError("resume_lr_hold_steps + warmup_steps must be < max_steps")
         if not (0 <= self.min_lr_ratio <= 1):
             raise ValueError("min_lr_ratio must be in [0, 1]")
+
+    def _validate_benchmark(self) -> None:
+        """Validate benchmark harness configuration."""
+        if self.benchmark_eval_interval < 0:
+            raise ValueError("benchmark_eval_interval must be >= 0")
+        if self.benchmark_max_examples <= 0:
+            raise ValueError("benchmark_max_examples must be > 0")
+        if not self.benchmark_split:
+            raise ValueError("benchmark_split cannot be empty")
 
     def _validate_wsd(self) -> None:
         """Validate WSD scheduler fractions."""

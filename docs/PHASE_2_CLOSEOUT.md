@@ -46,44 +46,9 @@ Embedding-only architecture (num_layers=0) demonstrates reproducible training pi
 
 ## Lessons Learned
 
-### 1. **Data Scale Matters Significantly**
-- 100M token corpus enables meaningful convergence
-- ASCII-127 (English-only): optimal efficiency for TinyStories corpus
-- Final perplexity: 18.6 at step 2000
+Detailed project-wide lessons now live in [LESSONS.md](../.github/LESSONS.md).
 
-### 2. **Hyperparameter Optimization — Systematic Exploration**
-- **Learning Rate**: Can push 10-20× baseline (0.001 → 0.015) for embedding-only models
-	- Sweet spot: 0.01–0.02 (tested 0.001, 0.003, 0.005, 0.01, 0.02, 0.03, 0.05)
-	- Degradation at 0.03+
-- **Weight Decay**: Extremely sensitive — 0.1 completely kills learning (loss stuck at 4.85)
-	- Use 0.0 for embedding-only architectures
-- **Batch Size**: Scaled 8 → 128 (16× increase) with grad_accum=4
-	- Effective batch size 512 works excellently
-	- Tested hardware limits: 8, 32, 64, 128, 256, 512 (all successful)
-- **Hidden Size**: 1024 (vs 128 baseline) → better capacity utilization
-
-### 3. **Training Optimizations Enabled Rapid Iteration**
-- Mixed precision (bf16): ~40% speedup, minimal accuracy impact
-- Gradient accumulation: enables large effective batch sizes on single GPU
-- Fast tokenization pipeline: 13.5M tokens/s throughput
-- Multiple training runs: systematic exploration of hyperparameter space
-- **Result**: 15+ training runs in single session, enabling data-driven tuning
-
-### 4. **Architecture Insights**
-- Embedding-only (num_layers=0) sufficient for pipeline testing
-- Cannot generate coherent text without attention mechanism
-- Perplexity ≠ generation quality for embedding-only models
-- Achieved ppl=18.6 but outputs only unigram statistics
-
-### 5. **Config System Refactoring**
-- Made inference/training parameters optional with sensible defaults
-- Reduced boilerplate: minimal configs now ~30 lines vs 100+ previously
-- Single `LearningModel` class handles both SimpleLM and DecoderLM
-
-### 6. **Loss Dynamics**
-- Training still improving at step 2000 (not plateaued)
-- Loss curve slope indicates capacity for 3000-5000 steps before saturation
-- Cosine schedule decay preserves late-stage fine-tuning
+Phase 2-specific takeaways are captured there and in the validation evidence above; this closeout keeps the historical record focused on outcomes, metrics, and artifacts.
 
 ---
 

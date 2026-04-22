@@ -170,4 +170,5 @@ Read: [NVIDIA WSL User Guide](https://docs.nvidia.com/cuda/wsl-user-guide/)
 - [README.md](../../README.md): Project overview and status
 - [CONTRIBUTING.md](../../CONTRIBUTING.md): Workflow and contribution rules
 - [.github/MEMORY.md](../../.github/MEMORY.md): Current session working state
-- [.github/SESSION_LOG.md](../../.github/SESSION_LOG.md): History of completed work
+- [.github/SESSION_LOG.md](../../.github/SESSION_LOG.md): Recent history of completed work
+- [.github/SESSION_LOG_ARCHIVE.md](../../.github/SESSION_LOG_ARCHIVE.md): Archived older completed-work history

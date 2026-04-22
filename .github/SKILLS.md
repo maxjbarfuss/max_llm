@@ -83,7 +83,7 @@ Platform-agnostic workflows and patterns for working efficiently on max_llm. Thi
 **Do this at the start of every session:**
 1. Read [LESSONS.md](LESSONS.md) — past agent mistakes to avoid
 2. Read [MEMORY.md](MEMORY.md) — working session context (see [MEMORY vs SESSION_LOG Pattern](MEMORY.md#memory-vs-session_log-pattern-must-understand))
-3. Check [SESSION_LOG.md](SESSION_LOG.md) for historical context if needed
+3. Check [SESSION_LOG.md](SESSION_LOG.md) for recent historical context; use [SESSION_LOG_ARCHIVE.md](SESSION_LOG_ARCHIVE.md) for older sessions if needed
 4. Read [docs/PLAN.md](../docs/PLAN.md) — pick task from current phase
 5. Activate environment: `git status && source .venv/bin/activate`
 
@@ -99,7 +99,7 @@ Platform-agnostic workflows and patterns for working efficiently on max_llm. Thi
 ### File Purposes
 - **MEMORY.md** = working/thinking state (what you're doing now) — see [MEMORY vs SESSION_LOG Pattern](MEMORY.md#memory-vs-session_log-pattern-must-understand)
 - **PLAN.md** = project progress (phase items, roadmap)
-- **SESSION_LOG.md** = history (append-only log)
+- **SESSION_LOG.md** = recent history; **SESSION_LOG_ARCHIVE.md** = older history
 
 ### If Crash/Hang
 Read [MEMORY.md](MEMORY.md) checkpoint → resume from there

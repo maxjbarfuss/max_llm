@@ -1,6 +1,6 @@
 # MEMORY
 
-**Working session memory**. Update frequently. For project progress, see [PLAN.md](../docs/PLAN.md). For history, see [SESSION_LOG.md](SESSION_LOG.md).
+**Working session memory**. Update frequently. For project progress, see [PLAN.md](../docs/PLAN.md). For recent history, see [SESSION_LOG.md](SESSION_LOG.md); for older history, see [SESSION_LOG_ARCHIVE.md](SESSION_LOG_ARCHIVE.md).
 
 ---
 
@@ -19,10 +19,10 @@
 - Gets **CLEARED at commit** (content moves to SESSION_LOG)
 - If stale info is here, previous agent made a mistake
 
-**SESSION_LOG.md** = Permanent append-only log of completed work
+**SESSION_LOG.md** = Recent append-only log of completed work
 - One row per commit = one session's result
-- Never edited, only appended
-- Use to understand past work chains
+- Older contiguous blocks may be moved to `SESSION_LOG_ARCHIVE.md` to keep the live log readable
+- Use `SESSION_LOG.md` first, then the archive when older context is needed
 
 **⚠️ AGENT MISTAKE PREVENTION**:
 - ❌ WRONG: Leaving old session's work in "Current Work" when starting new task
@@ -50,16 +50,17 @@
 3. [ ] **Summarize and move** to [SESSION_LOG.md](SESSION_LOG.md) — add new row with date | branch | concise summary of session's work
 4. [ ] **DELETE content** from "Current Work" and "Thinking Notes" sections (but keep headers)
 5. [ ] Commit
-6. [ ] Next agent sees empty MEMORY, reads SESSION_LOG to understand context
+6. [ ] Next agent sees empty MEMORY, reads SESSION_LOG (and archive if needed) to understand context
 
 **If crash/hang**:
 - [ ] Read "Thinking Notes" → resume from that immediate state
 - [ ] Read "Current Work" → understand broader task context
-- [ ] If both empty: read recent SESSION_LOG entries
+- [ ] If both empty: read recent SESSION_LOG entries, then the archive if needed
 
 **Quick Links**:
 - [PLAN.md](../docs/PLAN.md) — project progress
 - [DESIGN.md](../docs/DESIGN.md) — architecture
-- [SESSION_LOG.md](SESSION_LOG.md) — completed sessions
+- [SESSION_LOG.md](SESSION_LOG.md) — recent completed sessions
+- [SESSION_LOG_ARCHIVE.md](SESSION_LOG_ARCHIVE.md) — older completed sessions
 - [SKILLS.md](SKILLS.md#commit-workflow-required) — full before-commit checklist
 

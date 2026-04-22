@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from src.config.data import DataConfig
 from src.config.experiment import ExperimentConfig
+from src.eval import BenchmarkRunner, BenchmarkRunnerConfig
 from src.inference.utils import resolve_device
 from src.models.learning_model import LearningModel
 from src.tokenizer import create_configured_tokenizer
@@ -840,6 +841,35 @@ def main() -> None:  # noqa: C901
         print_once(f"TensorBoard: {tb_log_dir}")
         print_once(f"             tensorboard --logdir {tb_log_dir}")
 
+    benchmark_runner: BenchmarkRunner | None = None
+    benchmark_jsonl_path = Path(config.output_dir) / "benchmark_curve.jsonl"
+    benchmark_tokenizer = None
+    if config.training.benchmark_tasks:
+        benchmark_runner = BenchmarkRunner(
+            BenchmarkRunnerConfig(
+                tasks=config.training.benchmark_tasks,
+                split=config.training.benchmark_split,
+                max_examples=config.training.benchmark_max_examples,
+                length_normalize=config.training.benchmark_length_normalize,
+                cache_dir=str(Path(config.output_dir) / "benchmark_cache"),
+            )
+        )
+        benchmark_tokenizer = create_configured_tokenizer(
+            tokenizer_name=config.data.tokenizer_name,
+            tokenizer_mode=config.data.tokenizer_mode,
+            tokenizer_vocab_size=config.data.tokenizer_vocab_size,
+            tokenizer_backend=config.data.tokenizer_backend,
+            unigram_model_path=config.data.unigram_model_path,
+            tokenizer_vocab_path=config.data.tokenizer_vocab_path,
+        )
+        print_once(
+            "Benchmark  : Enabled "
+            f"tasks={config.training.benchmark_tasks} "
+            f"split={config.training.benchmark_split} "
+            f"max_examples={config.training.benchmark_max_examples} "
+            f"interval={config.training.benchmark_eval_interval}"
+        )
+
     # Build periodic checkpoint callback (rotating, keeps last N)
     _saved_checkpoints: list[Path] = []
 
@@ -888,6 +918,39 @@ def main() -> None:  # noqa: C901
         )
         print_once(f"Checkpoint : {ckpt_path}")
 
+    def _periodic_benchmark(step: int) -> None:
+        if benchmark_runner is None or benchmark_tokenizer is None:
+            return
+        if not is_main_process():
+            return
+        raw_model = getattr(model, "module", model) if want_distributed else model
+        result = benchmark_runner.run(
+            model=cast(LearningModel, raw_model),
+            tokenizer=benchmark_tokenizer,
+            max_seq_len=config.model.max_seq_length,
+            device=device,
+        )
+        payload = {
+            "step": step,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            **result,
+        }
+        benchmark_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with benchmark_jsonl_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload) + "\n")
+
+        per_task = result.get("per_task", {})
+        macro = result.get("macro_accuracy")
+        print_once(
+            f"Benchmark  : step={step} macro={macro:.4f} "
+            + " ".join(f"{task}={score:.4f}" for task, score in sorted(per_task.items()))
+        )
+        if tb_writer is not None:
+            if isinstance(macro, float):
+                tb_writer.add_scalar("eval_benchmark/macro_accuracy", macro, step)
+            for task, score in per_task.items():
+                tb_writer.add_scalar(f"eval_benchmark/{task}", score, step)
+
     # Train
     csv_log_path = Path(config.output_dir) / "loss_curve.csv"
     metrics = train(
@@ -914,6 +977,8 @@ def main() -> None:  # noqa: C901
         checkpoint_interval=config.training.checkpoint_interval,
         checkpoint_fn=_periodic_checkpoint,
         eval_max_batches=config.training.eval_max_batches,
+        benchmark_interval=config.training.benchmark_eval_interval,
+        benchmark_fn=_periodic_benchmark,
     )
     if tb_writer is not None:
         tb_writer.close()

@@ -264,6 +264,8 @@ def train(  # noqa: C901
     checkpoint_interval: int = 0,
     checkpoint_fn: Any | None = None,
     eval_max_batches: int = 0,
+    benchmark_interval: int = 0,
+    benchmark_fn: Any | None = None,
 ) -> dict[str, list[float]]:
     """Train for exactly max_steps gradient steps with modern training features.
 
@@ -582,6 +584,14 @@ def train(  # noqa: C901
                     and (step + 1) % checkpoint_interval == 0
                 ):
                     checkpoint_fn(step + 1, val_loss=val_loss)
+
+                # Optional external benchmark callback (for MCQ harness, etc.)
+                if (
+                    benchmark_interval > 0
+                    and benchmark_fn is not None
+                    and (step + 1) % benchmark_interval == 0
+                ):
+                    benchmark_fn(step + 1)
 
                 # Reset for next step
                 accumulated_loss = 0.0
