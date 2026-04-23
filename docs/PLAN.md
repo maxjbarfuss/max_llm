@@ -97,7 +97,8 @@ Execution order (locked for Phase 5):
 
 Wave 0 — data gates (must complete before new pretraining or stack tuning):
 - ☐ **Remove WikiText-103** from future data configs (covered by full Wikipedia; overlapping fragments add noise)
-- ☐ **Deduplicate FineWeb ↔ FineWeb-Edu** and choose one primary policy (quality-first Edu subset vs full FineWeb without Edu overlap)
+- ☑ **Deduplicate FineWeb ↔ FineWeb-Edu** and choose one primary policy (quality-first Edu subset vs full FineWeb without Edu overlap)
+:  Policy decision: **FineWeb-Edu only** for Phase 5 Wave 0 prep configs; do not include generic FineWeb.
 - ☐ **OWT hygiene pass** in `TextFormatReader`: punctuation-ended line threshold, duplicate-line threshold, symbol/word threshold
 - ☐ **Raise OWT min_length** from 50 to 100-150 tokens
 - ☐ **Language filter** for OWT/FineWeb during tokenization (fastText lid.176)
@@ -108,7 +109,7 @@ Wave 0 — data gates (must complete before new pretraining or stack tuning):
 
 Wave 0 quick-start (simple):
 1. Activate env/auth and create one ephemeral prep config (`config/ephemeral/p5_wave0_data_gates_20260422.toml`).
-2. Apply corpus hygiene in prep pipeline: remove WikiText-103, pick one FineWeb policy, add OWT quality filters + min_length + language filter.
+2. Apply corpus hygiene in prep pipeline: remove WikiText-103, use FineWeb-Edu only (exclude generic FineWeb), add OWT quality filters + min_length + language filter.
 3. Add near-dedup (MinHash) and sequence packing; record drop/dedup/packing metrics in stats output.
 4. Run a small-slice prep first, then targeted prep tests (`test_preparation_config`, `test_preparation_strategies`, `test_preparation_pipeline`, `test_preparation_e2e`).
 5. If metrics are good, run full prep and document final policy + provenance note in `src/data/README.md`.

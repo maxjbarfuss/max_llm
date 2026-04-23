@@ -357,6 +357,12 @@ head_dim=64 in bf16). Not compatible with `pos_type = "rope"` or `"add_rope"`.
 
 ## Directory Layout
 
+### Phase 5 Wave 0 Policy
+
+- New Phase 5 Wave 0 data-preparation configs should use **FineWeb-Edu** as the educational web source.
+- Exclude generic **FineWeb** in those new configs to avoid overlap with FineWeb-Edu.
+- Keep existing Phase 3/4 milestone configs unchanged as historical records.
+
 ```
 config/
   milestones/       Committed, validated configs — one per phase milestone
