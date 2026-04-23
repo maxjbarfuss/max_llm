@@ -278,6 +278,8 @@ class JsonlReader(FormatReader):
                 if not text:
                     continue
                 text = _normalize_text(text)
+                if not _passes_text_hygiene(text, source):
+                    continue
                 if not _passes_language_filter(text, source):
                     continue
                 tokens = _filter_unk(tokenizer.encode(text))
@@ -299,7 +301,7 @@ class ParquetReader(FormatReader):
     ) -> Iterator[tuple[str, np.ndarray]]:
         if isinstance(source.path, str) and source.path.startswith("hf://"):
             # Hugging Face dataset streaming
-            from datasets import load_dataset  # type: ignore[import-untyped]
+            from datasets import load_dataset
 
             # Parse URI: hf://namespace/dataset[/config][/split]
             uri = source.path[len("hf://") :]
@@ -319,6 +321,8 @@ class ParquetReader(FormatReader):
                     continue
                 text = _normalize_text(text)
                 if len(text) < source.min_length:
+                    continue
+                if not _passes_text_hygiene(text, source):
                     continue
                 if not _passes_language_filter(text, source):
                     continue
@@ -344,6 +348,8 @@ class ParquetReader(FormatReader):
                             continue
                         text = _normalize_text(text)
                         if len(text) < source.min_length:
+                            continue
+                        if not _passes_text_hygiene(text, source):
                             continue
                         if not _passes_language_filter(text, source):
                             continue

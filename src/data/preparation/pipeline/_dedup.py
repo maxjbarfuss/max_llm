@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +46,12 @@ class _FilteredSpilledDocs:
 
     @property
     def offsets_bytes(self) -> int:
-        return self._spilled.offsets_bytes
+        # (n_docs + 1) int64 offsets for the filtered subset
+        return (len(self._indices) + 1) * 8
 
     @property
     def token_bytes(self) -> int:
-        return self._spilled.token_bytes
+        return int(self.doc_lengths.sum()) * self._spilled.dtype.itemsize
 
 
 def _minhash_for_doc(tokens: np.ndarray, shingle_size: int, num_perm: int) -> Any:

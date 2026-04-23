@@ -93,8 +93,8 @@ def test_dedup_removes_identical_duplicate():
     spilled = _make_spilled([tokens, tokens, [1, 2, 3, 4, 5, 6, 7, 8]])
     kept, stats = run_minhash_dedup({"src": spilled}, jaccard_threshold=0.8, num_perm=128)
     # The first occurrence is kept; the second identical doc is dropped
-    assert stats["total_docs_dropped"] >= 1
-    assert stats["total_docs_kept"] <= 2
+    assert stats["total_docs_dropped"] == 1
+    assert stats["total_docs_kept"] == 2
 
 
 def test_dedup_cross_source():

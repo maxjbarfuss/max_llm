@@ -4,7 +4,7 @@ import json
 import logging
 import sys
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -457,6 +457,53 @@ def _save_packed_from_indices(
     )
 
 
+def _iter_packed_sequences(
+    doc_iter: Iterable[np.ndarray],
+    doc_count: int,
+    sequence_length: int,
+    pad_token: int,
+    dtype: np.dtype[Any],
+    split_name: str,
+) -> Iterator[tuple[np.ndarray, list[int]]]:
+    """Yield (packed_sequence, doc_end_positions) for each fixed-length output sequence.
+
+    doc_end_positions records the within-sequence token offset at which each document
+    that ends in this sequence finishes (used to reconstruct document boundaries).
+    """
+    seq_buffer = np.full((sequence_length,), pad_token, dtype=dtype)
+    seq_cursor = 0
+    boundaries_cur: list[int] = []
+
+    with tqdm(
+        total=doc_count,
+        desc=f"  {split_name}",
+        unit="doc",
+        unit_scale=True,
+        dynamic_ncols=True,
+        disable=not sys.stderr.isatty(),
+    ) as pbar:
+        for doc in doc_iter:
+            chunk = doc.astype(dtype, copy=False)
+            pos = 0
+            while pos < len(chunk):
+                space = sequence_length - seq_cursor
+                take = min(space, len(chunk) - pos)
+                seq_buffer[seq_cursor : seq_cursor + take] = chunk[pos : pos + take]
+                seq_cursor += take
+                pos += take
+                if pos == len(chunk):
+                    boundaries_cur.append(seq_cursor)
+                if seq_cursor == sequence_length:
+                    yield seq_buffer.copy(), boundaries_cur
+                    seq_buffer.fill(pad_token)
+                    seq_cursor = 0
+                    boundaries_cur = []
+            pbar.update(1)
+
+    if seq_cursor > 0:
+        yield seq_buffer.copy(), boundaries_cur
+
+
 def _save_packed_sequences(  # noqa: C901
     split_name: str,
     doc_iter: Iterable[np.ndarray],
@@ -504,50 +551,19 @@ def _save_packed_sequences(  # noqa: C901
         boundaries_flat.extend(boundaries)
         seq_offsets.append(len(boundaries_flat))
 
+    seq_gen = _iter_packed_sequences(
+        doc_iter, doc_count, sequence_length, pad_token, dtype, split_name
+    )
+
     if shard_size_tokens <= 0:
         file_path = output_dir / f"{prefix}_{split_name}.npy"
         out = np.lib.format.open_memmap(
             str(file_path), mode="w+", dtype=dtype, shape=(output_tokens,)
         )
-        seq_buffer = np.full((sequence_length,), pad_token, dtype=dtype)
-        seq_cursor = 0
-        seq_idx = 0
-        boundaries_cur = []
-
-        with tqdm(
-            total=doc_count,
-            desc=f"  {split_name}",
-            unit="doc",
-            unit_scale=True,
-            dynamic_ncols=True,
-            disable=not sys.stderr.isatty(),
-        ) as pbar:
-            for doc in doc_iter:
-                chunk = doc.astype(dtype, copy=False)
-                pos = 0
-                while pos < len(chunk):
-                    space = sequence_length - seq_cursor
-                    take = min(space, len(chunk) - pos)
-                    seq_buffer[seq_cursor : seq_cursor + take] = chunk[pos : pos + take]
-                    seq_cursor += take
-                    pos += take
-                    if pos == len(chunk):
-                        boundaries_cur.append(seq_cursor)
-                    if seq_cursor == sequence_length:
-                        start = seq_idx * sequence_length
-                        out[start : start + sequence_length] = seq_buffer
-                        append_metadata(boundaries_cur)
-                        seq_idx += 1
-                        seq_buffer.fill(pad_token)
-                        seq_cursor = 0
-                        boundaries_cur = []
-                pbar.update(1)
-
-        if seq_cursor > 0:
+        for seq_idx, (seq, boundaries) in enumerate(seq_gen):
             start = seq_idx * sequence_length
-            out[start : start + sequence_length] = seq_buffer
-            append_metadata(boundaries_cur)
-
+            out[start : start + sequence_length] = seq
+            append_metadata(boundaries)
         out.flush()
         del out
         shard_paths = [str(file_path)]
@@ -556,9 +572,6 @@ def _save_packed_sequences(  # noqa: C901
         parts: list[np.ndarray] = []
         buffered_tokens = 0
         shard_index = 0
-        seq_buffer = np.full((sequence_length,), pad_token, dtype=dtype)
-        seq_cursor = 0
-        boundaries_cur = []
 
         def flush() -> None:
             nonlocal buffered_tokens, parts, shard_index
@@ -571,47 +584,14 @@ def _save_packed_sequences(  # noqa: C901
             buffered_tokens = 0
             shard_index += 1
 
-        with tqdm(
-            total=doc_count,
-            desc=f"  {split_name}",
-            unit="doc",
-            unit_scale=True,
-            dynamic_ncols=True,
-            disable=not sys.stderr.isatty(),
-        ) as pbar:
-            for doc in doc_iter:
-                chunk = doc.astype(dtype, copy=False)
-                pos = 0
-                while pos < len(chunk):
-                    space = sequence_length - seq_cursor
-                    take = min(space, len(chunk) - pos)
-                    seq_buffer[seq_cursor : seq_cursor + take] = chunk[pos : pos + take]
-                    seq_cursor += take
-                    pos += take
-                    if pos == len(chunk):
-                        boundaries_cur.append(seq_cursor)
-                    if seq_cursor == sequence_length:
-                        if (
-                            buffered_tokens > 0
-                            and buffered_tokens + sequence_length > shard_size_tokens
-                        ):
-                            flush()
-                        parts.append(seq_buffer.copy())
-                        buffered_tokens += sequence_length
-                        append_metadata(boundaries_cur)
-                        if buffered_tokens >= shard_size_tokens:
-                            flush()
-                        seq_buffer.fill(pad_token)
-                        seq_cursor = 0
-                        boundaries_cur = []
-                pbar.update(1)
-
-        if seq_cursor > 0:
+        for seq, boundaries in seq_gen:
             if buffered_tokens > 0 and buffered_tokens + sequence_length > shard_size_tokens:
                 flush()
-            parts.append(seq_buffer.copy())
+            parts.append(seq)
             buffered_tokens += sequence_length
-            append_metadata(boundaries_cur)
+            append_metadata(boundaries)
+            if buffered_tokens >= shard_size_tokens:
+                flush()
 
         flush()
 
