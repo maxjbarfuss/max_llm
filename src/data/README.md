@@ -144,6 +144,15 @@ When enabled, prep diagnostics include a `curriculum_repetition_budget_applied` 
 
 `cosmopedia_v2` should be treated as synthetic LLM-generated educational text. For Phase 5 Wave 0 corpus policy, keep it as an explicitly configured companion source (not a replacement for human-authored web/wiki corpora), and track its share via per-source stats in prep outputs.
 
+### New-source storage and code-corpus note
+
+New external corpus downloads should be cached under `/mnt/d/Dev/data` rather than the Linux home cache. For Hugging Face-backed sources, set `HF_HOME`, `HF_DATASETS_CACHE`, and `HF_HUB_CACHE` explicitly before fetching so blobs and dataset metadata land under `/mnt/d/Dev/data/hf_cache/...`.
+
+For Phase 5 Wave 1 code-corpus exploration, two source classes behaved differently:
+
+- `bigcode/starcoder2data-extras` provides directly readable text fields such as `content`, so it works with the existing parquet reader and current prep pipeline.
+- `bigcode/the-stack-v2` can expose rich metadata rows (`blob_id`, `src_encoding`, `path`, license/provenance fields) but does not provide direct file content in the accessible split. Using it in prep will require a separate content-materialization step that resolves Software Heritage blob IDs into text before tokenization.
+
 ### Memory model
 
 Sources are streamed to temporary binary spill files under `<output_dir>/.prep_spill/` and backed by read-only memory maps.  Peak RAM is bounded to a single ~10 MB write buffer per source, regardless of corpus size.  Previously-read sources are memory-mapped so the OS can page them out while the next source is being read.  Spill files are removed unconditionally on exit (success or failure).

@@ -126,6 +126,11 @@ Wave 1 — tokenizer + corpus shape decision (depends on Wave 0):
 - ☐ **Optional new sources (only after cleanup policy is stable)**:
 	- Long-form books (Project Gutenberg) for long-horizon coherence
 	- Code corpus (The Stack v2 / StarCoder2 permissive subsets) for structured reasoning signal
+	- Reasoning corpus (math/logic chain-of-thought-style educational data) with capped mix share and provenance tracking
+
+Wave 1 validation note (2026-04-23): Gutenberg + accessible StarCoder2-family code slice + local reasoning smoke (`200 + 200 + 200 max_docs`) completed; kept docs after dedup: books=121, code=66 or 44 depending on code source, reasoning=191; packing train fill ratio reached `0.9942+` on both Wave 1 smoke variants.
+Wave 1 validation note (2026-04-23): combined all-corpus smoke (OWT + FineWeb-Edu + Wikipedia + Cosmopedia-v2 + Gutenberg + StarCoder2 Python IR + reasoning) completed with `1400` input docs, `1178` kept docs, dedup_rate=`0.1586`, and packed train fill ratio=`0.9987`.
+Wave 1 access note (2026-04-23): `bigcode/the-stack-v2` is now accessible for this account, but the currently usable split exposes metadata rows (`blob_id`, `src_encoding`, `path`, license/provenance fields) rather than direct `content`; `the-stack-v2-dedup` and `the-stack-v2-train-*-ids` remained separately gated at end of day. Adopting The Stack v2 in prep will require a content-materialization step against Software Heritage blobs.
 
 Wave 2 — low-risk architecture and inference wins (easy wins first):
 - ☐ **rope_base standardization**: set milestone configs from 13892 to 500000 (Llama-3 style)

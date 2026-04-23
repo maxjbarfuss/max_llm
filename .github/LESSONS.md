@@ -146,6 +146,14 @@
 
 ---
 
+## L018 — Download New Sources to `/mnt/d/Dev/data`, Not Linux Home Cache
+
+**Observed behavior**: Agent inspected or downloaded new external corpora through Hugging Face or similar tooling without overriding cache/download locations, causing the data to land under `/home/max/.cache/huggingface/...` instead of the project's slow-drive dataset store.
+
+**Correct approach**: New source downloads, caches, and staged raw corpus material must default to `/mnt/d/Dev/data`. Before fetching new corpora, set the relevant environment variables explicitly (for example `HF_HOME`, `HF_DATASETS_CACHE`, and `HF_HUB_CACHE`) so Hugging Face artifacts land under `/mnt/d/Dev/data/...` rather than Linux home-cache paths. Treat `/mnt/d/Dev/data` as the canonical location for newly acquired external data unless the user explicitly directs otherwise.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:
