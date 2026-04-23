@@ -82,6 +82,16 @@ Pre-tokenized `npy` sources have the same unk filter applied at the array level 
 
 Each `[[datasets]]` entry may also set `max_docs` or `max_tokens` to stop reading a large source early. This is especially useful for very large corpora such as FineWeb where reading the full source just to downsample later would waste hours.
 
+### OWT hygiene thresholds (text sources)
+
+`[[datasets]]` entries for `format = "text"` can enable extra quality gates used in the Wave 0 OWT hygiene pass:
+
+- `min_punctuation_ended_line_ratio` (0.0-1.0): minimum fraction of non-empty lines that must end with sentence punctuation (`. ! ? ; :`).
+- `max_duplicate_line_ratio` (0.0-1.0): maximum allowed duplicate-line share across non-empty lines.
+- `max_symbol_to_word_ratio` (>= 0.0): maximum symbol-density allowed, computed as symbol characters divided by alphanumeric word count.
+
+If any configured threshold fails, the document is skipped before tokenization.
+
 ### Memory model
 
 Sources are streamed to temporary binary spill files under `<output_dir>/.prep_spill/` and backed by read-only memory maps.  Peak RAM is bounded to a single ~10 MB write buffer per source, regardless of corpus size.  Previously-read sources are memory-mapped so the OS can page them out while the next source is being read.  Spill files are removed unconditionally on exit (success or failure).

@@ -174,6 +174,63 @@ def test_text_reader_streams_delimited_documents(tmp_path):
     assert all(arr.dtype in (np.uint16, np.uint32) for _, arr in docs)
 
 
+def test_text_reader_filters_low_punctuation_line_ratio(tmp_path):
+    path = tmp_path / "sample.txt"
+    path.write_text("line without stop\nsecond line\n\nends properly.", encoding="utf-8")
+
+    reader = TextFormatReader()
+    source = DataSource(
+        name="tiny",
+        path=str(path),
+        delimiter="\n\n",
+        min_length=1,
+        min_punctuation_ended_line_ratio=0.5,
+    )
+
+    docs = reader.read_documents(source, _DummyTokenizer())
+
+    assert len(docs) == 1
+    assert docs[0][0] == "tiny"
+
+
+def test_text_reader_filters_high_duplicate_line_ratio(tmp_path):
+    path = tmp_path / "sample.txt"
+    path.write_text("dup\ndup\ndup\n\nunique line.", encoding="utf-8")
+
+    reader = TextFormatReader()
+    source = DataSource(
+        name="tiny",
+        path=str(path),
+        delimiter="\n\n",
+        min_length=1,
+        max_duplicate_line_ratio=0.30,
+    )
+
+    docs = reader.read_documents(source, _DummyTokenizer())
+
+    assert len(docs) == 1
+    assert docs[0][0] == "tiny"
+
+
+def test_text_reader_filters_high_symbol_to_word_ratio(tmp_path):
+    path = tmp_path / "sample.txt"
+    path.write_text("@@@@ #### $$$$\n\nnormal words in sentence.", encoding="utf-8")
+
+    reader = TextFormatReader()
+    source = DataSource(
+        name="tiny",
+        path=str(path),
+        delimiter="\n\n",
+        min_length=1,
+        max_symbol_to_word_ratio=0.50,
+    )
+
+    docs = reader.read_documents(source, _DummyTokenizer())
+
+    assert len(docs) == 1
+    assert docs[0][0] == "tiny"
+
+
 def test_jsonl_reader_extracts_text_field(tmp_path):
     path = tmp_path / "sample.jsonl"
     with path.open("w", encoding="utf-8") as handle:

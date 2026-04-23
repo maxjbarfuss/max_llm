@@ -359,8 +359,9 @@ head_dim=64 in bf16). Not compatible with `pos_type = "rope"` or `"add_rope"`.
 
 ### Phase 5 Wave 0 Policy
 
-- New Phase 5 Wave 0 data-preparation configs should use **FineWeb-Edu** as the educational web source.
-- Exclude generic **FineWeb** in those new configs to avoid overlap with FineWeb-Edu.
+- New Phase 5 Wave 0 data-preparation configs should include **full OpenWebText** and **full FineWeb-Edu** as core web sources.
+- Include selected companion datasets (for example Wikipedia/Cosmopedia) as explicitly configured for each run.
+- Apply corpus hygiene thresholds on OpenWebText and keep near-dedup policy active before training.
 - Keep existing Phase 3/4 milestone configs unchanged as historical records.
 
 ```

@@ -1,6 +1,7 @@
 """Strategy components for data preparation."""
 
 import json
+import re
 import unicodedata
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -70,6 +71,55 @@ def _filter_unk(
     return [t for t in tokens if t != unk_id]
 
 
+_WORD_RE = re.compile(r"[A-Za-z0-9]+")
+_LINE_END_PUNCTUATION = {".", "!", "?", ";", ":"}
+
+
+def _punctuation_ended_line_ratio(text: str) -> float:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return 0.0
+    ended = sum(1 for line in lines if line[-1] in _LINE_END_PUNCTUATION)
+    return ended / len(lines)
+
+
+def _duplicate_line_ratio(text: str) -> float:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return 0.0
+    unique_count = len(set(lines))
+    duplicate_count = len(lines) - unique_count
+    return duplicate_count / len(lines)
+
+
+def _symbol_to_word_ratio(text: str) -> float:
+    words = _WORD_RE.findall(text)
+    if not words:
+        return float("inf")
+    symbol_count = sum(
+        1
+        for ch in text
+        if not ch.isspace() and (unicodedata.category(ch).startswith("S") or ch in "#$%^&*_=+<>|~`")
+    )
+    return symbol_count / len(words)
+
+
+def _passes_text_hygiene(text: str, source: DataSource) -> bool:
+    if source.min_punctuation_ended_line_ratio is not None:
+        if _punctuation_ended_line_ratio(text) < source.min_punctuation_ended_line_ratio:
+            return False
+
+    if source.max_duplicate_line_ratio is not None:
+        if _duplicate_line_ratio(text) > source.max_duplicate_line_ratio:
+            return False
+
+    if source.max_symbol_to_word_ratio is not None:
+        if _symbol_to_word_ratio(text) > source.max_symbol_to_word_ratio:
+            return False
+
+    return True
+
+
 class FormatReader(ABC):
     def iter_documents(
         self, source: DataSource, tokenizer: TokenizerLike
@@ -107,6 +157,8 @@ class TextFormatReader(FormatReader):
         for file_path in files:
             for doc in self._iter_text_docs(file_path, source.delimiter):
                 doc = _normalize_text(doc)
+                if not _passes_text_hygiene(doc, source):
+                    continue
                 if len(doc) < source.min_length:
                     continue
                 tokens = _filter_unk(tokenizer.encode(doc))

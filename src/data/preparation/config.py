@@ -38,6 +38,9 @@ class DataSource:
     max_docs: int | None = None
     max_tokens: int | None = None
     curriculum_stage: int | None = None
+    min_punctuation_ended_line_ratio: float | None = None
+    max_duplicate_line_ratio: float | None = None
+    max_symbol_to_word_ratio: float | None = None
 
 
 @dataclass
@@ -141,6 +144,18 @@ class DataPreparationConfig:
                 assert ds.max_docs > 0, f"max_docs must be > 0: {ds.name}"
             if ds.max_tokens is not None:
                 assert ds.max_tokens > 0, f"max_tokens must be > 0: {ds.name}"
+            if ds.min_punctuation_ended_line_ratio is not None:
+                assert 0.0 <= ds.min_punctuation_ended_line_ratio <= 1.0, (
+                    "min_punctuation_ended_line_ratio must be in [0, 1]: " f"{ds.name}"
+                )
+            if ds.max_duplicate_line_ratio is not None:
+                assert 0.0 <= ds.max_duplicate_line_ratio <= 1.0, (
+                    "max_duplicate_line_ratio must be in [0, 1]: " f"{ds.name}"
+                )
+            if ds.max_symbol_to_word_ratio is not None:
+                assert ds.max_symbol_to_word_ratio >= 0.0, (
+                    "max_symbol_to_word_ratio must be >= 0: " f"{ds.name}"
+                )
 
         assert sum(ds.weight for ds in self.datasets) > 0, "All weights zero"
         assert self.output.shard_size_tokens >= 0, "shard_size_tokens must be >= 0"
