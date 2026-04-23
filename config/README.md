@@ -32,12 +32,21 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `max_seq_length` | int | ✅ required | Maximum context length; must be ≥ `data.max_length` |
 | `num_layers` | int | `0` | Transformer depth; `0` = embedding-only (Phase 2 baseline) |
 | `num_heads` | int | `4` | Attention heads; `hidden_size` must be divisible by `num_heads` |
+| `num_kv_heads` | int \\| `null` | `null` | K/V head count for grouped-query attention: `null` = MHA (`num_kv_heads = num_heads`), `1` = MQA, `1 < N < num_heads` = GQA; must divide `num_heads` |
 | `dropout` | float | `0.0` | Dropout probability applied in attention and FFN |
-| `intermediate_size` | int | `4 × hidden_size` | FFN hidden dimension; set explicitly to override the 4× default |
+| `norm_type` | `"layer"` \| `"rms"` \| `"flash"` \| `"dyt"` \| `"crms"` | `"layer"` | Normalization variant: `"layer"` = LayerNorm (P3 default); `"rms"` = RMSNorm (P4+ recommended); `"flash"` = parameter-free RMSNorm (scale absorbed into adjacent linear weights); `"dyt"` = Dynamic Tanh `γ⊙tanh(α·x)`, replaces norm with bounded nonlinearity (Zhai et al. 2025); `"crms"` = Centered RMSNorm (mean-subtract then RMSNorm, bridges RMSNorm and LayerNorm) |
+| `ffn_type` | `"gelu"` \| `"swiglu"` \| `"relu2"` \| `"xielu"` | `"gelu"` | FFN activation variant: `"swiglu"` (Llama, no bias, hidden=4d×2/3); `"relu2"` (sparse ~50%, no params); `"xielu"` (piecewise quad/exp, 2 trainable scalars) |
+| `intermediate_size` | int | `4 × hidden_size` | FFN hidden dimension; overrides the 4× default; for SwiGLU use `swiglu_intermediate_size(hidden_size)` (rounds to 256 multiple) |
+| `pos_type` | string | `"learned"` | Positional encoding: `"learned"` (additive table), `"rope"` (rotary), `"add_rope"` (additive sinusoidal on Q/K), `"alibi"` (linear bias, no params), `"rel_pos"` (learned T5-style bucket bias) |
+| `rope_base` | int | `null` | Frequency base for `pos_type = "rope"` or `"add_rope"` (e.g. `10000`); ignored for other variants; back-compat: setting this without `pos_type` auto-selects `pos_type = "rope"` |
+| `rel_pos_num_buckets` | int | `32` | Distance buckets for `pos_type = "rel_pos"`; ignored for other variants |
+| `attn_type` | `"mha"` \| `"swa"` \| `"rla"` | `"mha"` | Attention variant: `"mha"` = standard causal MHA (default); `"swa"` = Sliding Window Attention — each token attends only to the last `swa_window_size` tokens (Flash Attention 2 native support, otherwise band mask); `"rla"` = Residual Linear Attention — O(T·D²) ELU+1 kernel + learned input residual to prevent rank collapse; incompatible with `pos_type = "rope"` or `"add_rope"` |
+| `swa_window_size` | int | `256` | Window width for `attn_type = "swa"`; must be ≥ 1; ignored for `"mha"` and `"rla"` |
+| `res_type` | `"standard"` \| `"full_attn"` \| `"block_attn"` | `"standard"` | Residual connection variant: `"standard"` = fixed additive residual (default); `"full_attn"` = Full Attention Residuals — each sublayer input is softmax attention over all prior sublayer outputs (O(L²), practical for small models); `"block_attn"` = Block Attention Residuals — layers grouped into `attn_res_num_blocks` blocks, attention over N block-level summaries (O(N²), recommended for scale; paper shows 1.25× compute advantage at N≈8). Queries zero-initialized so initial weights are uniform. Ref: Kimi Team 2025 |
+| `attn_res_num_blocks` | int | `8` | Block count N for `res_type = "block_attn"`; `num_layers` must be divisible by N; N=1 collapses to standard residuals, N=num_layers ≈ full_attn; ignored for `"standard"` and `"full_attn"` |
 | `embedding_dim` | int | `null` | Factorized embedding dimension; `null` = no factorization |
 | `share_layer_weights` | bool | `false` | Share a single physical block across all `num_layers` — drastically cuts capacity; avoid for real training |
 | `mla_latent_dim` | int | `hidden_size` | MLA latent KV dimension (Phase 6+); set < `hidden_size` to compress |
-| `rope_base` | int | `10000` | RoPE base frequency (Phase 4+) |
 | `num_experts` | int | `1` | Total MoE experts (Phase 6+); `1` = dense |
 | `experts_per_token` | int | `1` | Top-k experts per token (Phase 6+) |
 | `moe_frequency` | int | `0` | Insert MoE every N blocks (Phase 6+); `0` = dense throughout |
@@ -105,6 +114,18 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `eval_on_test` | bool | `false` | Also evaluate on `data.test_dataset_path` at each eval interval |
 | `log_interval` | int | `10` | Print training stats every N steps |
 
+### External Benchmarks (MCQ Harness)
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `benchmark_tasks` | `[string, ...]` | `[]` | Task names to run periodically (currently: `"hellaswag"`, `"piqa"`, `"arc_easy"`) |
+| `benchmark_eval_interval` | int | `0` | Run benchmarks every N train steps; `0` disables periodic benchmark runs |
+| `benchmark_max_examples` | int | `128` | Max examples per task per run (keep small during training for low overhead) |
+| `benchmark_split` | string | `"validation"` | Split passed to dataset loader (e.g. `validation`) |
+| `benchmark_length_normalize` | bool | `true` | Use average token log-probability per option (reduces length bias) |
+
+When enabled, benchmark snapshots are appended to `output_dir/benchmark_curve.jsonl` and also logged to TensorBoard under `eval_benchmark/*`.
+
 ### Early Stopping and Regularization
 
 | Field | Type | Default | Notes |
@@ -170,6 +191,8 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 
 ## Complete Example
 
+### Phase 3 baseline
+
 ```toml
 [experiment]
 name = "maxllm-p3-unigram-1024h-10l"
@@ -225,6 +248,110 @@ max_length = 2048
 num_workers = 4
 prefetch_factor = 4
 ```
+
+### Phase 4 — Llama-style (RMSNorm + SwiGLU + RoPE + GQA)
+
+```toml
+[experiment]
+name = "p4-swiglu-rope"
+output_dir = "./outputs/ephemeral/p4-swiglu-rope"
+
+[model]
+hidden_size = 1024
+num_heads = 16
+num_kv_heads = 4               # GQA: 4 KV heads shared across 16 query heads
+vocab_size = 8192
+max_seq_length = 1024
+num_layers = 6
+norm_type = "rms"
+ffn_type = "swiglu"
+intermediate_size = 2816        # swiglu_intermediate_size(1024): 4*1024*2/3 rounded to 256
+pos_type = "rope"
+rope_base = 10000
+attn_type = "mha"               # standard MHA (default; explicit for clarity)
+
+[training]
+batch_size = 16
+gradient_accumulation_steps = 4
+max_steps = 2000
+warmup_steps = 400
+learning_rate = 0.0018          # RoPE needs lower LR than standard (0.004 causes grad norm spike)
+weight_decay = 0.05
+betas = [0.9, 0.95]
+epsilon = 1e-8
+gradient_clip_norm = 1.0
+precision_schedule = [[0, -1, "bf16"]]
+scheduler_type = "cosine"
+min_lr_ratio = 0.1
+use_distributed = true
+attention_backend = "flash"
+use_torch_compile = true
+checkpoint_interval = 2000
+eval_interval = 100
+eval_max_batches = 32
+log_interval = 25
+
+[inference]
+temperature = 0.9
+top_p = 0.95
+max_new_tokens = 256
+
+[data]
+dataset_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_train.npy"
+validation_dataset_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_val.npy"
+tokenizer_name = "unigram"
+tokenizer_mode = "utf8"
+tokenizer_vocab_size = 8192
+tokenizer_backend = "unigram"
+unigram_model_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_tokenizer.model"
+max_length = 1024
+num_workers = 4
+prefetch_factor = 4
+seed = 42
+```
+
+### Phase 4 — Sliding Window Attention (Mistral-style)
+
+```toml
+[model]
+hidden_size = 1024
+num_heads = 16
+num_kv_heads = 4
+vocab_size = 8192
+max_seq_length = 4096
+num_layers = 6
+norm_type = "rms"
+ffn_type = "swiglu"
+intermediate_size = 2816
+pos_type = "rope"
+rope_base = 10000
+attn_type = "swa"
+swa_window_size = 512           # each token attends to at most 512 preceding tokens
+```
+
+Flash Attention 2 (`attention_backend = "flash"`) handles `swa_window_size` natively and is
+strongly recommended; the fallback constructs an explicit band-diagonal mask in O(T²) memory.
+
+### Phase 4 — Residual Linear Attention
+
+```toml
+[model]
+hidden_size = 1024
+num_heads = 16
+num_kv_heads = 4
+vocab_size = 8192
+max_seq_length = 4096
+num_layers = 6
+norm_type = "rms"
+ffn_type = "swiglu"
+intermediate_size = 2816
+pos_type = "learned"            # RoPE is incompatible with RLA (use "learned" or "alibi")
+attn_type = "rla"               # O(T·D²) ELU+1 kernel + learned input residual
+```
+
+RLA is O(T·D²) time vs O(T²·D) for full attention — faster for long sequences when
+`T > D`. Memory: O(B·T·H·D²) for the KV outer-product table (~512 MB at B=4, T=2048, H=8,
+head_dim=64 in bf16). Not compatible with `pos_type = "rope"` or `"add_rope"`.
 
 ---
 

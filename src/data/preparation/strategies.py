@@ -4,9 +4,9 @@ import json
 import unicodedata
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import numpy as np
 
@@ -16,6 +16,7 @@ from src.data.preparation.config import (
     MixingConfig,
     SplitConfig,
 )
+from src.data.preparation.diagnostics import emit_prep_diagnostic
 
 
 class TokenizerLike(Protocol):
@@ -173,6 +174,72 @@ class JsonlReader(FormatReader):
         return list(self.iter_documents(source, tokenizer))
 
 
+class ParquetReader(FormatReader):
+    def iter_documents(  # noqa: C901
+        self, source: DataSource, tokenizer: TokenizerLike
+    ) -> Iterator[tuple[str, np.ndarray]]:
+        if isinstance(source.path, str) and source.path.startswith("hf://"):
+            # Hugging Face dataset streaming
+            from datasets import load_dataset  # type: ignore[import-untyped]
+
+            # Parse URI: hf://namespace/dataset[/config][/split]
+            uri = source.path[len("hf://") :]
+            parts = uri.split("/")
+            namespace = parts[0]
+            dataset_name = parts[1]
+            config = parts[2] if len(parts) > 2 else None
+            split = parts[3] if len(parts) > 3 else "train"
+            ds_id = f"{namespace}/{dataset_name}"
+            kwargs = {"split": split, "streaming": True}
+            if config:
+                kwargs["name"] = config
+            ds = load_dataset(ds_id, **kwargs)
+            for example in ds:
+                text = example.get(source.text_field, "")
+                if not text:
+                    continue
+                text = _normalize_text(text)
+                if len(text) < source.min_length:
+                    continue
+                tokens = _filter_unk(tokenizer.encode(text))
+                if source.max_length:
+                    tokens = tokens[: source.max_length]
+                encoded = _token_array(tokens)
+                if len(encoded) >= source.min_length:
+                    yield (source.name, encoded)
+        else:
+            import pyarrow.parquet as pq
+
+            path = Path(source.path)
+            files = sorted(path.glob("*.parquet")) if path.is_dir() else [path]
+            for file_path in files:
+                parquet_file = pq.ParquetFile(file_path)
+                for batch in parquet_file.iter_batches(
+                    columns=[source.text_field], batch_size=1000
+                ):
+                    for val in batch.column(source.text_field):
+                        text = val.as_py()
+                        if not text:
+                            continue
+                        text = _normalize_text(text)
+                        if len(text) < source.min_length:
+                            continue
+                        tokens = _filter_unk(tokenizer.encode(text))
+                        if not tokens:
+                            continue
+                        if source.max_length and len(tokens) > source.max_length:
+                            tokens = tokens[: source.max_length]
+                        encoded = _token_array(tokens)
+                        if len(encoded) < source.min_length:
+                            continue
+                        yield (source.name, encoded)
+
+    def read_documents(
+        self, source: DataSource, tokenizer: TokenizerLike
+    ) -> list[tuple[str, np.ndarray]]:
+        return list(self.iter_documents(source, tokenizer))
+
+
 class NpyReader(FormatReader):
     @staticmethod
     def _coerce_token_dtype(tokens: np.ndarray) -> np.ndarray:
@@ -209,6 +276,7 @@ _FORMAT_READERS: dict[str, FormatReader] = {
     "text": TextFormatReader(),
     "utf8_tokens": UTF8TokensReader(),
     "jsonl": JsonlReader(),
+    "parquet": ParquetReader(),
     "npy": NpyReader(),
 }
 
@@ -226,6 +294,39 @@ class MixingStrategy(ABC):
         all_documents: dict[str, Sequence[np.ndarray]],
         config: MixingConfig,
     ) -> list[tuple[str, np.ndarray]]: ...
+
+
+def _doc_lengths(items: Sequence[np.ndarray]) -> np.ndarray:
+    lengths = getattr(items, "doc_lengths", None)
+    if lengths is not None:
+        return np.asarray(lengths, dtype=np.int64)
+    return np.fromiter((len(doc) for doc in items), dtype=np.int64, count=len(items))
+
+
+def _token_total(items: Sequence[np.ndarray]) -> int:
+    total_tokens = getattr(items, "total_tokens", None)
+    if total_tokens is not None:
+        return int(total_tokens)
+    return int(sum(len(doc) for doc in items))
+
+
+def _index_dtype(size: int) -> Any:
+    return np.uint32 if size <= np.iinfo(np.uint32).max else np.uint64
+
+
+def _full_index_array(size: int) -> np.ndarray:
+    return np.arange(size, dtype=_index_dtype(size))
+
+
+def _sample_indices(size: int, target: int, rng: np.random.RandomState) -> np.ndarray:
+    dtype = _index_dtype(size)
+    if target <= 0:
+        return np.array([], dtype=dtype)
+    if size == target:
+        return _full_index_array(size)
+    if size < target:
+        return rng.choice(size, size=target, replace=True).astype(dtype, copy=False)
+    return rng.choice(size, size=target, replace=False).astype(dtype, copy=False)
 
 
 def _apply_sampling(
@@ -264,7 +365,7 @@ def _apply_sampling(
 
 
 def _target_counts_by_docs(
-    docs: dict[str, list[np.ndarray]],
+    docs: Mapping[str, Sequence[np.ndarray]],
     normalized: dict[str, float],
     total_docs_override: int | None = None,
 ) -> dict[str, int]:
@@ -287,11 +388,12 @@ def _target_counts_by_docs(
 
 
 def _target_counts_by_tokens(
-    docs: dict[str, list[np.ndarray]],
+    docs: Mapping[str, Sequence[np.ndarray]],
     normalized: dict[str, float],
     total_tokens_override: int | None = None,
 ) -> dict[str, int]:
-    tok_totals = {name: int(sum(len(d) for d in items)) for name, items in docs.items()}
+    lengths = {name: _doc_lengths(items) for name, items in docs.items()}
+    tok_totals = {name: int(lengths[name].sum()) for name in docs}
     total_tokens = (
         total_tokens_override if total_tokens_override is not None else sum(tok_totals.values())
     )
@@ -307,6 +409,55 @@ def _target_counts_by_tokens(
         else:
             target_tok = 0.0
         result[name] = max(1, int(target_tok / max(1.0, avg_len[name]))) if target_tok > 0 else 0
+    return result
+
+
+def _target_counts_by_lengths(
+    lengths_by_source: dict[str, np.ndarray],
+    normalized: dict[str, float],
+    total_docs_override: int | None = None,
+    total_tokens_override: int | None = None,
+    weight_by: str = "docs",
+) -> dict[str, int]:
+    if weight_by == "tokens":
+        tok_totals = {name: int(lengths.sum()) for name, lengths in lengths_by_source.items()}
+        total_tokens = (
+            total_tokens_override if total_tokens_override is not None else sum(tok_totals.values())
+        )
+        avg_len = {
+            name: tok_totals[name] / max(1, len(lengths_by_source[name]))
+            for name in lengths_by_source
+        }
+        remaining = [n for n in lengths_by_source if n not in normalized]
+        rem_ratio = max(0.0, 1.0 - sum(normalized.values()))
+        token_result: dict[str, int] = {}
+        for name in lengths_by_source:
+            if name in normalized:
+                target_tok = total_tokens * normalized[name]
+            elif remaining:
+                target_tok = total_tokens * rem_ratio / len(remaining)
+            else:
+                target_tok = 0.0
+            token_result[name] = (
+                max(1, int(target_tok / max(1.0, avg_len[name]))) if target_tok > 0 else 0
+            )
+        return token_result
+
+    total_docs = (
+        total_docs_override
+        if total_docs_override is not None
+        else sum(len(lengths) for lengths in lengths_by_source.values())
+    )
+    remaining = [n for n in lengths_by_source if n not in normalized]
+    rem_ratio = max(0.0, 1.0 - sum(normalized.values()))
+    result: dict[str, int] = {}
+    for name in lengths_by_source:
+        if name in normalized:
+            result[name] = int(total_docs * normalized[name])
+        elif remaining:
+            result[name] = int(total_docs * rem_ratio / len(remaining))
+        else:
+            result[name] = 0
     return result
 
 
@@ -342,27 +493,149 @@ def _apply_ratio_resampling(
     return resampled
 
 
+def select_source_indices(  # noqa: C901
+    docs: dict[str, Sequence[np.ndarray]],
+    config: MixingConfig,
+    rng: np.random.RandomState | None = None,
+    diagnostic_context: dict[str, str] | None = None,
+) -> dict[str, np.ndarray]:
+    rng = rng or np.random.RandomState(config.seed)
+    has_total_budget = (
+        config.target_total_docs is not None or config.target_total_tokens is not None
+    )
+
+    if diagnostic_context is not None:
+        emit_prep_diagnostic(
+            diagnostic_context["output_dir"],
+            diagnostic_context["prefix"],
+            "select_source_indices_start",
+            num_sources=len(docs),
+            source_doc_counts={name: len(items) for name, items in docs.items()},
+            source_token_totals={name: _token_total(items) for name, items in docs.items()},
+            weight_by=config.weight_by,
+            target_total_docs=config.target_total_docs,
+            target_total_tokens=config.target_total_tokens,
+            has_total_budget=has_total_budget,
+        )
+
+    selected = {name: _full_index_array(len(items)) for name, items in docs.items()}
+
+    if diagnostic_context is not None:
+        emit_prep_diagnostic(
+            diagnostic_context["output_dir"],
+            diagnostic_context["prefix"],
+            "select_source_indices_full_index_arrays",
+            index_bytes={name: int(indices.nbytes) for name, indices in selected.items()},
+            total_index_bytes=int(sum(indices.nbytes for indices in selected.values())),
+        )
+
+    if not (config.source_ratios and has_total_budget):
+        if config.target_total_docs is not None:
+            target = config.target_total_docs
+        elif config.upsample_to_max:
+            target = max(len(items) for items in docs.values())
+        elif config.downsample_to_min:
+            target = min(len(items) for items in docs.values())
+        else:
+            target = None
+
+        if target is not None:
+            selected = {
+                name: _sample_indices(len(items), target, rng) for name, items in docs.items()
+            }
+            if diagnostic_context is not None:
+                emit_prep_diagnostic(
+                    diagnostic_context["output_dir"],
+                    diagnostic_context["prefix"],
+                    "select_source_indices_sampling_applied",
+                    sampling_target=int(target),
+                    sampled_index_bytes={
+                        name: int(indices.nbytes) for name, indices in selected.items()
+                    },
+                    total_sampled_index_bytes=int(
+                        sum(indices.nbytes for indices in selected.values())
+                    ),
+                )
+
+    if not config.source_ratios:
+        if diagnostic_context is not None:
+            emit_prep_diagnostic(
+                diagnostic_context["output_dir"],
+                diagnostic_context["prefix"],
+                "select_source_indices_done",
+                selected_doc_counts={name: int(len(indices)) for name, indices in selected.items()},
+                selected_index_bytes={
+                    name: int(indices.nbytes) for name, indices in selected.items()
+                },
+            )
+        return selected
+
+    normalized = {
+        name: weight / sum(config.source_ratios.values())
+        for name, weight in config.source_ratios.items()
+    }
+    selected_lengths = {
+        name: _doc_lengths(items)[selected[name]]
+        for name, items in docs.items()
+        if len(selected[name]) > 0
+    }
+    target_counts = _target_counts_by_lengths(
+        selected_lengths,
+        normalized,
+        total_docs_override=config.target_total_docs,
+        total_tokens_override=config.target_total_tokens,
+        weight_by=config.weight_by,
+    )
+
+    if diagnostic_context is not None:
+        emit_prep_diagnostic(
+            diagnostic_context["output_dir"],
+            diagnostic_context["prefix"],
+            "select_source_indices_target_counts",
+            target_counts={name: int(count) for name, count in target_counts.items()},
+            selected_length_bytes={
+                name: int(lengths.nbytes) for name, lengths in selected_lengths.items()
+            },
+            total_selected_length_bytes=int(
+                sum(lengths.nbytes for lengths in selected_lengths.values())
+            ),
+        )
+
+    resampled: dict[str, np.ndarray] = {}
+    for name, _items in docs.items():
+        base = selected[name]
+        target = target_counts.get(name, 0)
+        if target <= 0:
+            continue
+        if len(base) == target:
+            resampled[name] = base
+            continue
+        choice = _sample_indices(len(base), target, rng)
+        resampled[name] = base[choice]
+
+    if diagnostic_context is not None:
+        emit_prep_diagnostic(
+            diagnostic_context["output_dir"],
+            diagnostic_context["prefix"],
+            "select_source_indices_done",
+            selected_doc_counts={name: int(len(indices)) for name, indices in resampled.items()},
+            selected_index_bytes={name: int(indices.nbytes) for name, indices in resampled.items()},
+            total_selected_index_bytes=int(sum(indices.nbytes for indices in resampled.values())),
+        )
+
+    return resampled
+
+
 class ConcatenateMixer(MixingStrategy):
     def mix(
         self,
         all_documents: dict[str, Sequence[np.ndarray]],
         config: MixingConfig,
     ) -> list[tuple[str, np.ndarray]]:
-        docs = _apply_sampling(all_documents, config)
-        source_docs = {name: list(items) for name, items in docs.items()}
-        if config.source_ratios:
-            rng = np.random.RandomState(config.seed)
-            source_docs = _apply_ratio_resampling(
-                source_docs,
-                config.source_ratios,
-                rng,
-                target_total_docs=config.target_total_docs,
-                target_total_tokens=config.target_total_tokens,
-                weight_by=config.weight_by,
-            )
         mixed: list[tuple[str, np.ndarray]] = []
-        for name, items in source_docs.items():
-            mixed.extend((name, item) for item in items)
+        selected = select_source_indices(all_documents, config)
+        for name, indices in selected.items():
+            mixed.extend((name, all_documents[name][int(index)]) for index in indices)
         return mixed
 
 
@@ -372,34 +645,40 @@ class InterleaveMixer(MixingStrategy):
         all_documents: dict[str, Sequence[np.ndarray]],
         config: MixingConfig,
     ) -> list[tuple[str, np.ndarray]]:
-        docs = _apply_sampling(all_documents, config)
+        import sys
+
         rng = np.random.RandomState(config.seed)
 
-        source_docs = {name: list(items) for name, items in docs.items()}
-        for items in source_docs.values():
-            rng.shuffle(items)
-
-        if config.source_ratios:
-            source_docs = _apply_ratio_resampling(
-                source_docs,
-                config.source_ratios,
-                rng,
-                target_total_docs=config.target_total_docs,
-                target_total_tokens=config.target_total_tokens,
-                weight_by=config.weight_by,
-            )
+        selected = select_source_indices(all_documents, config, rng)
+        for indices in selected.values():
+            rng.shuffle(indices)
 
         mixed: list[tuple[str, np.ndarray]] = []
-        pointers = dict.fromkeys(source_docs, 0)
-
-        while any(pointers[name] < len(source_docs[name]) for name in source_docs):
-            for name in source_docs:
-                if pointers[name] < len(source_docs[name]):
+        pointers = dict.fromkeys(selected, 0)
+        total_docs = sum(len(lst) for lst in selected.values())
+        print(
+            f"[DEBUG] Mixing sources: {[f'{k}: {len(v)}' for k,v in selected.items()]}",
+            file=sys.stderr,
+            flush=True,
+        )
+        print(f"[DEBUG] Total docs to mix: {total_docs}", file=sys.stderr, flush=True)
+        step = 0
+        while any(pointers[name] < len(selected[name]) for name in selected):
+            for name in selected:
+                if pointers[name] < len(selected[name]):
                     for _ in range(config.block_size):
-                        if pointers[name] < len(source_docs[name]):
-                            mixed.append((name, source_docs[name][pointers[name]]))
+                        if pointers[name] < len(selected[name]):
+                            doc_index = int(selected[name][pointers[name]])
+                            mixed.append((name, all_documents[name][doc_index]))
                             pointers[name] += 1
-
+                            step += 1
+                            if step % 100000 == 0 or step == total_docs:
+                                print(
+                                    f"[DEBUG] Mixed {step}/{total_docs} docs. Pointers: {{ {', '.join(f'{k}: {pointers[k]}' for k in pointers)} }}",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+        print(f"[DEBUG] Mixing complete: {len(mixed)} docs", file=sys.stderr, flush=True)
         return mixed
 
 

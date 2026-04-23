@@ -1,317 +1,137 @@
 # Max LLM Design
 
-**Goal**: 100–500M parameter LLM on dual-GPU hardware. Modern architecture (GQA, MLA, MoE, RoPE, DPO). Reproducible, clean interfaces, measurable improvements.
+Purpose: durable architecture, data, and system reference for the project. Use [PLAN.md](PLAN.md) for execution, [OPTIMIZATION.md](OPTIMIZATION.md) for validated training learnings, and the phase closeouts for historical evidence.
 
-**Pipeline**: Tokenization → pre-training → fine-tuning → alignment. Benchmark-driven architecture validation.
+## Current State
 
-**See also**: [PLAN.md](PLAN.md) for detailed execution.
+- Phase 4 is complete: final anneal checkpoint reached ppl ~9.2, a 2.6x improvement over the best Phase 3 run.
+- The validated Phase 4 stack is FlashNorm + MLA + xIELU + block-attn residuals + RoPE on a 12-layer, ~60M-parameter decoder.
+- Phase 5 is the next execution surface: data cleanup, tokenizer decision, inference wins, Muon/Z-loss/uP, then SFT/grounding/alignment.
 
----
+## Phase Map
 
-## Phased Roadmap
+| Phase | Purpose | Main deltas | Canonical reference |
+|---|---|---|---|
+| 1 | Foundation | Repo layout, config/build/test/CI baseline | [PHASE_1_CLOSEOUT.md](PHASE_1_CLOSEOUT.md) |
+| 2 | Skeleton + reproducibility | Char baseline, seed control, checkpointing, overfit/inference gates | [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md) |
+| 3 | Capable decoder baseline | Unigram 8K, DecoderLM, Flash/bf16/DDP/WSD long-run stack | [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md) |
+| 4 | Llama-style scale-up | FlashNorm, RoPE family, MLA, xIELU, block-attn residuals, curriculum + anneal | [PHASE_4_CLOSEOUT.md](PHASE_4_CLOSEOUT.md) |
+| 5 | Post-training | KV-cache, LoRA/SFT, grounding, DPO or PPO/GRPO, continual-learning eval | [PLAN.md](PLAN.md) |
+| 6 | Sparse expert stack | MoE on the Phase 5 stack, routing diagnostics, dense-vs-sparse comparison | [PLAN.md](PLAN.md) |
+| 7 | Dual-stream reasoning | GRU reasoning stream + gated combiner + STaR-style loop | [PLAN.md](PLAN.md) |
 
-7 phases (1–7), foundation → production. Each has clear goal and measurable exit criteria.
+## Architecture
 
-| Phase | Goal | Deliverables | Data Strategy |
-|-------|------|--------------|----------------|
-| **1** | Foundation | Design, repo setup, config system, build tools, CI, test scaffolding | Setup; no training data |
-| **2** | Skeleton & Reproducibility | Config, seed control, char tokenizer, training loop, checkpointing, metrics | TinyStories + WikiText-103 (1–10M tokens); overfit test |
-| **3** | Capable GPT-2-like model (~60M params, coherent output) | Decoder architecture (8–10L/1024H/16H, Unigram 8K vocab, 2048 ctx); full optimization stack (Flash Attn, BF16, DDP, FSDP, WSD scheduler, AdamW fused, fused QKV, scaled residual init, chunked CE loss, early stopping, label smoothing); training run to coherent text generation | Mixed corpus: TinyStories (~10%), WikiText-103 (full ~100M tokens), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K tokenizer with EOS and NFKC/unk filtering |
-| **4** | Llama Architecture + Scale-Up Training | RMSNorm, RoPE, SwiGLU, GQA, FSDP for 300M+ params, chunked token caching, data filters, A/B comparison vs Phase 3; multi-phase curriculum pretraining | OpenWebText/FineWeb 10–500M tokens with staged ramp (10–50M, 50–100M, 100–500M curriculum stages) |
-| **5** | Post-Training | KV-cache, SFT, LoRA, grounding (math/logic/world-model/games), DPO or PPO/GRPO, continual learning | 1–5M SFT pairs, 50K–500K grounding (GSM8K, MATH, ARC), 10K–100K preference pairs (HH-RLHF, UltraFeedback) + 5–10% harmful, 5K–10K reward labels |
-| **6** | MoE + MLA | MLA (latent KV compression), sparse MoE, top-k gating, load-balance loss, continual expert specialization | Partitioned SFT + preference (1–5M pairs) with curriculum; expert utilization tracking |
-| **7** | Dual-Stream Reasoning | GRU Reasoning Stream + GRU Combiner (gated fusion); scheduled teacher forcing (100%→0%); STaR bootstrap; reasoning accuracy delta | 50K–500K (input, trace, answer) triples (GSM8K, MATH, ARC-Challenge, OpenOrca); STaR traces; 60% reasoned / 40% direct |
+### Validated Stack (Phase 4)
 
-**Status**: Phase 3 in progress — architecture + optimization stack complete; dataset rebuilt with EOS and NFKC filtering; training run active (~4500 steps, val loss ~3.59, ppl ~36).
-
----
-
-## Architecture Overview
-
-**Philosophy**: Minimal → validated → modern. TDD + overfit tests. Benchmark-driven changes.
-
-```mermaid
----
-title: Phase 2 – Skeleton
----
-graph TD
-    A[Text]:::io --> B[Char Tokenizer]:::p2 --> C[Token Emb]:::p2 --> D[GELU MLP]:::p2 --> E[LM Head]:::p2 --> F[Logits]:::io
-    F -->|training| G[Cross-Entropy Loss]:::io
-    F -->|inference| H[Greedy Sampling]:::p2 --> I[Text]:::io
-    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
-```
-
-- **Phase 2**: Text → Char Tokenizer → Token Emb + Pos → GELU MLP → LM Head → Logits → CE Loss / Greedy Sample → Text
-
----
+- Tokenizer: Unigram 8K inherited from Phase 3.
+- Model: 12 layers, hidden size 1024, 16 heads, 4 KV heads, context 1024, ~60M parameters.
+- Core blocks: FlashNorm, MLA with decoupled RoPE, xIELU FFN, block-attn residuals.
+- Inference: top-k / top-p / temperature sampler with repetition penalty.
 
 ```mermaid
----
-title: Phase 3 – Minimal Transformer + Tokenizer Upgrade
----
 graph TD
-    A[Text]:::io --> B[Unigram Tokenizer 8K]:::p3 --> C[Token Emb]:::p2 --> Block
-    subgraph Block[Transformer Block x N]
-        direction LR
-        D[LayerNorm]:::p3 --> E[Multi-Head Attn<br/>Fused QKV]:::p3 --> F[+ Residual]:::p3 --> G[LayerNorm]:::p3 --> H[GELU FFN]:::p3 --> I[+ Residual]:::p3
-    end
-    Block --> J[LM Head]:::p3 --> K[Logits]:::io
-    K -->|training| L[Chunked CE Loss]:::p3
-    K -->|inference| M[Sampler<br/>temp/top-k/top-p]:::p3 --> N[Text]:::io
-    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
-    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
+    A[Text] --> B[Unigram 8K Tokenizer] --> C[Token Embedding] --> D[FlashNorm]
+    D --> E[MLA + decoupled RoPE]
+    E --> F[block_attn Residual]
+    F --> G[FlashNorm]
+    G --> H[xIELU FFN]
+    H --> I[block_attn Residual]
+    I --> J[LM Head]
+    J --> K[Logits]
+    K -->|training| L[CE Loss]
+    K -->|inference| M[Sampler + repetition penalty]
 ```
 
-- **Phase 3**: Text → **Unigram 8K** → Token Emb + Pos → [**LayerNorm** → **Multi-Head Attn (Fused QKV)** → **GELU FFN**] × N → **LM Head** → **Chunked CE Loss** / **Sampler** → Text
+### Forward-Carried Additions
 
----
+| Phase | Additions on top of prior stack |
+|---|---|
+| 5 | KV-cache, YaRN or rope-base standardization, uP, Muon, Z-loss, LoRA, reward model, MoD candidate |
+| 6 | Sparse MoE FFN and routing diagnostics |
+| 7 | Parallel GRU reasoning stream and gated combiner |
 
-```mermaid
----
-title: Phase 4 – Llama-Style Upgrades
----
-graph TD
-    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
-    subgraph Block[Transformer Block x N]
-        direction LR
-        D[RMSNorm]:::p4 --> E[GQA]:::p4 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[SwiGLU FFN]:::p4 --> I[+ Residual]:::p3
-        RoPE:::p4 -.-> E
-    end
-    Block --> J[LM Head]:::p3 --> K[Logits]:::io
-    K -->|training| L[Cross-Entropy Loss]:::io
-    K -->|inference| M[Sampler<br/>temp/top-k/top-p]:::p3 --> N[Text]:::io
-    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
-    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
-    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
-```
+### Component Inventory
 
-- **Phase 4**: Text → Tokenizer → Token Emb + **RoPE** → [**RMSNorm** → **GQA** → **SwiGLU**] × N → LM Head → Sampler → Text
+| Component family | Current/default | Alternatives retained |
+|---|---|---|
+| Normalization | `flash` | `rms`, `dyt`, `crms`, `layer` |
+| Position encoding | `rope` | `add_rope`, `alibi`, `rel_pos` |
+| Attention | `mla` | `mha`, `swa`, `rla` |
+| FFN | `xielu` | `swiglu`, `relu2`, `gelu` |
+| Residual routing | `block_attn` | `full_attn`, `standard` |
+| Fine-tuning | LoRA planned | full finetune intentionally deferred |
 
----
+Hardware target: dual 24 GB-class RTX GPUs for training, single GPU inference, CPU fallback for correctness/debugging.
 
-```mermaid
----
-title: Phase 5 – Post-Training (Inference + Fine-tuning + Grounding + Alignment)
----
-graph TD
-    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
-    subgraph Block[Transformer Block x N]
-        direction LR
-        D[RMSNorm]:::p4 --> E[GQA + KV-Cache]:::p4 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[SwiGLU FFN]:::p4 --> I[+ Residual]:::p3
-        RoPE:::p4 -.-> E
-    end
-    Block --> J[LM Head]:::p3 --> K[Logits]:::io
-    K -->|training| L[CE Loss + DPO]:::p5
-    K -->|inference| M[Sampler + KV-cache]:::p5 --> N[Text]:::io
-    LoRA:::p5 -.-> Block
-    RewardModel:::p5 -.-> Block
-    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
-    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
-    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
-    classDef p5 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
-```
+## Training System
 
-- **Phase 5**: Phase 4 + **KV-cache**, **SFT**, **LoRA**, **grounding**, **DPO**
+- Data access: streaming plus RAM LRU and SSD token cache.
+- Loader path: parallel workers, prefetch, pinned memory, persistent-worker support.
+- Distributed path: DDP validated; FSDP available when memory pressure dominates.
+- Attention backends: Flash preferred; Sage/xFormers/standard available with fallback.
+- Compilation: `torch.compile` enabled on the stable path where backend compatibility allows it.
+- Optimization baseline: AdamW fused + WSD scheduler + gradient accumulation + gradient clipping + bf16.
+- Planned stack upgrades: Muon on 2-D weights, uP for hyperparameter transfer, Z-loss for logit stabilization.
 
----
+## Data Design
 
-```mermaid
----
-title: Phase 6 – MoE + MLA
----
-graph TD
-    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
-    subgraph Block[Transformer Block x N]
-        direction LR
-        D[RMSNorm]:::p4 --> E[MLA]:::p6 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[MoE Sparse SwiGLU]:::p6 --> I[+ Residual]:::p3
-        RoPE:::p4 -.-> E
-    end
-    LoRA:::p5 -.-> Block
-    RewardModel:::p5 -.-> Block
-    Block --> J[LM Head]:::p3 --> K[Logits]:::io
-    K -->|training| L[CE Loss + DPO]:::p5
-    K -->|inference| M[Sampler + KV-cache]:::p5 --> N[Text]:::io
-    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
-    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
-    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
-    classDef p5 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
-    classDef p6 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
-```
+Principle: unrestricted pretraining in Phases 2-4, then post-training safety and alignment in Phases 5-7.
 
-- **Phase 6**: Phase 4 with **MLA** (replaces GQA) + **MoE SwiGLU**
+### Actual Phase 4 Corpus
 
----
+| Source | Tokens | Share | Key note |
+|---|---|---|---|
+| OpenWebText | 8.87B | 33% | Very short docs; strong packing/filtering target |
+| FineWeb | 6.72B | 25% | Overlaps with FineWeb-Edu |
+| Cosmopedia v2 | 5.37B | 20% | Synthetic Mistral-generated educational corpus |
+| FineWeb-Edu | 2.68B | 10% | Subset of FineWeb; current double exposure |
+| Wikipedia | 1.88B | 7% | Best factual anchor |
+| WikiText-103 | 1.07B | 4% | Redundant with Wikipedia |
+| TinyStories | 0.13B | 0.5% | Holdover from early phases |
+| stories_young_children | 0.13B | 0.5% | Holdover from early phases |
 
-```mermaid
----
-title: Phase 7 – Dual-Stream Reasoning
----
-graph TD
-    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2
-    C --> TStream
-    C --> RGRU[GRU Reasoning Stream]:::p7
+### Current Quality Path
 
-    subgraph TStream[Transformer Stream × N]
-        direction LR
-        D[RMSNorm]:::p4 --> E[MLA]:::p6 --> F[+ Residual]:::p3 --> G[RMSNorm]:::p4 --> H[MoE Sparse SwiGLU]:::p6 --> I[+ Residual]:::p3
-        RoPE:::p4 -.-> E
-    end
+- NFKC normalization.
+- Cc control-character stripping.
+- Minimum-length filtering.
+- Two-stage UNK filtering.
+- Stratified per-source validation split.
+- Spill-cache tokenization with resume support.
 
-    LoRA:::p5 -.-> TStream
-    RewardModel:::p5 -.-> TStream
-    TStream --> COMB[GRU Combiner]:::p7
-    RGRU --> COMB
-    COMB --> J[LM Head]:::p3 --> K[Logits]:::io
-    K -->|training| L[CE Loss + DPO]:::p5
-    K -->|inference| M[Sampler + KV-cache]:::p5 --> N[Text]:::io
-    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
-    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
-    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
-    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
-    classDef p5 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
-    classDef p6 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
-    classDef p7 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
-```
+### Next Data Corrections
 
-- **Phase 7**: Phase 6 + parallel **GRU Reasoning Stream** → **GRU Combiner** (gated fusion)
+- Remove WikiText-103 from future pretraining mixes.
+- Choose a single FineWeb policy instead of FineWeb + FineWeb-Edu overlap.
+- Add OWT heuristics, language filtering, and near-dedup.
+- Add sequence packing for short-document efficiency.
+- Retrain tokenizer on the cleaned Phase 4 distribution if more pretraining is planned.
 
----
+### Phase 5+ Data Shapes
 
-**Diagram notes**: Bold = new in phase. Tokenizer: Char (P2) → Unigram 8K (P3); BPE benchmarked and superseded (Unigram reached lower loss faster at equal scale).
+| Phase | Data products |
+|---|---|
+| 5 | Cleaned pretraining corpus, 32K tokenizer decision, SFT pairs, grounding corpus, preference pairs, reward labels |
+| 6 | Partitioned SFT/preference data for expert specialization |
+| 7 | Reasoning-trace triples and STaR-derived traces |
 
-| Component | Phase | Phases Used | Notes |
-|-----------|-------|-------------|-------|
-| Tokenizer | 2 | 2–7 | Char (P2), Unigram 8K (P3+); BPE benchmarked but Unigram wins on convergence speed |
-| Embeddings | 2 | 2–7 | Token + positional (learned in P2–3, RoPE in P4+) |
-| Transformer block | 3 | 3–7 | Pre-norm, causal attention, residual FFN |
-| RoPE | 4 | 4–7 | Replaces learned positional |
-| SwiGLU | 4 | 4–7 | Replaces GELU FFN |
-| GQA | 4 | 4–5 | Multi-query attention; replaced by MLA in P6 |
-| KV-cache | 5 | 5–7 | Cached K/V for autoregressive generation |
-| LoRA | 5 | 5–7 | Low-rank adaptation (<1% params) |
-| Reward model | 5 | 5–7 | Learned reward for PPO/GRPO |
-| MLA | 6 | 6–7 | Latent KV compression (DeepSeek-style) |
-| MoE layer | 6 | 6–7 | Sparse routing, expert tracking |
-| GRU Reasoning Stream | 7 | 7 only | Parallel GRU producing per-position reasoning states |
-| GRU Combiner | 7 | 7 only | Gated fusion of transformer + GRU states |
-
-**Hardware**: Dual 24GB GPUs (RTX); single GPU inference; CPU fallback.
-
----
-
-## Training Infrastructure
-
-- **Data**: Streaming; RAM LRU + SSD token cache
-- **Dataloader**: Parallel workers, prefetch, pinned memory, persistent workers
-- **Distributed**: DDP (P3+); FSDP (P3+, advanced from P4)
-- **Attention**: Multi-backend (Flash/Sage/xFormers/standard) with automatic fallback (P3+)
-- **Compilation**: torch.compile (P3+)
-- **Scale**: Microbatching + gradient accumulation
-
-### Data Strategy
-
-**Philosophy**: Pre-train on unrestricted data (P2–4); apply safety via post-training (P5).
-
-**By phase**:
-- **P2**: TinyStories, WikiText-103 (1–10M tokens)
-- **P3**: TinyStories (~10%), WikiText-103 (full ~100M), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K with EOS per doc, NFKC normalization
-- **P4**: OpenWebText/FineWeb (10–500M tokens); 75% neutral + 20% controversial + 5% harmful; curriculum stages at 10M/50M/100–500M
-- **P5**: 1–5M instruction pairs, 50K–500K grounding (GSM8K, MATH, ARC), 10K–100K preference pairs + 5–10% harmful
-- **P6**: Partitioned SFT + preference (1–5M) for expert specialization
-- **P7**: 50K–500K (input, trace, answer) + STaR traces; 60% reasoned / 40% direct
-
-**Sourcing**: Respect licenses, exclude PII, document provenance, deduplicate 5–10%.
-
-**Monitoring**: Loss, perplexity, throughput, memory; alerts on NaN/Inf, OOM, thermal.
-
-**Checkpoints**: Rolling + best; atomic writes; include RNG + config snapshot.
-
-### Data Pipeline
+## Data Pipeline
 
 ```mermaid
 flowchart LR
-    A["Raw Text<br/>slow disk"] --> B["Normalize<br/>cached .txt"]
-    B --> C["Tokenize<br/>.npy cache"]
-    C --> D["Extract Subset"]
-    D --> E["Fast Train<br/>fast disk"]
+    A[Raw text] --> B[Normalize + filter]
+    B --> C[Near-dedup]
+    C --> D[Tokenize + cache]
+    D --> E[Mix + sequence pack]
+    E --> F[Training shards]
 ```
 
-**Design**: Pre-tokenize once on slow disk → cache → stage chunks to fast disk with LRU (P4+).
+Design rule: expensive cleanup and dedup happen once per source; mixed packed shards are then reused across runs.
 
----
+## Config Evolution
 
-## Training Efficiency
-
-**Baseline**: BF16 + AMP throughout.
-
-**Precision schedule** (future exploration):
-| Stage | Steps | FFN/RNN |
-|-------|-------|---------|
-| 1 | 0–30% | BF16 + FP32 master |
-| 2 | 30–80% | FP8 (RTX 4090+/H100) |
-| 3 | 80–100% | FP8/BF16 mixed |
-
-Attention/MoE/embeddings always BF16. Rollback on divergence.
-
-**Optimizations** (P3 stack, validated on RTX 4090 dual-GPU):
-1. Multi-backend attention (Flash/Sage/xFormers) — 2–4× memory reduction (P3)
-2. torch.compile — ~20–30% throughput (P3)
-3. Fused QKV projection — single `nn.Linear(d, 3d)` with `.chunk(3)` split; removes 3→1 kernel launches (P3.8)
-4. Scaled residual init — `out_proj` + FFN `linear2` use `N(0, 0.02/√(2·L))` (GPT-2 style) to prevent variance growth with depth (P3.8)
-5. Chunked cross-entropy — iterates (B·T, V) in chunks of 4096; saves ~800 MB at B=24, T=2048, V=8192 (P3.9)
-6. FSDP — model sharding for larger configs; integrated alongside DDP (P3.9, advanced from P4)
-7. AdamW with fused CUDA kernel (`fused=True`, β=(0.9, 0.95)) — replaces vanilla Adam (P3)
-8. WSD (Warmup-Stable-Decay) scheduler — sqrt-decay shape; supports multi-phase continuation (P3)
-9. Gradient checkpointing (P4+)
-10. FP8 linear/FFN (P4+)
-11. Activation offloading (P4+)
-
----
-
-## Config System: Version-Aware Evolution
-
-All config classes (`ModelConfig`, `TrainingConfig`, `DataConfig`, `InferenceConfig`) have `__version__: ClassVar[int]` to track config evolution without brittleness.
-
-**When to increment version**:
-- Required new fields (no default) → increment
-- Breaking validation changes → increment
-- Optional fields with defaults → no increment
-
-**Non-breaking additions**: Add field with default → old TOML files work, old checkpoints recognized.
-
-**Checkpoint versioning**: `save_checkpoint()` includes `config_versions` dict. `load_checkpoint()` validates version match; raises `ConfigVersionMismatchError` if mismatch. Use `strict_version_check=False` to load anyway (breaks reproducibility guarantee).
-
-**Test fixture resilience**: Use schema-aware builders from `tests/conftest.py`:
-```python
-from tests.conftest import build_model_config
-
-# Bad (brittle): hardcode all 15 fields
-config = ModelConfig(hidden_size=64, num_layers=1, ...)  # Breaks when fields added
-
-# Good (resilient): override only what you test
-config = build_model_config(hidden_size=64, num_layers=1)  # Auto-fills defaults
-```
-
-New fields automatically get sensible test defaults; no test refactoring on config changes.
-
----
-
-## Reproducibility
-
-
-**Artifact naming**: `p<phase>_<artifact>_<yyyymmdd>_<commit>_<seed>` — includes seed, config snapshot, dataset fingerprint, environment.
-
----
-
-## See Also
-
-- [PLAN.md](PLAN.md) — Phase execution with exit criteria
-- [config/README.md](../config/README.md) — Full field reference and config system API (versioning, checkpoints, test fixtures)
-- [.github/AGENTS.md](../.github/AGENTS.md) — Development standard (principles, discipline, workflow for all contributors)
-- [.github/SKILLS.md](../.github/SKILLS.md) — Detailed workflows (tool use, session bootstrap, commit procedure)
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — Contributor entry point
+- Config classes are versioned so schema changes stay explicit.
+- Required breaking fields increment version; optional defaulted fields do not.
+- Checkpoints store config-version metadata to protect reproducibility.
+- Runtime values remain canonical in [config/README.md](../config/README.md) and the milestone or ephemeral config files.

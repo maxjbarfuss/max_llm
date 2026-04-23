@@ -10,12 +10,19 @@ class FeedForward(nn.Module):
     """Feed-forward network: Linear(d_model -> 4*d_model) -> GELU(tanh) -> Linear(4*d_model -> d_model)."""
 
     def __init__(
-        self, d_model: int, expansion_ratio: int = 4, dropout: float = 0.0, num_layers: int = 1
+        self,
+        d_model: int,
+        expansion_ratio: int = 4,
+        dropout: float = 0.0,
+        num_layers: int = 1,
+        intermediate_size: int | None = None,
     ) -> None:
         super().__init__()
         self.d_model = d_model
         self.num_layers = num_layers
-        hidden_dim = d_model * expansion_ratio
+        hidden_dim = (
+            intermediate_size if intermediate_size is not None else d_model * expansion_ratio
+        )
 
         self.linear1 = nn.Linear(d_model, hidden_dim, bias=True)
         self.activation = nn.GELU(approximate="tanh")

@@ -68,6 +68,12 @@ Platform-agnostic workflows and patterns for working efficiently on max_llm. Thi
 - **C++**: Use build system introspection to discover targets and tests before invoking terminal builds
 - **Project scaffolding**: Use your platform's workspace or project creation tools where available
 
+### 9. Dataset Acquisition
+- Before fetching any new Hugging Face dataset, load auth first instead of probing anonymously
+- Preferred repo flow: `source setup.sh` or `export HF_TOKEN=$(cat .huggingface/.hf_token)`
+- Export `HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"` as well for tools that look for the alternate variable name
+- Keep dataset discovery bounded to known roots when possible; use Hugging Face auth for remote fetches and `.huggingface/.hf_token` for local secret storage
+
 ---
 
 ## Session Workflow (Required)
@@ -77,7 +83,7 @@ Platform-agnostic workflows and patterns for working efficiently on max_llm. Thi
 **Do this at the start of every session:**
 1. Read [LESSONS.md](LESSONS.md) — past agent mistakes to avoid
 2. Read [MEMORY.md](MEMORY.md) — working session context (see [MEMORY vs SESSION_LOG Pattern](MEMORY.md#memory-vs-session_log-pattern-must-understand))
-3. Check [SESSION_LOG.md](SESSION_LOG.md) for historical context if needed
+3. Check [SESSION_LOG.md](SESSION_LOG.md) for recent historical context; use [SESSION_LOG_ARCHIVE.md](SESSION_LOG_ARCHIVE.md) for older sessions if needed
 4. Read [docs/PLAN.md](../docs/PLAN.md) — pick task from current phase
 5. Activate environment: `git status && source .venv/bin/activate`
 
@@ -88,11 +94,12 @@ Platform-agnostic workflows and patterns for working efficiently on max_llm. Thi
 - **Track phase progress**: Mark items ✅ in [docs/PLAN.md](../docs/PLAN.md) when completing phase deliverables, update progress percentages
 - **Follow TDD discipline**: Write failing test first → implement → verify test passes
 - **🚨 Git restriction (L001 CRITICAL)**: Use **only** local `git` CLI. Never use GUI wrappers, integrated git extensions, or git server tools of any kind. See [LESSONS.md](LESSONS.md#-l001--never-use-gui-git-wrappers-critical).
+- **🚨 Hugging Face dataset rule (L017)**: Before any new Hugging Face dataset fetch, load `HF_TOKEN` from `.huggingface/.hf_token` or via `source setup.sh`; do not burn time on anonymous retries first
 
 ### File Purposes
 - **MEMORY.md** = working/thinking state (what you're doing now) — see [MEMORY vs SESSION_LOG Pattern](MEMORY.md#memory-vs-session_log-pattern-must-understand)
 - **PLAN.md** = project progress (phase items, roadmap)
-- **SESSION_LOG.md** = history (append-only log)
+- **SESSION_LOG.md** = recent history; **SESSION_LOG_ARCHIVE.md** = older history
 
 ### If Crash/Hang
 Read [MEMORY.md](MEMORY.md) checkpoint → resume from there
@@ -110,6 +117,18 @@ Before every commit:
 5. **Commit atomically**: `git add . && git commit -m "Phase X.Y: clear message"`
 
 **Commit message format**: `Phase X.Y: <imperative verb> <what changed>` (e.g., "Phase 3.2: add xformers attention implementation")
+
+---
+
+## Slash Commands (Claude Code)
+
+Project-specific slash commands live in `.claude/commands/`. Invoke them with `/command-name [args]`.
+
+| Command | What it does |
+|---------|-------------|
+| `/chat [run_name]` | Start an interactive chat session with a trained checkpoint. Finds the most recent checkpoint under `outputs/ephemeral/` and its matching config in `config/ephemeral/` automatically. Pass an optional run name (e.g. `/chat p4_norm_ab_rms`) to pick a specific run. Runs `python -m src.inference.chat`. |
+| `/train [config_name]` | Launch a training run across both GPUs (RTX 4090 + RTX 3090 Ti) via `torchrun --nproc_per_node=2`. Resolves the config from `config/ephemeral/` or `config/milestones/` by name, or lists available configs if no argument given. Always uses DDP — never single-GPU. |
+| `/dataprep [config_name]` | Run the data preparation pipeline (`python -m src.data.preparation`) to tokenize and stage a dataset. Resolves config from `config/ephemeral/` or `config/data_prep/` by name. Reports output artifact paths and token counts on completion. |
 
 ---
 

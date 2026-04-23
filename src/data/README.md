@@ -78,6 +78,7 @@ Pre-tokenized `npy` sources have the same unk filter applied at the array level 
 
 - Use `target_total_docs` when your ratios are meant in documents.
 - Use `target_total_tokens` with `weight_by = "tokens"` when your ratios are meant in tokens.
+- For token-weighted multi-source mixes, set `target_total_tokens` explicitly unless every source has its own `max_tokens` cap. Otherwise the pipeline will size itself to the full readable source inventory.
 
 Each `[[datasets]]` entry may also set `max_docs` or `max_tokens` to stop reading a large source early. This is especially useful for very large corpora such as FineWeb where reading the full source just to downsample later would waste hours.
 

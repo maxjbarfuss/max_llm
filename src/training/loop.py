@@ -172,6 +172,13 @@ def train_step(
         logits = model(x)  # (B, T, V)
         loss = compute_loss_with_smoothing(logits, y, label_smoothing)
 
+    loss_value = loss.item()
+    if not math.isfinite(loss_value):
+        raise FloatingPointError(
+            "Non-finite loss detected before backward "
+            f"(loss={loss_value}, label_smoothing={label_smoothing})."
+        )
+
     # Scale loss before backward so accumulated gradients equal the full-batch
     # gradient.  Without this, accum_steps × too-large gradients cause the
     # gradient clip to fire too aggressively early in training, and once
@@ -185,7 +192,7 @@ def train_step(
     else:
         loss_scaled.backward()
 
-    return loss.item()  # Return unscaled loss for logging
+    return loss_value  # Return unscaled loss for logging
 
 
 def optimizer_step(
@@ -217,6 +224,11 @@ def optimizer_step(
     if model is not None:
         clip = gradient_clip_norm if gradient_clip_norm is not None else float("inf")
         grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), clip).item()
+        if not math.isfinite(grad_norm):
+            optimizer.zero_grad(set_to_none=True)
+            if use_amp and scaler is not None:
+                scaler.update()  # reset scaler state so next unscale_() is valid
+            return grad_norm  # caller manages consecutive-bad-step policy
 
     # Optimizer step
     if use_amp and scaler is not None:
@@ -252,6 +264,8 @@ def train(  # noqa: C901
     checkpoint_interval: int = 0,
     checkpoint_fn: Any | None = None,
     eval_max_batches: int = 0,
+    benchmark_interval: int = 0,
+    benchmark_fn: Any | None = None,
 ) -> dict[str, list[float]]:
     """Train for exactly max_steps gradient steps with modern training features.
 
@@ -349,7 +363,9 @@ def train(  # noqa: C901
     epoch = 0
     accumulated_loss = 0.0
     step_start_time = time.time()
+    start_time = step_start_time
     tokens_in_step = 0
+    consecutive_bad_steps = 0
 
     while step < max_steps and not should_stop_early:
         # Per-epoch setup: randomize TokenDataset sequence offsets so successive
@@ -369,11 +385,13 @@ def train(  # noqa: C901
                 tokens_in_step += x.numel()
 
             is_last_micro_step = (micro_step + 1) % gradient_accumulation_steps == 0
+            is_first_micro_step = micro_step % gradient_accumulation_steps == 0
             accumulate_grad = not is_last_micro_step
 
             # Mark CUDA graph step begin only when using torch.compile, once per
-            # accumulation cycle.  Calling this unconditionally can deadlock DDP.
-            if use_torch_compile and torch.cuda.is_available() and not accumulate_grad:
+            # accumulation cycle at the first micro-step. Calling this
+            # unconditionally can deadlock DDP.
+            if use_torch_compile and torch.cuda.is_available() and is_first_micro_step:
                 torch.compiler.cudagraph_mark_step_begin()
 
             # For DDP: suppress gradient sync on all but the last micro-batch so
@@ -404,7 +422,7 @@ def train(  # noqa: C901
                 # Average loss over accumulated micro-batches
                 avg_loss = accumulated_loss / gradient_accumulation_steps
 
-                # Optimizer step with gradient clipping (returns grad norm)
+                # Optimizer step with gradient clipping (returns inf grad_norm if non-finite)
                 grad_norm = optimizer_step(
                     optimizer=optimizer,
                     scaler=scaler,
@@ -413,9 +431,30 @@ def train(  # noqa: C901
                     model=model,
                 )
 
-                # LR scheduler step
+                # LR scheduler always steps to keep schedule aligned with step count
                 if lr_scheduler is not None:
                     lr_scheduler.step()
+
+                # Skip isolated bad steps; abort on 3 consecutive non-finite values
+                if not math.isfinite(avg_loss) or not math.isfinite(grad_norm):
+                    consecutive_bad_steps += 1
+                    print(
+                        f"WARNING: non-finite values at step {step + 1} "
+                        f"(loss={avg_loss:.4g}, grad_norm={grad_norm:.4g}); "
+                        f"skipping update ({consecutive_bad_steps}/3)."
+                    )
+                    if consecutive_bad_steps >= 3:
+                        raise FloatingPointError(
+                            f"3 consecutive non-finite steps ending at step {step + 1}; "
+                            f"last: loss={avg_loss:.4g}, grad_norm={grad_norm:.4g}."
+                        )
+                    accumulated_loss = 0.0
+                    tokens_in_step = 0
+                    step_start_time = time.time()
+                    step += 1
+                    continue  # skip logging/checkpointing; outer reset block bypassed
+
+                consecutive_bad_steps = 0
 
                 # Compute metrics
                 perplexity = compute_perplexity(avg_loss)
@@ -510,10 +549,23 @@ def train(  # noqa: C901
 
                 # Logging
                 if log_interval > 0 and (step + 1) % log_interval == 0:
+                    # Estimate ETA and remaining steps/time
+                    steps_done = step + 1
+                    steps_left = max_steps - steps_done
+                    elapsed_total = time.time() - (
+                        step_start_time if steps_done == 1 else start_time
+                    )
+                    avg_step_time = elapsed_total / steps_done if steps_done > 0 else 0.0
+                    eta_seconds = int(avg_step_time * steps_left)
+                    eta_h = eta_seconds // 3600
+                    eta_m = (eta_seconds % 3600) // 60
+                    eta_s = eta_seconds % 60
+                    eta_str = f"{eta_h:02}:{eta_m:02}:{eta_s:02}"
                     log_msg = (
-                        f"step {step + 1:>5}/{max_steps}  "
+                        f"step {steps_done:>5}/{max_steps}  "
                         f"loss={avg_loss:.4f}  ppl={perplexity:.2f}  "
-                        f"lr={current_lr:.2e}"
+                        f"lr={current_lr:.2e}  "
+                        f"ETA={eta_str}  left={steps_left}"
                     )
                     if log_tokens_per_sec:
                         log_msg += f"  tokens/s={tokens_per_sec:.0f}"
@@ -531,7 +583,15 @@ def train(  # noqa: C901
                     and checkpoint_fn is not None
                     and (step + 1) % checkpoint_interval == 0
                 ):
-                    checkpoint_fn(step + 1)
+                    checkpoint_fn(step + 1, val_loss=val_loss)
+
+                # Optional external benchmark callback (for MCQ harness, etc.)
+                if (
+                    benchmark_interval > 0
+                    and benchmark_fn is not None
+                    and (step + 1) % benchmark_interval == 0
+                ):
+                    benchmark_fn(step + 1)
 
                 # Reset for next step
                 accumulated_loss = 0.0

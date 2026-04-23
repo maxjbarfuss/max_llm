@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
@@ -16,6 +17,7 @@ from src.data.preparation.strategies import (
     InterleaveMixer,
     NoCurriculum,
     NpyReader,
+    ParquetReader,
     SimpleSplitter,
     StratifiedSplitter,
     TextFormatReader,
@@ -25,6 +27,7 @@ from src.data.preparation.strategies import (
     resolve_format_reader,
     resolve_mixing_strategy,
     resolve_split_strategy,
+    select_source_indices,
 )
 
 
@@ -186,6 +189,50 @@ def test_jsonl_reader_extracts_text_field(tmp_path):
     assert docs[0][0] == "jsonsrc"
 
 
+def test_parquet_reader_streams_batches_without_read_table(monkeypatch, tmp_path):
+    class _FakeValue:
+        def __init__(self, text: str):
+            self._text = text
+
+        def as_py(self) -> str:
+            return self._text
+
+    class _FakeBatch:
+        def __init__(self, texts: list[str]):
+            self._texts = texts
+
+        def column(self, _: str):
+            return [_FakeValue(text) for text in self._texts]
+
+    class _FakeParquetFile:
+        def __init__(self, path):
+            self.path = path
+
+        def iter_batches(self, columns, batch_size):
+            assert columns == ["text"]
+            assert batch_size == 1000
+            yield _FakeBatch(["alpha", "beta"])
+
+    fake_parquet = type("FakeParquetModule", (), {})()
+    fake_parquet.read_table = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("read_table should not be used")
+    )
+    fake_parquet.ParquetFile = _FakeParquetFile
+
+    fake_pyarrow = type("FakePyArrowModule", (), {"parquet": fake_parquet})()
+    monkeypatch.setitem(sys.modules, "pyarrow", fake_pyarrow)
+    monkeypatch.setitem(sys.modules, "pyarrow.parquet", fake_parquet)
+
+    path = tmp_path / "sample.parquet"
+    path.write_bytes(b"PAR1")
+    source = DataSource(name="pq", path=str(path), format="parquet", min_length=1)
+
+    docs = list(ParquetReader().iter_documents(source, _DummyTokenizer()))
+
+    assert [name for name, _ in docs] == ["pq", "pq"]
+    assert [len(arr) for _, arr in docs] == [5, 4]
+
+
 def test_mixer_defaults_to_interleave():
     mixer = resolve_mixing_strategy(MixingConfig())
     assert isinstance(mixer, InterleaveMixer)
@@ -340,6 +387,25 @@ def test_token_weighted_mixing_honors_total_token_budget():
     tok_b = sum(len(d) for name, d in mixed if name == "b")
     assert tok_a == 200
     assert tok_b == 800
+
+
+def test_select_source_indices_honors_token_budget_without_materializing_lists():
+    docs_a = [np.ones(10, dtype=np.uint16) for _ in range(300)]
+    docs_b = [np.ones(100, dtype=np.uint16) for _ in range(300)]
+    all_docs = {"a": docs_a, "b": docs_b}
+
+    cfg = MixingConfig(
+        source_ratios={"a": 0.25, "b": 0.75},
+        weight_by="tokens",
+        target_total_tokens=2000,
+        seed=0,
+    )
+    selected = select_source_indices(cast(dict[str, Sequence[np.ndarray]], all_docs), cfg)
+
+    tok_a = sum(len(all_docs["a"][int(index)]) for index in selected["a"])
+    tok_b = sum(len(all_docs["b"][int(index)]) for index in selected["b"])
+    assert tok_a == 500
+    assert tok_b == 1500
 
 
 def test_read_and_spill_honors_source_max_tokens(tmp_path):

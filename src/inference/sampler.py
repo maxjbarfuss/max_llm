@@ -1,5 +1,7 @@
 """Token sampling strategies: greedy, temperature, top-k, top-p (nucleus)."""
 
+from __future__ import annotations
+
 import torch
 
 
@@ -8,13 +10,23 @@ def sample_token(
     temperature: float = 1.0,
     top_p: float = 0.0,
     top_k: int = 0,
+    repetition_penalty: float = 1.0,
+    repetition_window: int = 64,
+    context: list[int] | None = None,
 ) -> int:
     """Sample next token from logits (vocab_size,).
 
     temperature <= 0: greedy (argmax).
     top_k > 0: keep only the k most likely tokens before sampling.
     0 < top_p < 1: nucleus sampling — keep tokens until cumulative prob >= top_p.
+    repetition_penalty > 1: divide logits of tokens seen in the last
+        repetition_window positions, suppressing repeats.
     """
+    if repetition_penalty > 1.0 and context:
+        recent = set(context[-repetition_window:])
+        for token_id in recent:
+            logits[token_id] = logits[token_id] / repetition_penalty
+
     if temperature <= 0:
         return int(torch.argmax(logits).item())
 

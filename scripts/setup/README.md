@@ -94,6 +94,42 @@ Dataset preparation is first-class in `src/data/preparation/`. Use
 `python -m src.data.preparation --config <config.json|config.toml>` and see
 [src/data/README.md](../../src/data/README.md) for data tooling details.
 
+For repeated Hugging Face dataset downloads, use the rerunnable helper below.
+It defaults to `D:\dev\data` via `/mnt/d/dev/data/hf` so raw corpora stay off the local
+fast artifact area:
+
+```bash
+/home/max/dev/max_llm/.venv/bin/python scripts/setup/download_hf_dataset.py \
+	wikimedia/wikipedia \
+	--revision 20231101.en \
+	--list-files \
+	--allow '*.parquet'
+```
+
+Then download the subset you actually want:
+
+```bash
+/home/max/dev/max_llm/.venv/bin/python scripts/setup/download_hf_dataset.py \
+	wikimedia/wikipedia \
+	--revision 20231101.en \
+	--allow '*.parquet'
+```
+
+For shard-limited downloads, prefer explicit brace ranges over broad wildcards so you do not
+accidentally match an entire shard family:
+
+```bash
+/home/max/dev/max_llm/.venv/bin/python scripts/setup/download_hf_dataset.py \
+	HuggingFaceFW/fineweb \
+	--allow 'data/CC-MAIN-2023-14/000_000{00..07}.parquet'
+```
+
+The helper now prints the matched file count before download so an overly broad pattern is
+obvious immediately.
+
+The default raw download root is `/mnt/d/dev/data/hf` and the default HF cache dir
+is `/mnt/d/dev/data/hf_cache`.
+
 For fast local source discovery (without broad filesystem scans), use:
 
 ```bash
@@ -134,4 +170,5 @@ Read: [NVIDIA WSL User Guide](https://docs.nvidia.com/cuda/wsl-user-guide/)
 - [README.md](../../README.md): Project overview and status
 - [CONTRIBUTING.md](../../CONTRIBUTING.md): Workflow and contribution rules
 - [.github/MEMORY.md](../../.github/MEMORY.md): Current session working state
-- [.github/SESSION_LOG.md](../../.github/SESSION_LOG.md): History of completed work
+- [.github/SESSION_LOG.md](../../.github/SESSION_LOG.md): Recent history of completed work
+- [.github/SESSION_LOG_ARCHIVE.md](../../.github/SESSION_LOG_ARCHIVE.md): Archived older completed-work history

@@ -125,6 +125,29 @@ class TestValidation:
         with pytest.raises(AssertionError, match="max_tokens"):
             cfg.validate()
 
+    def test_validate_rejects_unbounded_token_weighted_multisource_mix(self):
+        cfg = DataPreparationConfig(
+            datasets=[
+                DataSource(name="a", path=__file__, weight=0.7),
+                DataSource(name="b", path=__file__, weight=0.3),
+            ],
+            mixing=MixingConfig(weight_by="tokens"),
+        )
+
+        with pytest.raises(ValueError, match="target_total_tokens"):
+            cfg.validate()
+
+    def test_validate_accepts_token_weighted_multisource_mix_with_source_caps(self):
+        cfg = DataPreparationConfig(
+            datasets=[
+                DataSource(name="a", path=__file__, weight=0.7, max_tokens=100),
+                DataSource(name="b", path=__file__, weight=0.3, max_tokens=200),
+            ],
+            mixing=MixingConfig(weight_by="tokens"),
+        )
+
+        cfg.validate()
+
     def test_validate_accepts_existing_file_dataset(self):
         cfg = DataPreparationConfig(
             datasets=[DataSource(name="tiny", path=__file__)],

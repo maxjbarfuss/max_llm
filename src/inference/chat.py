@@ -73,6 +73,8 @@ def chat_mode(
     temperature = config.inference.temperature
     top_p = config.inference.top_p
     top_k = config.inference.top_k
+    repetition_penalty = config.inference.repetition_penalty
+    repetition_window = config.inference.repetition_window
     max_new_tokens = max_tokens or config.inference.max_new_tokens
     max_seq_len = config.model.max_seq_length
 
@@ -82,7 +84,8 @@ def chat_mode(
     )
     print(f"   Data: {config.data.dataset_path}")
     print(
-        f"   Sampling: temp={temperature}, top_p={top_p}, top_k={top_k}, max_tokens={max_new_tokens}"
+        f"   Sampling: temp={temperature}, top_p={top_p}, top_k={top_k}, "
+        f"rep_penalty={repetition_penalty}, max_tokens={max_new_tokens}"
     )
     print("\n💬 Type prompts below (Ctrl+C to exit):\n")
 
@@ -117,6 +120,9 @@ def chat_mode(
                     if device.type == "cuda"
                     else torch.no_grad()
                 )
+                print("🤖 ", end="", flush=True)
+                gen_start = len(tokens)
+                prev_decoded_len = 0
                 with torch.no_grad(), autocast_ctx:
                     for _ in range(max_new_tokens):
                         input_ids = torch.tensor(
@@ -127,10 +133,16 @@ def chat_mode(
                             temperature=temperature,
                             top_p=top_p,
                             top_k=top_k,
+                            repetition_penalty=repetition_penalty,
+                            repetition_window=repetition_window,
+                            context=tokens,
                         )
                         tokens.append(next_token)
+                        decoded = tokenizer.decode(tokens[gen_start:])
+                        print(decoded[prev_decoded_len:], end="", flush=True)
+                        prev_decoded_len = len(decoded)
 
-                print(f"🤖 {tokenizer.decode(tokens)}\n")
+                print("\n")
             except Exception as e:
                 print(f"❌ Generation error: {e}\n")
                 import traceback

@@ -122,9 +122,13 @@ class DataPreparationConfig:
         total = self.splits.train + self.splits.val + self.splits.test
         assert abs(total - 1.0) < 1e-6, f"Splits must sum to 1.0, got {total}"
 
+        active_datasets = [ds for ds in self.datasets if ds.weight > 0]
+
         assert len(self.datasets) > 0, "Need at least one dataset"
         for ds in self.datasets:
-            assert Path(ds.path).exists(), f"Not found: {ds.path}"
+            # Allow remote Hugging Face URIs (hf://) as valid paths
+            if not (isinstance(ds.path, str) and ds.path.startswith("hf://")):
+                assert Path(ds.path).exists(), f"Not found: {ds.path}"
             assert ds.weight >= 0, f"Negative weight: {ds.name}"
             if ds.max_docs is not None:
                 assert ds.max_docs > 0, f"max_docs must be > 0: {ds.name}"
@@ -140,6 +144,16 @@ class DataPreparationConfig:
             raise ValueError("Specify only one of target_total_docs or target_total_tokens")
         if self.mixing.weight_by not in {"docs", "tokens"}:
             raise ValueError(f"Unknown weight_by: {self.mixing.weight_by}")
+        if (
+            self.mixing.weight_by == "tokens"
+            and len(active_datasets) > 1
+            and self.mixing.target_total_tokens is None
+            and not all(ds.max_tokens is not None for ds in active_datasets)
+        ):
+            raise ValueError(
+                "Token-weighted multi-source mixing requires mixing.target_total_tokens "
+                "or max_tokens on every active dataset"
+            )
 
 
 def _load_raw(path: Path) -> dict[str, Any]:

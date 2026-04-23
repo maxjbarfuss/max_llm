@@ -5,8 +5,10 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import random
+import time
 from pathlib import Path
 from typing import cast
 
@@ -16,6 +18,7 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from src.config.data import DataConfig
 from src.config.experiment import ExperimentConfig
+from src.eval import BenchmarkRunner, BenchmarkRunnerConfig
 from src.inference.utils import resolve_device
 from src.models.learning_model import LearningModel
 from src.tokenizer import create_configured_tokenizer
@@ -35,9 +38,31 @@ from src.training.profiling import log_model_size
 from src.training.scheduler import (
     get_cosine_schedule_with_warmup,
     get_resume_hold_ramp_then_wsd_schedule,
+    get_sgdr_schedule,
     get_wsd_schedule,
 )
 from src.utils import seed_everything, seed_worker
+
+
+def _write_training_status(
+    output_dir: str | Path,
+    step: int,
+    max_steps: int,
+    checkpoint_path: str | Path | None = None,
+    val_loss: float | None = None,
+    done: bool = False,
+) -> None:
+    """Write training_status.json to output_dir for external status monitoring."""
+    status = {
+        "step": step,
+        "max_steps": max_steps,
+        "done": done,
+        "val_loss": val_loss,
+        "checkpoint": str(checkpoint_path) if checkpoint_path else None,
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    path = Path(output_dir) / "training_status.json"
+    path.write_text(json.dumps(status, indent=2))
 
 
 class TokenDataset(Dataset):
@@ -228,7 +253,7 @@ def load_checkpoint(
     return checkpoint.get("step", 0)
 
 
-def create_simple_loaders(
+def create_simple_loaders(  # noqa: C901
     train_tokens: np.ndarray | torch.Tensor,
     seq_len: int,
     batch_size: int,
@@ -265,11 +290,19 @@ def create_simple_loaders(
         seed: Random seed for reproducibility.
         device: Device for pin_memory setting (pinned if CUDA).
         num_workers: Number of data loading workers (default: 0).
+            Recommended: 2–8 for large datasets. Avoid 0 for large datasets to prevent CPU lockup.
         prefetch_factor: Number of batches to prefetch per worker (default: 2).
         persistent_workers: Keep workers alive between epochs (default: False).
+            Recommended: True if num_workers > 0 and training is multi-epoch.
 
     Returns:
         Tuple of (train_loader, val_loader, test_loader_or_none)
+
+    Notes:
+        - Setting num_workers=0 causes all data loading to occur in the main process, which can lock up the CPU for large datasets.
+        - For large datasets (e.g., >100,000 samples), set num_workers >= 2.
+        - persistent_workers=True is only effective if num_workers > 0.
+        - Monitor for warnings about slow data loading or CPU utilization.
     """
     # Create generator for reproducible shuffling
     generator = torch.Generator()
@@ -284,6 +317,17 @@ def create_simple_loaders(
     if total_samples == 0:
         raise ValueError(
             f"Not enough tokens ({len(train_tokens)}) for at least one sample (need {seq_len + 1})"
+        )
+
+    # Warn if num_workers=0 and dataset is large (risk of CPU lockup)
+    if num_workers == 0 and total_samples > 100_000:
+        import warnings
+
+        warnings.warn(
+            f"[Max LLM] num_workers=0 with {total_samples:,} samples: this can cause CPU lockup or unresponsiveness. "
+            "Set num_workers=2 or higher for large datasets.",
+            RuntimeWarning,
+            stacklevel=2,
         )
 
     def _make_dataset(
@@ -512,11 +556,21 @@ def main() -> None:  # noqa: C901
         if want_fsdp:
             from src.models.transformer.transformer_block import TransformerBlock
 
-            print_once("Wrapping model with FSDP (sharding_strategy=full_shard)")
+            # block_attn residuals call apply_attn_only / apply_ffn_only which
+            # bypass each TransformerBlock's __call__ and therefore bypass the
+            # FSDP pre-forward hook.  Use outer-model-only wrapping so the
+            # single FSDP pre-forward hook gathers all params before dispatch.
+            uses_block_attn = getattr(config.model, "res_type", "") == "block_attn"
+            layer_cls = None if uses_block_attn else TransformerBlock
+            fsdp_strategy = "shard_grad_op"
+            print_once(
+                f"Wrapping model with FSDP (sharding_strategy={fsdp_strategy}, "
+                f"inner_wrap={'per-block' if layer_cls else 'model-level'})"
+            )
             model = wrap_model_fsdp(
                 model,
-                transformer_layer_cls=TransformerBlock,
-                sharding_strategy="full_shard",
+                transformer_layer_cls=layer_cls,
+                sharding_strategy=fsdp_strategy,
             )  # type: ignore[assignment]
         else:
             print_once("Wrapping model with DistributedDataParallel")
@@ -546,11 +600,36 @@ def main() -> None:  # noqa: C901
         if want_fsdp:
             print_once("Warning: torch.compile + FSDP has known issues; disabling compile")
             use_torch_compile = False
+        elif config.training.attention_backend == "sage":
+            print_once(
+                "Warning: torch.compile with Sage Attention often provides limited benefit; "
+                "disabling compile for stability."
+            )
+            use_torch_compile = False
         else:
-            compile_mode = "default" if want_distributed else "max-autotune"
-            print_once(f"torch.compile: Enabled (mode={compile_mode})")
+            compile_mode = config.training.torch_compile_mode or (
+                "default" if want_distributed else "max-autotune"
+            )
+            if want_distributed and compile_mode.startswith("max-autotune"):
+                print_once(
+                    "Warning: max-autotune with distributed training can deadlock on "
+                    "heterogeneous GPUs; overriding compile mode to 'default'."
+                )
+                compile_mode = "default"
+
+            print_once(
+                "torch.compile: Enabled "
+                f"(mode={compile_mode}, "
+                f"fullgraph={config.training.torch_compile_fullgraph}, "
+                f"dynamic={config.training.torch_compile_dynamic})"
+            )
             try:
-                model = torch.compile(model, mode=compile_mode)  # type: ignore[assignment]
+                model = torch.compile(  # type: ignore[assignment]
+                    model,
+                    mode=compile_mode,
+                    fullgraph=config.training.torch_compile_fullgraph,
+                    dynamic=config.training.torch_compile_dynamic,
+                )
             except Exception as e:
                 print_once(f"Warning: torch.compile failed ({e}), continuing without compilation")
                 use_torch_compile = False
@@ -601,10 +680,10 @@ def main() -> None:  # noqa: C901
                 if isinstance(first_lr, float):
                     ckpt_lr = first_lr
         # LambdaLR with last_epoch >= 0 requires initial_lr in every param group.
-        # Use loaded optimizer lr when resuming so extending max_steps does not
-        # cause an artificial LR jump relative to the checkpoint state.
+        # Always use the config target LR as initial_lr so the scheduler's base_lr
+        # reflects the intended target, not the checkpoint's (possibly different) LR.
         for group in optimizer.param_groups:
-            group["initial_lr"] = group.get("lr", config.training.learning_rate)
+            group["initial_lr"] = config.training.learning_rate
 
     # For resumed runs with schedule restart, read checkpoint LR from optimizer_state
     # metadata if it was not captured while restoring optimizer state.
@@ -613,6 +692,7 @@ def main() -> None:  # noqa: C901
         and resume_path is not None
         and loaded_step > 0
         and not config.training.resume_scheduler_state
+        and config.training.resume_optimizer_state
     ):
         _resume_ckpt = torch.load(resume_path, map_location="cpu")
         optimizer_state = _resume_ckpt.get("optimizer_state")
@@ -629,15 +709,27 @@ def main() -> None:  # noqa: C901
     # If resuming from checkpoint, initialize scheduler at the loaded step
     # to avoid "scheduler.step() before optimizer.step()" warning
     if config.training.scheduler_type == "wsd":
-        use_resume_transition = loaded_step > 0 and not config.training.resume_scheduler_state
+        lr_mismatch = (
+            ckpt_lr is not None
+            and config.training.resume_optimizer_state
+            and abs(ckpt_lr - config.training.learning_rate) > 1e-10
+        )
+        use_resume_transition = loaded_step > 0 and (
+            not config.training.resume_scheduler_state or lr_mismatch
+        )
 
         if use_resume_transition:
-            if ckpt_lr is None:
-                raise ValueError(
-                    "resume_lr_hold_steps/warmup_steps configured, but checkpoint LR "
-                    "could not be read from optimizer_state"
-                )
-            start_lr_ratio = max(0.0, min(1.0, ckpt_lr / config.training.learning_rate))
+            # If optimizer state is intentionally reset, allow a true warmup from 0 LR.
+            if not config.training.resume_optimizer_state:
+                start_lr_ratio = 0.0
+                ckpt_lr = 0.0
+            else:
+                if ckpt_lr is None:
+                    raise ValueError(
+                        "resume_lr_hold_steps/warmup_steps configured, but checkpoint LR "
+                        "could not be read from optimizer_state"
+                    )
+                start_lr_ratio = max(0.0, ckpt_lr / config.training.learning_rate)
             lr_scheduler = get_resume_hold_ramp_then_wsd_schedule(
                 optimizer=optimizer,
                 num_training_steps=config.training.max_steps,
@@ -682,6 +774,21 @@ def main() -> None:  # noqa: C901
                 f"shape={config.training.wsd_decay_shape}, "
                 f"min_lr_ratio={config.training.min_lr_ratio:.3f}"
             )
+    elif config.training.scheduler_type == "sgdr":
+        lr_scheduler = get_sgdr_schedule(
+            optimizer=optimizer,
+            num_training_steps=config.training.max_steps,
+            num_cycles=config.training.sgdr_num_cycles,
+            min_lr_ratio=config.training.min_lr_ratio,
+            cycle_decay=config.training.sgdr_cycle_decay,
+            last_epoch=scheduler_resume_step - 1 if scheduler_resume_step > 0 else -1,
+        )
+        print_once(
+            f"Scheduler  : SGDR cycles={config.training.sgdr_num_cycles} "
+            f"cycle_decay={config.training.sgdr_cycle_decay} "
+            f"min_lr_ratio={config.training.min_lr_ratio} "
+            f"over {config.training.max_steps} steps"
+        )
     else:
         lr_scheduler = get_cosine_schedule_with_warmup(
             optimizer=optimizer,
@@ -734,10 +841,39 @@ def main() -> None:  # noqa: C901
         print_once(f"TensorBoard: {tb_log_dir}")
         print_once(f"             tensorboard --logdir {tb_log_dir}")
 
+    benchmark_runner: BenchmarkRunner | None = None
+    benchmark_jsonl_path = Path(config.output_dir) / "benchmark_curve.jsonl"
+    benchmark_tokenizer = None
+    if config.training.benchmark_tasks:
+        benchmark_runner = BenchmarkRunner(
+            BenchmarkRunnerConfig(
+                tasks=config.training.benchmark_tasks,
+                split=config.training.benchmark_split,
+                max_examples=config.training.benchmark_max_examples,
+                length_normalize=config.training.benchmark_length_normalize,
+                cache_dir=str(Path(config.output_dir) / "benchmark_cache"),
+            )
+        )
+        benchmark_tokenizer = create_configured_tokenizer(
+            tokenizer_name=config.data.tokenizer_name,
+            tokenizer_mode=config.data.tokenizer_mode,
+            tokenizer_vocab_size=config.data.tokenizer_vocab_size,
+            tokenizer_backend=config.data.tokenizer_backend,
+            unigram_model_path=config.data.unigram_model_path,
+            tokenizer_vocab_path=config.data.tokenizer_vocab_path,
+        )
+        print_once(
+            "Benchmark  : Enabled "
+            f"tasks={config.training.benchmark_tasks} "
+            f"split={config.training.benchmark_split} "
+            f"max_examples={config.training.benchmark_max_examples} "
+            f"interval={config.training.benchmark_eval_interval}"
+        )
+
     # Build periodic checkpoint callback (rotating, keeps last N)
     _saved_checkpoints: list[Path] = []
 
-    def _periodic_checkpoint(step: int) -> None:
+    def _periodic_checkpoint(step: int, val_loss: float | None = None) -> None:
         # FSDP: state_dict() is a collective — all ranks must call it together
         # before branching on is_main_process().
         if want_fsdp:
@@ -773,7 +909,47 @@ def main() -> None:  # noqa: C901
             old = _saved_checkpoints.pop(0)
             if old.exists():
                 old.unlink()
+        _write_training_status(
+            config.output_dir,
+            step=step,
+            max_steps=config.training.max_steps,
+            checkpoint_path=ckpt_path,
+            val_loss=val_loss,
+        )
         print_once(f"Checkpoint : {ckpt_path}")
+
+    def _periodic_benchmark(step: int) -> None:
+        if benchmark_runner is None or benchmark_tokenizer is None:
+            return
+        if not is_main_process():
+            return
+        raw_model = getattr(model, "module", model) if want_distributed else model
+        result = benchmark_runner.run(
+            model=cast(LearningModel, raw_model),
+            tokenizer=benchmark_tokenizer,
+            max_seq_len=config.model.max_seq_length,
+            device=device,
+        )
+        payload = {
+            "step": step,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            **result,
+        }
+        benchmark_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with benchmark_jsonl_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload) + "\n")
+
+        per_task = result.get("per_task", {})
+        macro = result.get("macro_accuracy")
+        print_once(
+            f"Benchmark  : step={step} macro={macro:.4f} "
+            + " ".join(f"{task}={score:.4f}" for task, score in sorted(per_task.items()))
+        )
+        if tb_writer is not None:
+            if isinstance(macro, float):
+                tb_writer.add_scalar("eval_benchmark/macro_accuracy", macro, step)
+            for task, score in per_task.items():
+                tb_writer.add_scalar(f"eval_benchmark/{task}", score, step)
 
     # Train
     csv_log_path = Path(config.output_dir) / "loss_curve.csv"
@@ -801,6 +977,8 @@ def main() -> None:  # noqa: C901
         checkpoint_interval=config.training.checkpoint_interval,
         checkpoint_fn=_periodic_checkpoint,
         eval_max_batches=config.training.eval_max_batches,
+        benchmark_interval=config.training.benchmark_eval_interval,
+        benchmark_fn=_periodic_benchmark,
     )
     if tb_writer is not None:
         tb_writer.close()
@@ -822,6 +1000,8 @@ def main() -> None:  # noqa: C901
     )
 
     # Save final checkpoint (FSDP requires all ranks to participate in state_dict gather)
+    _val_losses = metrics.get("val_losses", [])
+    final_val_loss: float | None = _val_losses[-1] if _val_losses else None
     if want_fsdp:
         model_sd, opt_sd = collect_fsdp_state_dicts(model, optimizer)
         if is_main_process():
@@ -836,6 +1016,14 @@ def main() -> None:  # noqa: C901
                 },
                 ckpt_path,
             )
+            _write_training_status(
+                config.output_dir,
+                step=config.training.max_steps,
+                max_steps=config.training.max_steps,
+                checkpoint_path=ckpt_path,
+                val_loss=final_val_loss,
+                done=True,
+            )
             print(f"Checkpoint : {ckpt_path}")
     elif is_main_process():
         # Unwrap model if DDP
@@ -846,6 +1034,14 @@ def main() -> None:  # noqa: C901
             optimizer,
             step=config.training.max_steps,
             output_dir=config.output_dir,
+        )
+        _write_training_status(
+            config.output_dir,
+            step=config.training.max_steps,
+            max_steps=config.training.max_steps,
+            checkpoint_path=ckpt_path,
+            val_loss=final_val_loss,
+            done=True,
         )
         print(f"Checkpoint : {ckpt_path}")
 
