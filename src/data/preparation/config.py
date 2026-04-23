@@ -126,6 +126,13 @@ class DataPreparationConfig:
 
         assert len(self.datasets) > 0, "Need at least one dataset"
         for ds in self.datasets:
+            source_name = ds.name.lower()
+            source_path = ds.path.lower()
+            if "wikitext" in source_name or "wikitext" in source_path:
+                raise ValueError(
+                    "WikiText-103 is disallowed for new preparation configs; use Wikipedia instead"
+                )
+
             # Allow remote Hugging Face URIs (hf://) as valid paths
             if not (isinstance(ds.path, str) and ds.path.startswith("hf://")):
                 assert Path(ds.path).exists(), f"Not found: {ds.path}"

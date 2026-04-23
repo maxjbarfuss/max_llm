@@ -166,3 +166,26 @@ class TestValidation:
 
         with pytest.raises(AssertionError, match="shard_size_tokens"):
             cfg.validate()
+
+    def test_validate_rejects_wikitext_dataset_name(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="wikitext-103", path=__file__)],
+        )
+
+        with pytest.raises(ValueError, match="WikiText-103"):
+            cfg.validate()
+
+    def test_validate_rejects_wikitext_dataset_path(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="wiki", path="/tmp/wikitext-103.txt")],
+        )
+
+        with pytest.raises(ValueError, match="WikiText-103"):
+            cfg.validate()
+
+    def test_validate_accepts_wikipedia_source(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="wikipedia", path=__file__)],
+        )
+
+        cfg.validate()
