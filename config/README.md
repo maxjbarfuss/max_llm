@@ -361,8 +361,10 @@ head_dim=64 in bf16). Not compatible with `pos_type = "rope"` or `"add_rope"`.
 
 - New Phase 5 Wave 0 data-preparation configs should include **full OpenWebText** and **full FineWeb-Edu** as core web sources.
 - Include selected companion datasets (for example Wikipedia/Cosmopedia) as explicitly configured for each run.
+- Treat Cosmopedia as **synthetic LLM-generated** companion data and keep its contribution explicit in source-level prep stats.
 - Apply corpus hygiene thresholds on OpenWebText, English language filtering on OWT/FineWeb-Edu, and cross-source MinHash near-dedup before training.
 - Enable sequence packing for short-document corpora in Wave 0 prep runs and record packing metrics (`packed_sequences`, `fill_ratio`) in stats outputs.
+- For curriculum-enabled Wave 0 runs, set `curriculum.source_repetition_budget` to cap per-source cross-stage re-exposure.
 - Keep existing Phase 3/4 milestone configs unchanged as historical records.
 
 ```

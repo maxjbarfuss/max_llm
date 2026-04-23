@@ -63,11 +63,21 @@ ignore_missing_imports = true
 module = ["datasketch", "datasketch.*", "fasttext", "fasttext.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["datasets", "datasets.*"]
+ignore_missing_imports = true
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore:warmup, rep, and use_cuda_graph parameters are deprecated.*:DeprecationWarning",
+    "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type SwigPyObject has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src"]

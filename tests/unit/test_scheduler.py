@@ -46,6 +46,7 @@ def test_scheduler_warmup_phase(optimizer: torch.optim.Optimizer) -> None:
 
     # Step through warmup
     for step in range(10):
+        optimizer.step()
         scheduler.step()
         expected_lr = base_lr * (step + 1) / 10
         actual_lr = optimizer.param_groups[0]["lr"]
@@ -65,6 +66,7 @@ def test_scheduler_decay_phase(optimizer: torch.optim.Optimizer) -> None:
 
     # Step through warmup to reach peak LR
     for _ in range(10):
+        optimizer.step()
         scheduler.step()
 
     # At step 10, should be at peak LR
@@ -72,6 +74,7 @@ def test_scheduler_decay_phase(optimizer: torch.optim.Optimizer) -> None:
 
     # Step to mid-decay (step 55: halfway through decay phase)
     for _ in range(45):
+        optimizer.step()
         scheduler.step()
 
     # At midpoint of decay, LR should be approximately (1 + min_lr_ratio) / 2
@@ -81,6 +84,7 @@ def test_scheduler_decay_phase(optimizer: torch.optim.Optimizer) -> None:
 
     # Step to end (step 100)
     for _ in range(45):
+        optimizer.step()
         scheduler.step()
 
     # At end, should be at min_lr
@@ -99,6 +103,7 @@ def test_scheduler_monotonic_warmup(optimizer: torch.optim.Optimizer) -> None:
 
     prev_lr = 0.0
     for _ in range(20):
+        optimizer.step()
         scheduler.step()
         current_lr = optimizer.param_groups[0]["lr"]
         assert current_lr > prev_lr
@@ -116,10 +121,12 @@ def test_scheduler_monotonic_decay(optimizer: torch.optim.Optimizer) -> None:
 
     # Skip through warmup
     for _ in range(10):
+        optimizer.step()
         scheduler.step()
 
     prev_lr = optimizer.param_groups[0]["lr"]
     for _ in range(90):
+        optimizer.step()
         scheduler.step()
         current_lr = optimizer.param_groups[0]["lr"]
         assert current_lr <= prev_lr
@@ -144,6 +151,7 @@ def test_scheduler_min_lr_ratio(optimizer: torch.optim.Optimizer) -> None:
 
         # Step to end
         for _ in range(100):
+            optimizer.step()
             scheduler.step()
 
         expected_min_lr = base_lr * min_lr_ratio
@@ -166,6 +174,7 @@ def test_scheduler_no_warmup(optimizer: torch.optim.Optimizer) -> None:
     assert optimizer.param_groups[0]["lr"] == pytest.approx(base_lr, rel=1e-5)
 
     # After one step, should start decaying
+    optimizer.step()
     scheduler.step()
     assert optimizer.param_groups[0]["lr"] < base_lr
 
@@ -184,6 +193,7 @@ def test_scheduler_exceeds_max_steps(optimizer: torch.optim.Optimizer) -> None:
 
     # Step beyond max_steps
     for _ in range(150):
+        optimizer.step()
         scheduler.step()
 
     # LR should stay at min_lr, not go negative or below
@@ -208,6 +218,7 @@ def test_scheduler_with_multiple_param_groups() -> None:
 
     # Step through and verify both groups have same LR
     for _ in range(50):
+        optimizer.step()
         scheduler.step()
         lr_group_0 = optimizer.param_groups[0]["lr"]
         lr_group_1 = optimizer.param_groups[1]["lr"]
@@ -229,16 +240,19 @@ def test_wsd_phases_behave_as_expected(optimizer: torch.optim.Optimizer) -> None
 
     # Warmup endpoint
     for _ in range(10):
+        optimizer.step()
         scheduler.step()
     assert optimizer.param_groups[0]["lr"] == pytest.approx(base_lr, rel=1e-5)
 
     # Stable plateau: steps 10..79
     for _ in range(69):
+        optimizer.step()
         scheduler.step()
     assert optimizer.param_groups[0]["lr"] == pytest.approx(base_lr, rel=1e-5)
 
     # Enter decay and reach end floor
     for _ in range(21):
+        optimizer.step()
         scheduler.step()
     assert optimizer.param_groups[0]["lr"] == pytest.approx(base_lr * 0.1, rel=1e-5)
 
@@ -259,6 +273,7 @@ def test_wsd_decay_shapes_reach_floor(optimizer: torch.optim.Optimizer, shape: s
     )
 
     for _ in range(60):
+        optimizer.step()
         scheduler.step()
 
     assert optimizer.param_groups[0]["lr"] == pytest.approx(base_lr * 0.2, rel=1e-5)

@@ -105,8 +105,8 @@ Wave 0 — data gates (must complete before new pretraining or stack tuning):
 - ✅ **Language filter** for OWT/FineWeb during tokenization (fastText lid.176)
 - ✅ **MinHash LSH near-dedup** across OWT + FineWeb (Jaccard threshold 0.8); record dedup rate
 - ✅ **Sequence packing** for short documents with block-diagonal causal masking metadata (save-time packing path implemented; training-side block mask consumption still pending)
-- ☐ **Per-source repetition budget tracking** across stages (avoid overexposure/memorization)
-- ☐ **Document Cosmopedia provenance** as synthetic LLM-generated data in corpus docs
+- ✅ **Per-source repetition budget tracking** across stages (source-specific exposure caps enforced during curriculum stage processing with diagnostics)
+- ✅ **Document Cosmopedia provenance** as synthetic LLM-generated data in corpus docs
 
 Wave 0 quick-start (simple):
 1. Activate env/auth and create one ephemeral prep config (`config/ephemeral/p5_wave0_data_gates_20260423.toml`).
@@ -117,6 +117,7 @@ Wave 0 quick-start (simple):
 
 Wave 0 validation note (2026-04-23): OWT smoke-slice (`max_docs=5000`) completed with language filter + MinHash enabled; source docs=5000, kept=4963, dropped=37, dedup_rate=0.0074.
 Wave 0 validation note (2026-04-23): OWT packing smoke-slice (`max_docs=5000`, `sequence_length=2048`) completed after token-accounting fix; train_tokens_file=966656, packed_sequences=472, fill_ratio=0.9980.
+Wave 0 validation note (2026-04-23): OWT+FineWeb-Edu fresh smoke (`500 + 500 docs`) with curriculum repetition budgets (`1.0` each) completed; dedup_rate=0.0000 on slice, repetition drops: OWT=500/FW-Edu=500 second-stage exposures, packed train fill_ratio=0.9990.
 
 Wave 1 — tokenizer + corpus shape decision (depends on Wave 0):
 - ☐ **Tokenizer decision checkpoint**:

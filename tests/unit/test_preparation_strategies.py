@@ -26,6 +26,7 @@ from src.data.preparation.strategies import (
     _filter_unk,
     _normalize_text,
     _passes_language_filter,
+    apply_curriculum_repetition_budget,
     resolve_curriculum_strategy,
     resolve_format_reader,
     resolve_mixing_strategy,
@@ -597,3 +598,39 @@ def test_read_and_spill_honors_source_max_tokens(tmp_path):
 
     assert spilled.total_tokens <= 8
     assert len(spilled) >= 1
+
+
+def test_apply_curriculum_repetition_budget_caps_source_exposure():
+    d1 = np.array([1, 2], dtype=np.uint16)
+    d2 = np.array([3, 4], dtype=np.uint16)
+    d3 = np.array([5, 6], dtype=np.uint16)
+
+    stages = {
+        "stage1": [("owt", d1), ("owt", d2), ("owt", d3)],
+        "stage2": [("owt", d1), ("owt", d1), ("owt", d2), ("owt", d3)],
+    }
+
+    trimmed, stats = apply_curriculum_repetition_budget(stages, {"owt": 1.5})
+
+    kept_docs = sum(len(docs) for docs in trimmed.values())
+    assert kept_docs == 5
+    assert stats["owt"]["unique_docs"] == 3
+    assert stats["owt"]["kept_exposures"] == 5
+    assert stats["owt"]["dropped_exposures"] == 2
+
+
+def test_apply_curriculum_repetition_budget_ignores_unbudgeted_sources():
+    d1 = np.array([1], dtype=np.uint16)
+    d2 = np.array([2], dtype=np.uint16)
+    stages = {
+        "stage1": [("a", d1), ("b", d2)],
+        "stage2": [("a", d1), ("b", d2)],
+    }
+
+    trimmed, stats = apply_curriculum_repetition_budget(stages, {"a": 1.0})
+
+    assert len(trimmed["stage1"]) == 2
+    assert len(trimmed["stage2"]) == 1
+    assert "b" in stats
+    assert stats["b"]["budget"] is None
+    assert stats["b"]["dropped_exposures"] == 0

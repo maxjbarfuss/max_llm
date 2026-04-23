@@ -130,6 +130,20 @@ Packing summary stats are emitted into `<prefix>_stats.json` under each split as
 - `output_tokens`
 - `fill_ratio`
 
+### Per-source repetition budgets across curriculum stages
+
+Use `curriculum.source_repetition_budget` to cap cross-stage re-exposure for each source and reduce memorization risk.
+
+- Format: `{ source_name = <factor>, ... }` where each factor is `>= 1.0`.
+- Semantics: a source budget `b` allows up to `ceil(unique_docs_seen * b)` cumulative exposures while iterating curriculum stages in order.
+- Example: `1.0` means no repeated cross-stage exposure for that source; `1.5` allows limited replay.
+
+When enabled, prep diagnostics include a `curriculum_repetition_budget_applied` event with per-source `unique_docs`, `kept_exposures`, and `dropped_exposures`.
+
+### Cosmopedia provenance note
+
+`cosmopedia_v2` should be treated as synthetic LLM-generated educational text. For Phase 5 Wave 0 corpus policy, keep it as an explicitly configured companion source (not a replacement for human-authored web/wiki corpora), and track its share via per-source stats in prep outputs.
+
 ### Memory model
 
 Sources are streamed to temporary binary spill files under `<output_dir>/.prep_spill/` and backed by read-only memory maps.  Peak RAM is bounded to a single ~10 MB write buffer per source, regardless of corpus size.  Previously-read sources are memory-mapped so the OS can page them out while the next source is being read.  Spill files are removed unconditionally on exit (success or failure).

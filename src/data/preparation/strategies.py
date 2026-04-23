@@ -823,6 +823,68 @@ def resolve_mixing_strategy(config: MixingConfig) -> MixingStrategy:
     return _MIXING_STRATEGIES[config.strategy]
 
 
+def apply_curriculum_repetition_budget(
+    stages: dict[str, list[tuple[str, np.ndarray]]],
+    source_repetition_budget: dict[str, float] | None,
+) -> tuple[dict[str, list[tuple[str, np.ndarray]]], dict[str, dict[str, float | int | None]]]:
+    """Enforce per-source exposure caps across ordered curriculum stages.
+
+    Budget semantics are source-specific max exposure factors. For a source with
+    budget `b`, we keep at most `ceil(unique_docs_seen * b)` cumulative examples
+    while iterating stages in order. A budget of 1.0 means "no repeated exposure"
+    across stages (each unique document kept at most once).
+    """
+
+    if not source_repetition_budget:
+        return stages, {}
+
+    seen_doc_ids: dict[str, set[int]] = defaultdict(set)
+    kept_exposures: dict[str, int] = defaultdict(int)
+    dropped_exposures: dict[str, int] = defaultdict(int)
+    trimmed_stages: dict[str, list[tuple[str, np.ndarray]]] = {}
+
+    for stage_name, stage_docs in stages.items():
+        kept_stage_docs: list[tuple[str, np.ndarray]] = []
+        for source_name, doc in stage_docs:
+            budget = source_repetition_budget.get(source_name)
+            if budget is None:
+                kept_stage_docs.append((source_name, doc))
+                kept_exposures[source_name] += 1
+                continue
+
+            doc_id = id(doc)
+            if doc_id not in seen_doc_ids[source_name]:
+                seen_doc_ids[source_name].add(doc_id)
+                kept_stage_docs.append((source_name, doc))
+                kept_exposures[source_name] += 1
+                continue
+
+            max_allowed = int(np.ceil(len(seen_doc_ids[source_name]) * budget))
+            if kept_exposures[source_name] < max_allowed:
+                kept_stage_docs.append((source_name, doc))
+                kept_exposures[source_name] += 1
+            else:
+                dropped_exposures[source_name] += 1
+
+        trimmed_stages[stage_name] = kept_stage_docs
+
+    tracked_sources = set(kept_exposures) | set(dropped_exposures) | set(source_repetition_budget)
+    stats: dict[str, dict[str, float | int | None]] = {}
+    for source_name in tracked_sources:
+        unique_docs = len(seen_doc_ids[source_name])
+        kept = kept_exposures[source_name]
+        dropped = dropped_exposures[source_name]
+        stats[source_name] = {
+            "budget": source_repetition_budget.get(source_name),
+            "unique_docs": unique_docs,
+            "kept_exposures": kept,
+            "dropped_exposures": dropped,
+            "kept_repetition_ratio": float(kept / max(1, unique_docs)),
+        }
+
+    return trimmed_stages, stats
+
+
 class CurriculumStrategy(ABC):
     @abstractmethod
     def build(

@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 
+if(POLICY CMP0146)
+    cmake_policy(SET CMP0146 NEW)
+endif()
+
 if(NOT DEFINED CMAKE_CUDA_COMPILER)
     if(DEFINED ENV{CUDACXX})
         set(CMAKE_CUDA_COMPILER $ENV{CUDACXX} CACHE FILEPATH "CUDA compiler" FORCE)
@@ -70,7 +74,16 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3")
 
 # Find required packages
 find_package(Python3 COMPONENTS Development NumPy REQUIRED)
-find_package(CUDA 12.1 REQUIRED)
+find_package(CUDAToolkit REQUIRED)
+
+# Compatibility variables for existing subdirectories still using FindCUDA-style names.
+get_filename_component(_cuda_bin_dir "${CMAKE_CUDA_COMPILER}" DIRECTORY)
+get_filename_component(CUDA_TOOLKIT_ROOT_DIR "${_cuda_bin_dir}" DIRECTORY)
+if(CUDAToolkit_INCLUDE_DIRS)
+    set(CUDA_INCLUDE_DIRS "${CUDAToolkit_INCLUDE_DIRS}")
+elseif(EXISTS "${CUDA_TOOLKIT_ROOT_DIR}/include")
+    set(CUDA_INCLUDE_DIRS "${CUDA_TOOLKIT_ROOT_DIR}/include")
+endif()
 
 # Optional: Find pybind11 for Python binding support
 find_package(pybind11 CONFIG)
@@ -102,5 +115,5 @@ message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  C Standard: ${CMAKE_C_STANDARD}")
 message(STATUS "  CUDA Standard: ${CMAKE_CUDA_STANDARD}")
 message(STATUS "  Python: ${Python3_EXECUTABLE} (${Python3_VERSION})")
-message(STATUS "  CUDA: ${CUDA_TOOLKIT_ROOT_DIR}")
+message(STATUS "  CUDA Toolkit: ${CUDA_TOOLKIT_ROOT_DIR}")
 message(STATUS "  Build dir: ${CMAKE_BINARY_DIR}")

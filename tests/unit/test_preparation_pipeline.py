@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 
 from src.data.preparation.config import (
+    CurriculumConfig,
+    CurriculumStage,
     DataPreparationConfig,
     DataSource,
     MixingConfig,
@@ -243,3 +245,31 @@ def test_pipeline_sequence_packing_can_skip_metadata_file(tmp_path):
     stats = json.loads((out_dir / "packed_no_meta_stats.json").read_text(encoding="utf-8"))
     assert stats["train"]["packing"]["enabled"] is True
     assert stats["train"]["packing"]["output_tokens"] % 8 == 0
+
+
+def test_pipeline_curriculum_repetition_budget_limits_cross_stage_exposure(tmp_path):
+    src_file = tmp_path / "docs.txt"
+    _write_text(src_file, "doc one\n\ndoc two\n\ndoc three")
+
+    out_dir = tmp_path / "out"
+    cfg = DataPreparationConfig(
+        tokenizer=TokenizerConfig(type="char", vocab_size=256),
+        datasets=[DataSource(name="tiny", path=str(src_file), min_length=1)],
+        splits=SplitConfig(train=1.0, val=0.0, test=0.0, shuffle=False, stratified=True, seed=42),
+        output=OutputConfig(dir=str(out_dir), prefix="curr_budget", eos_token_id=-1),
+        curriculum=CurriculumConfig(
+            enabled=True,
+            type="custom",
+            output_mode="merged",
+            stages=[
+                CurriculumStage(name="stage1", sources=["tiny"]),
+                CurriculumStage(name="stage2", sources=["tiny"]),
+            ],
+            source_repetition_budget={"tiny": 1.0},
+        ),
+    )
+
+    PreparationPipeline().run(cfg)
+
+    stats = json.loads((out_dir / "curr_budget_stats.json").read_text(encoding="utf-8"))
+    assert stats["train"]["total_docs"] == 3

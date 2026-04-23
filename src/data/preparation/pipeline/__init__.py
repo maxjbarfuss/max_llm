@@ -11,6 +11,7 @@ import numpy as np
 from src.data.preparation.config import DataPreparationConfig, DataSource, load_config
 from src.data.preparation.diagnostics import emit_prep_diagnostic
 from src.data.preparation.strategies import (
+    apply_curriculum_repetition_budget,
     load_lang_model,
     resolve_curriculum_strategy,
     resolve_format_reader,
@@ -329,6 +330,17 @@ class PreparationPipeline:
             stages = resolve_curriculum_strategy(config.curriculum).build(
                 mixed_documents, config.curriculum
             )
+            stages, repetition_stats = apply_curriculum_repetition_budget(
+                stages,
+                config.curriculum.source_repetition_budget,
+            )
+            if repetition_stats:
+                emit_prep_diagnostic(
+                    output_dir,
+                    config.output.prefix,
+                    "curriculum_repetition_budget_applied",
+                    per_source=repetition_stats,
+                )
             splits = _split_curriculum(stages, config)
         else:
             logger.info(

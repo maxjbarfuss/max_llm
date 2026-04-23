@@ -104,6 +104,7 @@ class CurriculumConfig:
     length_bins: list[int] | None = None
     stages: list[CurriculumStage] = field(default_factory=list)
     output_mode: str = "merged"
+    source_repetition_budget: dict[str, float] | None = None
 
 
 @dataclass
@@ -212,6 +213,16 @@ class DataPreparationConfig:
                 "or max_tokens on every active dataset"
             )
 
+    def _validate_curriculum_config(self) -> None:
+        budgets = self.curriculum.source_repetition_budget
+        if budgets is None:
+            return
+        for source_name, budget in budgets.items():
+            assert budget >= 1.0, (
+                "curriculum.source_repetition_budget values must be >= 1.0: "
+                f"{source_name}={budget}"
+            )
+
     def _validate_packing_config(self) -> None:
         if not self.packing.enabled:
             return
@@ -234,6 +245,7 @@ class DataPreparationConfig:
         self._validate_dedup_config()
         self._validate_packing_config()
         self._validate_mixing_config(active_datasets)
+        self._validate_curriculum_config()
 
 
 def _load_raw(path: Path) -> dict[str, Any]:

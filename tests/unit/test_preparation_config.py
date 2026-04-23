@@ -33,6 +33,7 @@ class TestConfigDefaults:
         assert cfg.mixing.strategy == "interleave"
         assert cfg.mixing.block_size == 1
         assert cfg.curriculum.enabled is False
+        assert cfg.curriculum.source_repetition_budget is None
         assert cfg.splits.train == 0.9
         assert cfg.splits.val == 0.1
         assert cfg.splits.test == 0.0
@@ -129,6 +130,25 @@ save_metadata = true
 
         cfg = load_config(str(config_path))
         assert cfg.packing == PackingConfig(enabled=True, sequence_length=512, save_metadata=True)
+
+    def test_toml_loads_curriculum_source_repetition_budget(self, tmp_path):
+        config_path = tmp_path / "prep.toml"
+        config_path.write_text(
+            """
+[[datasets]]
+name = "tiny"
+path = "tests/unit/test_preparation_config.py"
+
+[curriculum]
+enabled = true
+type = "custom"
+source_repetition_budget = { owt = 1.5, fineweb = 1.25 }
+""".strip(),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(str(config_path))
+        assert cfg.curriculum.source_repetition_budget == {"owt": 1.5, "fineweb": 1.25}
 
 
 class TestValidation:
@@ -287,4 +307,17 @@ class TestValidation:
         )
 
         with pytest.raises(AssertionError, match="packing.sequence_length"):
+            cfg.validate()
+
+    def test_validate_rejects_curriculum_repetition_budget_below_one(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="tiny", path=__file__)],
+            curriculum=CurriculumConfig(
+                enabled=True,
+                type="custom",
+                source_repetition_budget={"tiny": 0.9},
+            ),
+        )
+
+        with pytest.raises(AssertionError, match="source_repetition_budget"):
             cfg.validate()
