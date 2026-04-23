@@ -104,7 +104,7 @@ Wave 0 — data gates (must complete before new pretraining or stack tuning):
 :  Wave 0 ephemeral config now uses `min_length = 120` for OpenWebText.
 - ✅ **Language filter** for OWT/FineWeb during tokenization (fastText lid.176)
 - ✅ **MinHash LSH near-dedup** across OWT + FineWeb (Jaccard threshold 0.8); record dedup rate
-- ☐ **Sequence packing** for short documents with block-diagonal causal masking (target 20-40% throughput gain)
+- ✅ **Sequence packing** for short documents with block-diagonal causal masking metadata (save-time packing path implemented; training-side block mask consumption still pending)
 - ☐ **Per-source repetition budget tracking** across stages (avoid overexposure/memorization)
 - ☐ **Document Cosmopedia provenance** as synthetic LLM-generated data in corpus docs
 
@@ -116,6 +116,7 @@ Wave 0 quick-start (simple):
 5. If metrics are good, run full prep and document final policy + provenance note in `src/data/README.md`.
 
 Wave 0 validation note (2026-04-23): OWT smoke-slice (`max_docs=5000`) completed with language filter + MinHash enabled; source docs=5000, kept=4963, dropped=37, dedup_rate=0.0074.
+Wave 0 validation note (2026-04-23): OWT packing smoke-slice (`max_docs=5000`, `sequence_length=2048`) completed after token-accounting fix; train_tokens_file=966656, packed_sequences=472, fill_ratio=0.9980.
 
 Wave 1 — tokenizer + corpus shape decision (depends on Wave 0):
 - ☐ **Tokenizer decision checkpoint**:

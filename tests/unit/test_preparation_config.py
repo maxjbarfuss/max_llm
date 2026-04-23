@@ -13,6 +13,7 @@ from src.data.preparation.config import (
     DedupConfig,
     MixingConfig,
     OutputConfig,
+    PackingConfig,
     SplitConfig,
     TokenizerConfig,
     load_config,
@@ -109,6 +110,25 @@ shingle_size = 3
             num_perm=64,
             shingle_size=3,
         )
+
+    def test_toml_loads_packing_fields(self, tmp_path):
+        config_path = tmp_path / "prep.toml"
+        config_path.write_text(
+            """
+[[datasets]]
+name = "tiny"
+path = "tests/unit/test_preparation_config.py"
+
+[packing]
+enabled = true
+sequence_length = 512
+save_metadata = true
+""".strip(),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(str(config_path))
+        assert cfg.packing == PackingConfig(enabled=True, sequence_length=512, save_metadata=True)
 
 
 class TestValidation:
@@ -258,4 +278,13 @@ class TestValidation:
         )
 
         with pytest.raises(AssertionError, match="dedup.jaccard_threshold"):
+            cfg.validate()
+
+    def test_validate_rejects_invalid_packing_sequence_length(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="tiny", path=__file__)],
+            packing=PackingConfig(enabled=True, sequence_length=1),
+        )
+
+        with pytest.raises(AssertionError, match="packing.sequence_length"):
             cfg.validate()

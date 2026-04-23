@@ -41,6 +41,7 @@ Configs are JSON or TOML files.  Top-level sections:
 | `[mixing]` | How sources are combined (`interleave` or `concatenate`), optional per-source ratios, and optional global doc/token budgets |
 | `[splits]` | Train/val/test ratios, shuffle, stratified flag |
 | `[output]` | Output directory, file prefix, EOS token, shard size |
+| `[packing]` | Optional short-document sequence packing before writing `.npy` splits |
 | `[curriculum]` | Optional curriculum learning stages (length-based, domain, or custom) |
 
 ### Supported source formats
@@ -112,6 +113,23 @@ Use the top-level `[dedup]` table to enable cross-source MinHash LSH deduplicati
 
 The first document in a near-duplicate cluster is kept and later matches are dropped. Dedup diagnostics record the global drop rate and per-source drop counts.
 
+### Sequence packing
+
+Use top-level `[packing]` to pack multiple short documents into fixed-length training sequences before writing output splits:
+
+- `enabled`: turn packing on or off.
+- `sequence_length`: fixed output sequence length for packed splits.
+- `save_metadata`: when true, write per-split metadata (`*_packing_meta.npz`) with:
+    - `sequence_offsets`: cumulative offsets into the flattened `boundaries` array (length = number of packed sequences + 1).
+    - `boundaries`: per-sequence document-end positions for reconstructing boundaries within each packed sequence.
+
+Packing summary stats are emitted into `<prefix>_stats.json` under each split as:
+
+- `packed_sequences`
+- `input_tokens`
+- `output_tokens`
+- `fill_ratio`
+
 ### Memory model
 
 Sources are streamed to temporary binary spill files under `<output_dir>/.prep_spill/` and backed by read-only memory maps.  Peak RAM is bounded to a single ~10 MB write buffer per source, regardless of corpus size.  Previously-read sources are memory-mapped so the OS can page them out while the next source is being read.  Spill files are removed unconditionally on exit (success or failure).
@@ -126,8 +144,12 @@ Output `.npy` files are written via `np.lib.format.open_memmap` — a pre-alloca
 | `<prefix>_val.npy` | Validation split |
 | `<prefix>_test.npy` | Test split (if `test > 0`) |
 | `<prefix>_stats.json` | Per-split / per-source document and token counts |
-| `<prefix>_manifest.json` | Shard paths, shard size, tokenizer path |
+| `<prefix>_manifest.json` | Shard paths, shard size, tokenizer path, and packing metadata paths (if enabled) |
 | `<prefix>_tokenizer.model` | Trained SentencePiece model (unigram type only) |
+
+When packing is enabled with `save_metadata = true`, each split also writes:
+
+- `<prefix>_<split>_packing_meta.npz`
 
 Set `shard_size_tokens > 0` to write multiple fixed-size shards instead of a single file per split.
 

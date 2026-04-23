@@ -56,6 +56,15 @@ class DedupConfig:
 
 
 @dataclass
+class PackingConfig:
+    """Sequence packing configuration for short-document packing."""
+
+    enabled: bool = False
+    sequence_length: int = 2048
+    save_metadata: bool = True
+
+
+@dataclass
 class MixingConfig:
     """Dataset mixing strategy configuration."""
 
@@ -133,6 +142,7 @@ class DataPreparationConfig:
     output: OutputConfig = field(default_factory=OutputConfig)
     lang_model_path: str | None = None
     dedup: DedupConfig = field(default_factory=DedupConfig)
+    packing: PackingConfig = field(default_factory=PackingConfig)
 
     def _validate_dataset(self, ds: DataSource) -> None:
         source_name = ds.name.lower()
@@ -202,6 +212,11 @@ class DataPreparationConfig:
                 "or max_tokens on every active dataset"
             )
 
+    def _validate_packing_config(self) -> None:
+        if not self.packing.enabled:
+            return
+        assert self.packing.sequence_length >= 2, "packing.sequence_length must be >= 2"
+
     def validate(self) -> None:
         """Validate config consistency and filesystem assumptions."""
         total = self.splits.train + self.splits.val + self.splits.test
@@ -217,6 +232,7 @@ class DataPreparationConfig:
         assert self.output.shard_size_tokens >= 0, "shard_size_tokens must be >= 0"
         self._validate_language_config()
         self._validate_dedup_config()
+        self._validate_packing_config()
         self._validate_mixing_config(active_datasets)
 
 
@@ -260,4 +276,5 @@ def load_config(path: str | Path) -> DataPreparationConfig:
         output=OutputConfig(**raw.get("output", {})),
         lang_model_path=raw.get("lang_model_path"),
         dedup=DedupConfig(**raw.get("dedup", {})),
+        packing=PackingConfig(**raw.get("packing", {})),
     )

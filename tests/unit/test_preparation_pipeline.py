@@ -12,6 +12,7 @@ from src.data.preparation.config import (
     DataSource,
     MixingConfig,
     OutputConfig,
+    PackingConfig,
     SplitConfig,
     TokenizerConfig,
 )
@@ -160,3 +161,85 @@ def test_summarize_mixing_plan_reports_token_targets():
         "      target a:  25.0% -> 250 tokens",
         "      target b:  75.0% -> 750 tokens",
     ]
+
+
+def test_pipeline_sequence_packing_emits_fixed_length_and_metadata(tmp_path):
+    src_file = tmp_path / "docs.txt"
+    _write_text(src_file, "abcd\n\nef\n\nghij\n\nklmno")
+
+    out_dir = tmp_path / "out"
+    cfg = DataPreparationConfig(
+        tokenizer=TokenizerConfig(type="char", vocab_size=256),
+        datasets=[DataSource(name="tiny", path=str(src_file), min_length=1)],
+        output=OutputConfig(dir=str(out_dir), prefix="packed", eos_token_id=1),
+        packing=PackingConfig(enabled=True, sequence_length=8, save_metadata=True),
+    )
+
+    result = PreparationPipeline().run(cfg)
+
+    train_tokens = np.load(out_dir / "packed_train.npy")
+    assert len(train_tokens) % 8 == 0
+    assert result["packing"]["enabled"] is True
+    assert result["packing"]["sequence_length"] == 8
+    meta_path = Path(result["packing_metadata_paths"]["train"])
+    assert meta_path.exists()
+
+    meta = np.load(meta_path)
+    seq_offsets = meta["sequence_offsets"]
+    boundaries = meta["boundaries"]
+    packed_seq_count = len(train_tokens) // 8
+    assert len(seq_offsets) - 1 == packed_seq_count
+    assert len(seq_offsets) >= 2
+    assert seq_offsets[0] == 0
+    assert seq_offsets[-1] == len(boundaries)
+
+
+def test_pipeline_sequence_packing_preserves_expected_token_layout(tmp_path):
+    src_file = tmp_path / "docs.txt"
+    _write_text(src_file, "ab\n\ncde\n\nf")
+
+    out_dir = tmp_path / "out"
+    cfg = DataPreparationConfig(
+        tokenizer=TokenizerConfig(type="char", vocab_size=256),
+        datasets=[DataSource(name="tiny", path=str(src_file), min_length=1)],
+        splits=SplitConfig(train=1.0, val=0.0, test=0.0, shuffle=False, stratified=True, seed=42),
+        output=OutputConfig(dir=str(out_dir), prefix="packed_exact", eos_token_id=1),
+        packing=PackingConfig(enabled=True, sequence_length=4, save_metadata=True),
+    )
+
+    PreparationPipeline().run(cfg)
+
+    train_tokens = np.load(out_dir / "packed_exact_train.npy")
+    meta = np.load(out_dir / "packed_exact_train_packing_meta.npz")
+
+    expected = np.array([ord("a"), ord("b"), ord("c"), ord("d"), ord("e"), ord("f"), 1, 1])
+    np.testing.assert_array_equal(train_tokens, expected)
+
+    seq_offsets = meta["sequence_offsets"]
+    boundaries = meta["boundaries"]
+    np.testing.assert_array_equal(seq_offsets, np.array([0, 1, 3], dtype=np.int64))
+    np.testing.assert_array_equal(boundaries, np.array([2, 1, 2], dtype=np.int32))
+
+
+def test_pipeline_sequence_packing_can_skip_metadata_file(tmp_path):
+    src_file = tmp_path / "docs.txt"
+    _write_text(src_file, "alpha\n\nbeta")
+
+    out_dir = tmp_path / "out"
+    cfg = DataPreparationConfig(
+        tokenizer=TokenizerConfig(type="char", vocab_size=256),
+        datasets=[DataSource(name="tiny", path=str(src_file), min_length=1)],
+        output=OutputConfig(dir=str(out_dir), prefix="packed_no_meta", eos_token_id=1),
+        packing=PackingConfig(enabled=True, sequence_length=8, save_metadata=False),
+    )
+
+    result = PreparationPipeline().run(cfg)
+
+    assert result["packing"]["enabled"] is True
+    assert "packing_metadata_paths" in result
+    assert result["packing_metadata_paths"] == {}
+    assert not (out_dir / "packed_no_meta_train_packing_meta.npz").exists()
+
+    stats = json.loads((out_dir / "packed_no_meta_stats.json").read_text(encoding="utf-8"))
+    assert stats["train"]["packing"]["enabled"] is True
+    assert stats["train"]["packing"]["output_tokens"] % 8 == 0
