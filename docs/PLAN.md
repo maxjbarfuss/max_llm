@@ -100,9 +100,10 @@ Wave 0 — data gates (must complete before new pretraining or stack tuning):
 - ✅ **Deduplicate FineWeb ↔ FineWeb-Edu** and choose one primary policy (quality-first Edu subset vs full FineWeb without Edu overlap)
 :  Policy decision: use **full OpenWebText + full FineWeb-Edu** as Wave 0 core web sources, then apply hygiene + dedup gates before training.
 - ✅ **OWT hygiene pass** in `TextFormatReader`: punctuation-ended line threshold, duplicate-line threshold, symbol/word threshold
-- ☐ **Raise OWT min_length** from 50 to 100-150 tokens
-- ☐ **Language filter** for OWT/FineWeb during tokenization (fastText lid.176)
-- ☐ **MinHash LSH near-dedup** across OWT + FineWeb (Jaccard threshold 0.8); record dedup rate
+- ✅ **Raise OWT min_length** from 50 to 100-150 tokens
+:  Wave 0 ephemeral config now uses `min_length = 120` for OpenWebText.
+- ✅ **Language filter** for OWT/FineWeb during tokenization (fastText lid.176)
+- ✅ **MinHash LSH near-dedup** across OWT + FineWeb (Jaccard threshold 0.8); record dedup rate
 - ☐ **Sequence packing** for short documents with block-diagonal causal masking (target 20-40% throughput gain)
 - ☐ **Per-source repetition budget tracking** across stages (avoid overexposure/memorization)
 - ☐ **Document Cosmopedia provenance** as synthetic LLM-generated data in corpus docs
@@ -110,9 +111,11 @@ Wave 0 — data gates (must complete before new pretraining or stack tuning):
 Wave 0 quick-start (simple):
 1. Activate env/auth and create one ephemeral prep config (`config/ephemeral/p5_wave0_data_gates_20260423.toml`).
 2. Apply corpus hygiene in prep pipeline: remove WikiText-103, include full OpenWebText + full FineWeb-Edu (+ selected companion datasets), add OWT quality filters + min_length + language filter.
-3. Add near-dedup (MinHash) and sequence packing; record drop/dedup/packing metrics in stats output.
+3. Add sequence packing; record drop/dedup/packing metrics in stats output.
 4. Run a small-slice prep first, then targeted prep tests (`test_preparation_config`, `test_preparation_strategies`, `test_preparation_pipeline`, `test_preparation_e2e`).
 5. If metrics are good, run full prep and document final policy + provenance note in `src/data/README.md`.
+
+Wave 0 validation note (2026-04-23): OWT smoke-slice (`max_docs=5000`) completed with language filter + MinHash enabled; source docs=5000, kept=4963, dropped=37, dedup_rate=0.0074.
 
 Wave 1 — tokenizer + corpus shape decision (depends on Wave 0):
 - ☐ **Tokenizer decision checkpoint**:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import cast
 
 import numpy as np
+import pytest
 
 from src.data.preparation.config import CurriculumConfig, DataSource, MixingConfig, SplitConfig
 from src.data.preparation.pipeline._spill import read_and_spill
@@ -21,8 +22,10 @@ from src.data.preparation.strategies import (
     SimpleSplitter,
     StratifiedSplitter,
     TextFormatReader,
+    _detect_language,
     _filter_unk,
     _normalize_text,
+    _passes_language_filter,
     resolve_curriculum_strategy,
     resolve_format_reader,
     resolve_mixing_strategy,
@@ -223,6 +226,116 @@ def test_text_reader_filters_high_symbol_to_word_ratio(tmp_path):
         delimiter="\n\n",
         min_length=1,
         max_symbol_to_word_ratio=0.50,
+    )
+
+    docs = reader.read_documents(source, _DummyTokenizer())
+
+    assert len(docs) == 1
+    assert docs[0][0] == "tiny"
+
+
+# ── language filter ───────────────────────────────────────────────────────────
+
+
+def test_passes_language_filter_no_allowlist():
+    """No allowed_languages → everything passes regardless of model state."""
+    source = DataSource(name="s", path="/tmp", allowed_languages=None)
+    assert _passes_language_filter("Hello world this is English text.", source) is True
+
+
+def test_passes_language_filter_short_text_always_passes():
+    """Texts under 50 chars pass unconditionally even when an allowlist is set."""
+    source = DataSource(name="s", path="/tmp", allowed_languages=["en"])
+    # patch the model so it's set but language detection would return non-English
+    import src.data.preparation.strategies as _strats
+
+    old = _strats._LANG_MODEL
+    try:
+        _strats._LANG_MODEL = object()  # truthy sentinel — won't be called
+        assert _passes_language_filter("Short.", source) is True
+    finally:
+        _strats._LANG_MODEL = old
+
+
+def test_passes_language_filter_with_mock_model(monkeypatch):
+    """Language filter respects mock model output."""
+    import src.data.preparation.strategies as _strats
+
+    class _MockModel:
+        def predict(self, text: str, k: int):
+            if "english" in text.lower():
+                return (["__label__en"], [0.99])
+            return (["__label__de"], [0.91])
+
+    monkeypatch.setattr(_strats, "_LANG_MODEL", _MockModel())
+
+    en_source = DataSource(name="s", path="/tmp", allowed_languages=["en"])
+    assert _passes_language_filter("This is clearly english language content here.", en_source)
+    assert not _passes_language_filter(
+        "Dies ist ein langer deutscher Text mit vielen Woertern.", en_source
+    )
+
+
+def test_detect_language_falls_back_on_numpy2_fasttext_error(monkeypatch):
+    import src.data.preparation.strategies as _strats
+
+    class _MockPybind:
+        def predict(self, text: str, k: int, threshold: float, on_unicode_error: str):
+            return [(0.99, "__label__en")]
+
+    class _MockModel:
+        def __init__(self):
+            self.f = _MockPybind()
+
+        def predict(self, text: str, k: int):
+            raise ValueError("Unable to avoid copy while creating an array as requested.")
+
+    monkeypatch.setattr(_strats, "_LANG_MODEL", _MockModel())
+
+    assert _detect_language("This is a sufficiently long english sentence.") == "en"
+
+
+def test_passes_language_filter_raises_without_model():
+    """Should raise RuntimeError when allowed_languages is set but model is not loaded."""
+    import src.data.preparation.strategies as _strats
+
+    source = DataSource(name="s", path="/tmp", allowed_languages=["en"])
+    old = _strats._LANG_MODEL
+    try:
+        _strats._LANG_MODEL = None
+        long_text = "This is a sufficiently long text to trigger language detection logic."
+        with pytest.raises(RuntimeError, match="no fastText model is loaded"):
+            _passes_language_filter(long_text, source)
+    finally:
+        _strats._LANG_MODEL = old
+
+
+def test_text_reader_language_filter_applied(tmp_path, monkeypatch):
+    """TextFormatReader should drop documents that fail the language filter."""
+    import src.data.preparation.strategies as _strats
+
+    path = tmp_path / "sample.txt"
+    path.write_text(
+        "This is an english document with enough text to pass detection.\n\n"
+        "Dies ist ein sehr langer deutscher Text mit vielen Woertern und Saetzen.",
+        encoding="utf-8",
+    )
+
+    class _MockModel:
+        def predict(self, text: str, k: int):
+            if "english" in text.lower():
+                return (["__label__en"], [0.99])
+            return (["__label__de"], [0.91])
+
+    monkeypatch.setattr(_strats, "_LANG_MODEL", _MockModel())
+
+    reader = TextFormatReader()
+    source = DataSource(
+        name="tiny",
+        path=str(path),
+        delimiter="\n\n",
+        min_length=1,
+        allowed_languages=["en"],
     )
 
     docs = reader.read_documents(source, _DummyTokenizer())

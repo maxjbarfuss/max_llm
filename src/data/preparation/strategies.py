@@ -120,6 +120,69 @@ def _passes_text_hygiene(text: str, source: DataSource) -> bool:
     return True
 
 
+# ── Language filter ──────────────────────────────────────────────────────────
+
+_LANG_MODEL: Any = None
+
+
+def load_lang_model(path: str) -> None:
+    """Load the fastText language identification model (e.g. lid.176.bin)."""
+    global _LANG_MODEL
+    import contextlib
+    import os
+
+    import fasttext
+
+    with open(os.devnull, "w") as devnull, contextlib.redirect_stderr(devnull):
+        _LANG_MODEL = fasttext.load_model(path)
+
+
+def _detect_language(text: str) -> str:
+    """Return ISO 639-1 language code for the dominant language (e.g. 'en').
+
+    Returns empty string if the model is not loaded or the sample is empty.
+    Uses the first 500 characters to avoid passing very long strings to fastText.
+    """
+    if _LANG_MODEL is None:
+        return ""
+    sample = text[:500].replace("\n", " ").strip()
+    if not sample:
+        return ""
+    try:
+        labels, _ = _LANG_MODEL.predict(sample, k=1)
+        # fastText labels are formatted as '__label__en'
+        return labels[0].replace("__label__", "")
+    except ValueError as exc:
+        # fasttext-wheel can raise here with NumPy 2.x due to copy=False semantics.
+        # Fall back to the underlying pybind API which returns plain Python tuples.
+        if "Unable to avoid copy while creating an array as requested" not in str(exc):
+            raise
+        raw = _LANG_MODEL.f.predict(sample, 1, 0.0, "strict")
+        if not raw:
+            return ""
+        return raw[0][1].replace("__label__", "")
+
+
+def _passes_language_filter(text: str, source: DataSource) -> bool:
+    """Return True if text passes the per-source language allowlist.
+
+    If source.allowed_languages is None, all documents pass.
+    Texts shorter than 50 characters are always passed to avoid false negatives
+    from unreliable fastText predictions on tiny inputs.
+    """
+    if not source.allowed_languages:
+        return True
+    if _LANG_MODEL is None:
+        raise RuntimeError(
+            f"allowed_languages is set for source '{source.name}' but no fastText model "
+            "is loaded. Set 'lang_model_path' in the prep config."
+        )
+    if len(text) < 50:
+        return True
+    lang = _detect_language(text)
+    return lang in source.allowed_languages
+
+
 class FormatReader(ABC):
     def iter_documents(
         self, source: DataSource, tokenizer: TokenizerLike
@@ -158,6 +221,8 @@ class TextFormatReader(FormatReader):
             for doc in self._iter_text_docs(file_path, source.delimiter):
                 doc = _normalize_text(doc)
                 if not _passes_text_hygiene(doc, source):
+                    continue
+                if not _passes_language_filter(doc, source):
                     continue
                 if len(doc) < source.min_length:
                     continue
@@ -213,6 +278,8 @@ class JsonlReader(FormatReader):
                 if not text:
                     continue
                 text = _normalize_text(text)
+                if not _passes_language_filter(text, source):
+                    continue
                 tokens = _filter_unk(tokenizer.encode(text))
                 if source.max_length:
                     tokens = tokens[: source.max_length]
@@ -253,6 +320,8 @@ class ParquetReader(FormatReader):
                 text = _normalize_text(text)
                 if len(text) < source.min_length:
                     continue
+                if not _passes_language_filter(text, source):
+                    continue
                 tokens = _filter_unk(tokenizer.encode(text))
                 if source.max_length:
                     tokens = tokens[: source.max_length]
@@ -275,6 +344,8 @@ class ParquetReader(FormatReader):
                             continue
                         text = _normalize_text(text)
                         if len(text) < source.min_length:
+                            continue
+                        if not _passes_language_filter(text, source):
                             continue
                         tokens = _filter_unk(tokenizer.encode(text))
                         if not tokens:

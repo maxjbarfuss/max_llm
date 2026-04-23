@@ -10,6 +10,7 @@ from src.data.preparation.config import (
     CurriculumConfig,
     DataPreparationConfig,
     DataSource,
+    DedupConfig,
     MixingConfig,
     OutputConfig,
     SplitConfig,
@@ -75,6 +76,39 @@ path = "tests/unit/test_preparation_config.py"
         assert cfg.tokenizer.type == "unigram"
         assert cfg.curriculum.enabled is False
         assert cfg.splits.shuffle is True
+
+    def test_toml_loads_language_filter_and_dedup_fields(self, tmp_path):
+        model_path = tmp_path / "lid.176.bin"
+        model_path.write_bytes(b"stub")
+        config_path = tmp_path / "prep.toml"
+        config_path.write_text(
+            f"""
+lang_model_path = "{model_path}"
+
+[[datasets]]
+name = "tiny"
+path = "tests/unit/test_preparation_config.py"
+allowed_languages = ["en"]
+
+[dedup]
+enabled = true
+jaccard_threshold = 0.8
+num_perm = 64
+shingle_size = 3
+""".strip(),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(str(config_path))
+
+        assert cfg.lang_model_path == str(model_path)
+        assert cfg.datasets[0].allowed_languages == ["en"]
+        assert cfg.dedup == DedupConfig(
+            enabled=True,
+            jaccard_threshold=0.8,
+            num_perm=64,
+            shingle_size=3,
+        )
 
 
 class TestValidation:
@@ -189,3 +223,39 @@ class TestValidation:
         )
 
         cfg.validate()
+
+    def test_validate_rejects_language_allowlist_without_model_path(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="tiny", path=__file__, allowed_languages=["en"])],
+        )
+
+        with pytest.raises(ValueError, match="lang_model_path"):
+            cfg.validate()
+
+    def test_validate_rejects_missing_language_model_path(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="tiny", path=__file__, allowed_languages=["en"])],
+            lang_model_path="/tmp/does-not-exist-lid.176.bin",
+        )
+
+        with pytest.raises(ValueError, match="lang_model_path not found"):
+            cfg.validate()
+
+    def test_validate_accepts_language_allowlist_with_model_path(self, tmp_path):
+        model_path = tmp_path / "lid.176.bin"
+        model_path.write_bytes(b"stub")
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="tiny", path=__file__, allowed_languages=["en"])],
+            lang_model_path=str(model_path),
+        )
+
+        cfg.validate()
+
+    def test_validate_rejects_invalid_dedup_threshold(self):
+        cfg = DataPreparationConfig(
+            datasets=[DataSource(name="tiny", path=__file__)],
+            dedup=DedupConfig(enabled=True, jaccard_threshold=0.0),
+        )
+
+        with pytest.raises(AssertionError, match="dedup.jaccard_threshold"):
+            cfg.validate()

@@ -11,6 +11,7 @@ import numpy as np
 from src.data.preparation.config import DataPreparationConfig, DataSource, load_config
 from src.data.preparation.diagnostics import emit_prep_diagnostic
 from src.data.preparation.strategies import (
+    load_lang_model,
     resolve_curriculum_strategy,
     resolve_format_reader,
     resolve_mixing_strategy,
@@ -19,8 +20,9 @@ from src.data.preparation.strategies import (
 )
 
 from ._corpus import build_tokenizer, load_source_as_text
+from ._dedup import _FilteredSpilledDocs, run_minhash_dedup
 from ._save import save_outputs, save_outputs_from_source_indices
-from ._spill import _cache_paths, _SpilledDocs, read_and_spill
+from ._spill import _SpilledDocs, read_and_spill
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +200,13 @@ class PreparationPipeline:
         for line in _summarize_mixing_plan(config):
             print(line, flush=True)
             logger.info(line.strip())
-        all_documents: dict[str, _SpilledDocs] = {}
+
+        if config.lang_model_path:
+            print(f"      Loading language model: {config.lang_model_path}", flush=True)
+            logger.info("Loading lang model: path=%s", config.lang_model_path)
+            load_lang_model(config.lang_model_path)
+
+        all_documents: dict[str, Any] = {}
         for source in config.datasets:
             if source.weight == 0:
                 continue
@@ -232,6 +240,33 @@ class PreparationPipeline:
                 offsets_bytes=spilled.offsets_bytes,
                 token_mmap_bytes=spilled.token_bytes,
             )
+
+        # ── Step 2.5: MinHash near-dedup ─────────────────────────────────────
+        if config.dedup.enabled:
+            print("\n[2.5/4] Near-dedup (MinHash LSH)", flush=True)
+            logger.info(
+                "Running MinHash dedup: threshold=%s num_perm=%s shingle_size=%s",
+                config.dedup.jaccard_threshold,
+                config.dedup.num_perm,
+                config.dedup.shingle_size,
+            )
+            kept_indices, dedup_stats = run_minhash_dedup(
+                all_documents,
+                jaccard_threshold=config.dedup.jaccard_threshold,
+                num_perm=config.dedup.num_perm,
+                shingle_size=config.dedup.shingle_size,
+            )
+            emit_prep_diagnostic(
+                output_dir,
+                config.output.prefix,
+                "minhash_dedup_complete",
+                **{k: v for k, v in dedup_stats.items() if k != "drop_counts_per_source"},
+                drop_counts=dedup_stats["drop_counts_per_source"],
+            )
+            all_documents = {
+                name: _FilteredSpilledDocs(spilled, kept_indices[name])
+                for name, spilled in all_documents.items()
+            }
 
         if not config.curriculum.enabled and config.splits.stratified:
             print("\n[3/4] Stratified split  (streaming optimized)", flush=True)
@@ -281,7 +316,7 @@ class PreparationPipeline:
         print(f"\n[3/4] Mixing  ({config.mixing.strategy})", flush=True)
         logger.info("Mixing documents: strategy=%s", config.mixing.strategy)
         mixed_documents = resolve_mixing_strategy(config.mixing).mix(
-            all_documents,  # type: ignore[arg-type]
+            cast(dict[str, Sequence[np.ndarray]], all_documents),
             config.mixing,
         )
         print(f"      {len(mixed_documents):,} documents", flush=True)

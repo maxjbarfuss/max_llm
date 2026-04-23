@@ -23,6 +23,8 @@ fire>=0.5.0
 sentencepiece>=0.1.99
 tokenizers>=0.14.0
 tiktoken>=0.5.0
+fasttext-wheel>=0.9.2
+datasketch>=1.6.5
 
 # Monitoring
 tensorboard>=2.14.0

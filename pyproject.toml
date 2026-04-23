@@ -59,6 +59,10 @@ strict_optional = true
 module = ["flash_attn", "flash_attn.*", "xformers.*", "sageattention", "sageattention.*", "pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["datasketch", "datasketch.*", "fasttext", "fasttext.*"]
+ignore_missing_imports = true
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

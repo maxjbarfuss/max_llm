@@ -42,6 +42,18 @@ class DataSource:
     max_duplicate_line_ratio: float | None = None
     max_symbol_to_word_ratio: float | None = None
 
+    allowed_languages: list[str] | None = None
+
+
+@dataclass
+class DedupConfig:
+    """MinHash LSH near-deduplication configuration."""
+
+    enabled: bool = False
+    jaccard_threshold: float = 0.8
+    num_perm: int = 128
+    shingle_size: int = 5
+
 
 @dataclass
 class MixingConfig:
@@ -119,47 +131,60 @@ class DataPreparationConfig:
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     splits: SplitConfig = field(default_factory=SplitConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    lang_model_path: str | None = None
+    dedup: DedupConfig = field(default_factory=DedupConfig)
 
-    def validate(self) -> None:
-        """Validate config consistency and filesystem assumptions."""
-        total = self.splits.train + self.splits.val + self.splits.test
-        assert abs(total - 1.0) < 1e-6, f"Splits must sum to 1.0, got {total}"
+    def _validate_dataset(self, ds: DataSource) -> None:
+        source_name = ds.name.lower()
+        source_path = ds.path.lower()
+        if "wikitext" in source_name or "wikitext" in source_path:
+            raise ValueError(
+                "WikiText-103 is disallowed for new preparation configs; use Wikipedia instead"
+            )
 
-        active_datasets = [ds for ds in self.datasets if ds.weight > 0]
+        if not (isinstance(ds.path, str) and ds.path.startswith("hf://")):
+            assert Path(ds.path).exists(), f"Not found: {ds.path}"
+        assert ds.weight >= 0, f"Negative weight: {ds.name}"
+        if ds.max_docs is not None:
+            assert ds.max_docs > 0, f"max_docs must be > 0: {ds.name}"
+        if ds.max_tokens is not None:
+            assert ds.max_tokens > 0, f"max_tokens must be > 0: {ds.name}"
+        if ds.min_punctuation_ended_line_ratio is not None:
+            assert 0.0 <= ds.min_punctuation_ended_line_ratio <= 1.0, (
+                "min_punctuation_ended_line_ratio must be in [0, 1]: " f"{ds.name}"
+            )
+        if ds.max_duplicate_line_ratio is not None:
+            assert 0.0 <= ds.max_duplicate_line_ratio <= 1.0, (
+                "max_duplicate_line_ratio must be in [0, 1]: " f"{ds.name}"
+            )
+        if ds.max_symbol_to_word_ratio is not None:
+            assert ds.max_symbol_to_word_ratio >= 0.0, (
+                "max_symbol_to_word_ratio must be >= 0: " f"{ds.name}"
+            )
+        if ds.allowed_languages is not None:
+            assert (
+                len(ds.allowed_languages) > 0
+            ), f"allowed_languages must be non-empty if set: {ds.name}"
 
-        assert len(self.datasets) > 0, "Need at least one dataset"
-        for ds in self.datasets:
-            source_name = ds.name.lower()
-            source_path = ds.path.lower()
-            if "wikitext" in source_name or "wikitext" in source_path:
-                raise ValueError(
-                    "WikiText-103 is disallowed for new preparation configs; use Wikipedia instead"
-                )
+    def _validate_language_config(self) -> None:
+        any_lang_filter = any(bool(ds.allowed_languages) for ds in self.datasets)
+        if any_lang_filter and not self.lang_model_path:
+            raise ValueError(
+                "Some sources have 'allowed_languages' set but 'lang_model_path' is not configured."
+            )
+        if self.lang_model_path and not Path(self.lang_model_path).exists():
+            raise ValueError(f"lang_model_path not found: {self.lang_model_path}")
 
-            # Allow remote Hugging Face URIs (hf://) as valid paths
-            if not (isinstance(ds.path, str) and ds.path.startswith("hf://")):
-                assert Path(ds.path).exists(), f"Not found: {ds.path}"
-            assert ds.weight >= 0, f"Negative weight: {ds.name}"
-            if ds.max_docs is not None:
-                assert ds.max_docs > 0, f"max_docs must be > 0: {ds.name}"
-            if ds.max_tokens is not None:
-                assert ds.max_tokens > 0, f"max_tokens must be > 0: {ds.name}"
-            if ds.min_punctuation_ended_line_ratio is not None:
-                assert 0.0 <= ds.min_punctuation_ended_line_ratio <= 1.0, (
-                    "min_punctuation_ended_line_ratio must be in [0, 1]: " f"{ds.name}"
-                )
-            if ds.max_duplicate_line_ratio is not None:
-                assert 0.0 <= ds.max_duplicate_line_ratio <= 1.0, (
-                    "max_duplicate_line_ratio must be in [0, 1]: " f"{ds.name}"
-                )
-            if ds.max_symbol_to_word_ratio is not None:
-                assert ds.max_symbol_to_word_ratio >= 0.0, (
-                    "max_symbol_to_word_ratio must be >= 0: " f"{ds.name}"
-                )
+    def _validate_dedup_config(self) -> None:
+        if not self.dedup.enabled:
+            return
+        assert (
+            0.0 < self.dedup.jaccard_threshold <= 1.0
+        ), "dedup.jaccard_threshold must be in (0, 1]"
+        assert self.dedup.num_perm > 0, "dedup.num_perm must be > 0"
+        assert self.dedup.shingle_size > 0, "dedup.shingle_size must be > 0"
 
-        assert sum(ds.weight for ds in self.datasets) > 0, "All weights zero"
-        assert self.output.shard_size_tokens >= 0, "shard_size_tokens must be >= 0"
-
+    def _validate_mixing_config(self, active_datasets: list[DataSource]) -> None:
         if self.mixing.upsample_to_max and self.mixing.downsample_to_min:
             raise ValueError("Cannot upsample and downsample")
         if self.mixing.target_total_docs and self.mixing.target_total_tokens:
@@ -176,6 +201,23 @@ class DataPreparationConfig:
                 "Token-weighted multi-source mixing requires mixing.target_total_tokens "
                 "or max_tokens on every active dataset"
             )
+
+    def validate(self) -> None:
+        """Validate config consistency and filesystem assumptions."""
+        total = self.splits.train + self.splits.val + self.splits.test
+        assert abs(total - 1.0) < 1e-6, f"Splits must sum to 1.0, got {total}"
+
+        active_datasets = [ds for ds in self.datasets if ds.weight > 0]
+
+        assert len(self.datasets) > 0, "Need at least one dataset"
+        for ds in self.datasets:
+            self._validate_dataset(ds)
+
+        assert sum(ds.weight for ds in self.datasets) > 0, "All weights zero"
+        assert self.output.shard_size_tokens >= 0, "shard_size_tokens must be >= 0"
+        self._validate_language_config()
+        self._validate_dedup_config()
+        self._validate_mixing_config(active_datasets)
 
 
 def _load_raw(path: Path) -> dict[str, Any]:
@@ -216,4 +258,6 @@ def load_config(path: str | Path) -> DataPreparationConfig:
         ),
         splits=SplitConfig(**raw.get("splits", {})),
         output=OutputConfig(**raw.get("output", {})),
+        lang_model_path=raw.get("lang_model_path"),
+        dedup=DedupConfig(**raw.get("dedup", {})),
     )

@@ -92,6 +92,26 @@ Each `[[datasets]]` entry may also set `max_docs` or `max_tokens` to stop readin
 
 If any configured threshold fails, the document is skipped before tokenization.
 
+### Language filtering
+
+Set top-level `lang_model_path` to a fastText language-ID model such as `lid.176.bin`, then opt individual sources into filtering with `allowed_languages`.
+
+- `lang_model_path`: path to the fastText supervised language-ID model loaded once at pipeline start.
+- `allowed_languages`: per-source ISO language allowlist such as `["en"]`.
+
+Language filtering currently applies to text, JSONL, and parquet readers. Very short texts under 50 characters are allowed through to avoid unstable predictions on tiny samples.
+
+### MinHash near-dedup
+
+Use the top-level `[dedup]` table to enable cross-source MinHash LSH deduplication after reading/spill and before mixing:
+
+- `enabled`: turn near-dedup on or off.
+- `jaccard_threshold`: approximate Jaccard similarity threshold for duplicate detection.
+- `num_perm`: number of MinHash permutations.
+- `shingle_size`: contiguous token n-gram size used to build document shingles.
+
+The first document in a near-duplicate cluster is kept and later matches are dropped. Dedup diagnostics record the global drop rate and per-source drop counts.
+
 ### Memory model
 
 Sources are streamed to temporary binary spill files under `<output_dir>/.prep_spill/` and backed by read-only memory maps.  Peak RAM is bounded to a single ~10 MB write buffer per source, regardless of corpus size.  Previously-read sources are memory-mapped so the OS can page them out while the next source is being read.  Spill files are removed unconditionally on exit (success or failure).
