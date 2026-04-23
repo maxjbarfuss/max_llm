@@ -40,6 +40,37 @@ Setup first, then use the entrypoint docs for the workflow you need:
 
 Architecture, phase progression, and data strategy live in [docs/DESIGN.md](docs/DESIGN.md). Active execution detail lives in [docs/PLAN.md](docs/PLAN.md). Historical outcomes live in the phase closeouts.
 
+## Architecture Diagram
+
+```mermaid
+graph TD
+	In[Text Input]:::io --> Tok[Unigram Tokenizer 8K]:::p3 --> Emb[Token Embedding]:::p2 --> N1
+	Emb --> RGRU[GRU Reasoning Stream]:::p7
+
+	subgraph Block[Transformer Stream x N]
+		N1[RMSNorm]:::p4 --> ATT[MLA]:::p6 --> R1[+ Residual]:::p3
+		RoPE[RoPE]:::p4 -.-> ATT
+		R1 --> N2[RMSNorm]:::p4 --> MOE[MoE Sparse SwiGLU]:::p6 --> R2[+ Residual]:::p3
+	end
+
+	LoRA:::p5 -.-> Block
+	RewardModel:::p5 -.-> Block
+
+	R2 --> COMB[GRU Combiner]:::p7
+	RGRU --> COMB
+	COMB --> Head[LM Head]:::p3 --> Logits[Logits]:::io
+	Logits -->|training| Loss[CE Loss + DPO]:::p5
+	Logits -->|inference| Samp[Sampler + KV-cache]:::p5 --> GenOut[Generated Text]:::io
+
+	classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+	classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
+	classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
+	classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
+	classDef p5 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
+	classDef p6 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
+	classDef p7 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
+```
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).

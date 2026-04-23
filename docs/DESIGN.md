@@ -29,18 +29,130 @@ Purpose: durable architecture, data, and system reference for the project. Use [
 - Core blocks: FlashNorm, MLA with decoupled RoPE, xIELU FFN, block-attn residuals.
 - Inference: top-k / top-p / temperature sampler with repetition penalty.
 
+### Phased Architecture Diagrams
+
 ```mermaid
+---
+title: Phase 2 - Skeleton
+---
 graph TD
-    A[Text] --> B[Unigram 8K Tokenizer] --> C[Token Embedding] --> D[FlashNorm]
-    D --> E[MLA + decoupled RoPE]
-    E --> F[block_attn Residual]
-    F --> G[FlashNorm]
-    G --> H[xIELU FFN]
-    H --> I[block_attn Residual]
-    I --> J[LM Head]
-    J --> K[Logits]
-    K -->|training| L[CE Loss]
-    K -->|inference| M[Sampler + repetition penalty]
+    A[Text]:::io --> B[Char Tokenizer]:::p2 --> C[Token Emb]:::p2 --> D[GELU MLP]:::p2 --> E[LM Head]:::p2 --> F[Logits]:::io
+    F -->|training| G[Cross-Entropy Loss]:::io
+    F -->|inference| H[Greedy Sampling]:::p2 --> I[Text]:::io
+    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
+```
+
+```mermaid
+---
+title: Phase 3 - Minimal Transformer + Tokenizer Upgrade
+---
+graph TD
+    A[Text]:::io --> B[Unigram Tokenizer 8K]:::p3 --> C[Token Emb]:::p2 --> Block
+    subgraph Block[Transformer Block x N]
+        direction LR
+        D[LayerNorm]:::p3 --> E[Multi-Head Attn<br/>Fused QKV]:::p3 --> F[+ Residual]:::p3 --> G[LayerNorm]:::p3 --> H[GELU FFN]:::p3 --> I[+ Residual]:::p3
+    end
+    Block --> J[LM Head]:::p3 --> K[Logits]:::io
+    K -->|training| L[Chunked CE Loss]:::p3
+    K -->|inference| M[Sampler<br/>temp/top-k/top-p]:::p3 --> N[Text]:::io
+    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
+    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
+```
+
+```mermaid
+---
+title: Phase 4 - Llama-Style Upgrades
+---
+graph TD
+    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
+    subgraph Block[Transformer Block x N]
+        direction LR
+        D[FlashNorm]:::p4 --> E[MLA + decoupled RoPE]:::p4 --> F[block_attn Residual]:::p4 --> G[FlashNorm]:::p4 --> H[xIELU FFN]:::p4 --> I[block_attn Residual]:::p4
+    end
+    Block --> J[LM Head]:::p3 --> K[Logits]:::io
+    K -->|training| L[Cross-Entropy Loss]:::io
+    K -->|inference| M[Sampler<br/>temp/top-k/top-p]:::p3 --> N[Text]:::io
+    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
+    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
+    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
+```
+
+```mermaid
+---
+title: Phase 5 - Post-Training
+---
+graph TD
+    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
+    subgraph Block[Transformer Block x N]
+        direction LR
+        D[FlashNorm]:::p4 --> E[MLA + decoupled RoPE + KV-cache]:::p4 --> F[block_attn Residual]:::p4 --> G[FlashNorm]:::p4 --> H[xIELU FFN]:::p4 --> I[block_attn Residual]:::p4
+    end
+    Block --> J[LM Head]:::p3 --> K[Logits]:::io
+    K -->|training| L[CE Loss + DPO]:::p5
+    K -->|inference| M[Sampler + KV-cache]:::p5 --> N[Text]:::io
+    LoRA:::p5 -.-> Block
+    RewardModel:::p5 -.-> Block
+    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
+    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
+    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
+    classDef p5 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
+```
+
+```mermaid
+---
+title: Phase 6 - MoE + MLA
+---
+graph TD
+    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2 --> Block
+    subgraph Block[Transformer Block x N]
+        direction LR
+        D[FlashNorm]:::p4 --> E[MLA + decoupled RoPE]:::p6 --> F[block_attn Residual]:::p4 --> G[FlashNorm]:::p4 --> H[MoE Sparse xIELU]:::p6 --> I[block_attn Residual]:::p4
+    end
+    LoRA:::p5 -.-> Block
+    RewardModel:::p5 -.-> Block
+    Block --> J[LM Head]:::p3 --> K[Logits]:::io
+    K -->|training| L[CE Loss + DPO]:::p5
+    K -->|inference| M[Sampler + KV-cache]:::p5 --> N[Text]:::io
+    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
+    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
+    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
+    classDef p5 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
+    classDef p6 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
+```
+
+```mermaid
+---
+title: Phase 7 - Dual-Stream Reasoning
+---
+graph TD
+    A[Text]:::io --> B[Tokenizer]:::p3 --> C[Token Emb]:::p2
+    C --> TStream
+    C --> RGRU[GRU Reasoning Stream]:::p7
+
+    subgraph TStream[Transformer Stream x N]
+        direction LR
+        D[FlashNorm]:::p4 --> E[MLA + decoupled RoPE]:::p6 --> F[block_attn Residual]:::p4 --> G[FlashNorm]:::p4 --> H[MoE Sparse xIELU]:::p6 --> I[block_attn Residual]:::p4
+    end
+
+    LoRA:::p5 -.-> TStream
+    RewardModel:::p5 -.-> TStream
+    TStream --> COMB[GRU Combiner]:::p7
+    RGRU --> COMB
+    COMB --> J[LM Head]:::p3 --> K[Logits]:::io
+    K -->|training| L[CE Loss + DPO]:::p5
+    K -->|inference| M[Sampler + KV-cache]:::p5 --> N[Text]:::io
+    classDef io fill:#212121,stroke:#FFFFFF,color:#FFFFFF,stroke-width:2px
+    classDef p2 fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20
+    classDef p3 fill:#BBDEFB,stroke:#1565C0,color:#0D47A1
+    classDef p4 fill:#FFE0B2,stroke:#E65100,color:#BF360C
+    classDef p5 fill:#E1BEE7,stroke:#6A1B9A,color:#4A148C
+    classDef p6 fill:#FFCDD2,stroke:#C62828,color:#B71C1C
+    classDef p7 fill:#FFF9C4,stroke:#F57F17,color:#F57F17
 ```
 
 ### Forward-Carried Additions
