@@ -6,11 +6,7 @@
 
 ## Current Work
 
-Phase 5.2 Wave 1 new sources: NuminaMath preprocessing complete (859K→18 parquet shards), 4 production prep configs written (Gutenberg, ir_python, owm, NuminaMath), 32K tokenizer training config written. PLAN.md + README updated.
-
 ## Thinking Notes
-
-Next step: run tokenizer config first (`p5_wave1_tokenizer_32k_20260424.toml`), then run 4 source prod configs. After all preps complete, build curriculum mixing config to blend Wave 0 + Wave 1 datasets.
 
 
 ---
