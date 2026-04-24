@@ -120,16 +120,16 @@ Wave 0 validation note (2026-04-23): OWT packing smoke-slice (`max_docs=5000`, `
 Wave 0 validation note (2026-04-23): OWT+FineWeb-Edu fresh smoke (`500 + 500 docs`) with curriculum repetition budgets (`1.0` each) completed; dedup_rate=0.0000 on slice, repetition drops: OWT=500/FW-Edu=500 second-stage exposures, packed train fill_ratio=0.9990.
 
 Wave 1 — tokenizer + corpus shape decision (depends on Wave 0):
-- ☐ **Tokenizer decision checkpoint**:
-	- Train new **32K Unigram tokenizer** on cleaned Phase 4 distribution if doing any additional pretraining in Phase 5
-	- Or explicitly defer tokenizer rebuild if Phase 5 is LoRA-only SFT/grounding/alignment on frozen base
-- ☐ **Optional new sources (only after cleanup policy is stable)**:
-	- Long-form books (Project Gutenberg) for long-horizon coherence
-	- Code corpus (The Stack v2 / StarCoder2 permissive subsets) for structured reasoning signal
-	- Reasoning corpus (math/logic chain-of-thought-style educational data) with capped mix share and provenance tracking
+- ⏳ **Tokenizer decision checkpoint**: **P5-DEC-4**: train 32K Unigram tokenizer on full Wave 0 + Wave 1 corpus sample before any additional pretraining. Config: `config/ephemeral/p5_wave1_tokenizer_32k_20260424.toml`. Outputs to `/mnt/d/Dev/data/prepared/p5_wave1_tokenizer_32k_20260424/`. All Wave 1 production prep configs reference this tokenizer; run tokenizer config first.
+- ⏳ **Optional new sources** — production prep configs written, tokenizer training prerequisite pending:
+	- **Project Gutenberg** (61K English books, 3B token cap): `config/ephemeral/p5_wave1_gutenberg_prod_20260424.toml` → `/mnt/d/Dev/data/prepared/p5_wave1_gutenberg_20260424/`
+	- **StarCoder2 ir_python** (154K Python files): `config/ephemeral/p5_wave1_code_python_prod_20260424.toml` → `/mnt/d/Dev/data/prepared/p5_wave1_code_python_20260424/`
+	- **OpenWebMath / owm** (6.3M math web pages, 3B token cap): `config/ephemeral/p5_wave1_owm_prod_20260424.toml` → `/mnt/d/Dev/data/prepared/p5_wave1_owm_20260424/`
+	- **NuminaMath-CoT** (859K CoT examples, preprocessed → `/mnt/d/Dev/data/numina_math_cot/train/`): `config/ephemeral/p5_wave1_numina_math_prod_20260424.toml` → `/mnt/d/Dev/data/prepared/p5_wave1_numina_math_20260424/`
 
 Wave 1 validation note (2026-04-23): Gutenberg + accessible StarCoder2-family code slice + local reasoning smoke (`200 + 200 + 200 max_docs`) completed; kept docs after dedup: books=121, code=66 or 44 depending on code source, reasoning=191; packing train fill ratio reached `0.9942+` on both Wave 1 smoke variants.
 Wave 1 validation note (2026-04-23): combined all-corpus smoke (OWT + FineWeb-Edu + Wikipedia + Cosmopedia-v2 + Gutenberg + StarCoder2 Python IR + reasoning) completed with `1400` input docs, `1178` kept docs, dedup_rate=`0.1586`, and packed train fill ratio=`0.9987`.
+Wave 1 source selection note (2026-04-24): Final Wave 1 source set: Gutenberg (books) + StarCoder2 ir_python (code) + StarCoder2 owm/OpenWebMath (math web) + NuminaMath-CoT (chain-of-thought reasoning). Excluded: StarCoder2 stackoverflow (messy `<issue_start>` formatting), documentation (60K examples, trivial size), arxiv (overlaps OWT/FineWeb). Tokenizer: upgrade to 32K Unigram before running source preps; character_coverage=0.9999 for math+code symbol coverage.
 Wave 1 access note (2026-04-23): `bigcode/the-stack-v2` is now accessible for this account, but the currently usable split exposes metadata rows (`blob_id`, `src_encoding`, `path`, license/provenance fields) rather than direct `content`; `the-stack-v2-dedup` and `the-stack-v2-train-*-ids` remained separately gated at end of day. Adopting The Stack v2 in prep will require a content-materialization step against Software Heritage blobs.
 
 Wave 2 — low-risk architecture and inference wins (easy wins first):

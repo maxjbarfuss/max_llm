@@ -144,6 +144,26 @@ When enabled, prep diagnostics include a `curriculum_repetition_budget_applied` 
 
 `cosmopedia_v2` should be treated as synthetic LLM-generated educational text. For Phase 5 Wave 0 corpus policy, keep it as an explicitly configured companion source (not a replacement for human-authored web/wiki corpora), and track its share via per-source stats in prep outputs.
 
+### NuminaMath-CoT provenance note
+
+`reasoning_numina_math` (AI-MO/NuminaMath-CoT) is synthetic/semi-synthetic data: competition math problems with model-assisted or human-written chain-of-thought solutions. Treat identically to Cosmopedia — companion source with per-source stats tracked. Preprocessed locally by `src/data/datasets/numina_math/preprocess.py` into `/mnt/d/Dev/data/numina_math_cot/train/*.parquet` (18 shards, 859K rows). Each row combines `problem` + `solution` as "Problem: {problem}\n\nSolution: {solution}".
+
+### Wave 1 source selection (2026-04-24)
+
+The final Wave 1 source set and the rationale for sources that were evaluated but excluded:
+
+| Source | Decision | Rationale |
+|---|---|---|
+| `manu/project_gutenberg` (en) | ✅ included | 61K English books; long-horizon coherence signal |
+| `bigcode/starcoder2data-extras` ir_python | ✅ included | 154K Python files; structured algorithmic reasoning |
+| `bigcode/starcoder2data-extras` owm | ✅ included | 6.3M math web pages (OpenWebMath); dense math signal |
+| `AI-MO/NuminaMath-CoT` | ✅ included | 859K competition math CoT chains; explicit reasoning traces |
+| `bigcode/starcoder2data-extras` stackoverflow | ❌ excluded | `<issue_start>username_0:` formatting not clean for pretraining |
+| `bigcode/starcoder2data-extras` documentation | ❌ excluded | Only 60K examples; too small to be meaningful |
+| `bigcode/starcoder2data-extras` arxiv | ❌ excluded | Overlaps with OWT/FineWeb coverage |
+
+Production prep configs for all included sources require the 32K tokenizer to be trained first. Run `config/ephemeral/p5_wave1_tokenizer_32k_20260424.toml` before any source prep config.
+
 ### New-source storage and code-corpus note
 
 New external corpus downloads should be cached under `/mnt/d/Dev/data` rather than the Linux home cache. For Hugging Face-backed sources, set `HF_HOME`, `HF_DATASETS_CACHE`, and `HF_HUB_CACHE` explicitly before fetching so blobs and dataset metadata land under `/mnt/d/Dev/data/hf_cache/...`.
