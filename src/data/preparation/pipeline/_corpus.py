@@ -191,6 +191,7 @@ def _write_source_to_corpus(  # noqa: C901
         return _write_with_limit(handle, decoded, current_bytes, max_bytes)
 
     if source.format == "jsonl":
+        doc_count = 0
         with path.open(encoding="utf-8") as src:
             for line in src:
                 obj = json.loads(line)
@@ -216,6 +217,85 @@ def _write_source_to_corpus(  # noqa: C901
                 written += sep_delta
                 if sep_delta < 2:
                     return written
+
+                doc_count += 1
+                if source.max_docs and doc_count >= source.max_docs:
+                    return written
         return written
 
+    if source.format == "parquet":
+        return _write_parquet_source_to_corpus(source, handle, current_bytes, written, max_bytes)
+
     raise ValueError(f"Cannot convert format '{source.format}' to text corpus")
+
+
+def _write_parquet_source_to_corpus(  # noqa: C901
+    source: DataSource,
+    handle: Any,
+    current_bytes: int,
+    written: int,
+    max_bytes: int | None,
+) -> int:
+    """Write parquet source (local dir/file or hf:// URI) to the tokenizer corpus."""
+    doc_count = 0
+
+    def _emit(text: str) -> tuple[int, bool]:
+        """Write one document + separator; return (bytes_written, stop)."""
+        nonlocal doc_count
+        text = _normalize_text(text)
+        if not text:
+            return 0, False
+        delta = _write_with_limit(handle, text, current_bytes + written, max_bytes)
+        sep = _write_with_limit(handle, "\n\n", current_bytes + written + delta, max_bytes)
+        doc_count += 1
+        stop = bool(
+            (max_bytes and (current_bytes + written + delta + sep) >= max_bytes)
+            or (source.max_docs and doc_count >= source.max_docs)
+        )
+        return delta + sep, stop
+
+    if isinstance(source.path, str) and source.path.startswith("hf://"):
+        from datasets import load_dataset  # noqa: PLC0415
+
+        uri = source.path[len("hf://") :]
+        parts = uri.split("/")
+        namespace, dataset_name = parts[0], parts[1]
+        config_name = parts[2] if len(parts) > 2 else None
+        split = parts[3] if len(parts) > 3 else "train"
+        ds_id = f"{namespace}/{dataset_name}"
+        kwargs: dict[str, object] = {"split": split, "streaming": True}
+        if config_name:
+            kwargs["name"] = config_name
+        ds = load_dataset(ds_id, **kwargs)
+        for example in ds:
+            text = example.get(source.text_field, "")
+            if not text:
+                continue
+            delta, stop = _emit(text)
+            written += delta
+            if stop:
+                break
+    else:
+        import pyarrow.parquet as pq  # noqa: PLC0415
+
+        path = Path(source.path)
+        files = sorted(path.glob("*.parquet")) if path.is_dir() else [path]
+        done = False
+        for file_path in files:
+            if done:
+                break
+            parquet_file = pq.ParquetFile(file_path)
+            for batch in parquet_file.iter_batches(columns=[source.text_field], batch_size=1000):
+                for val in batch.column(source.text_field):
+                    text = val.as_py()
+                    if not text:
+                        continue
+                    delta, stop = _emit(text)
+                    written += delta
+                    if stop:
+                        done = True
+                        break
+                if done:
+                    break
+
+    return written

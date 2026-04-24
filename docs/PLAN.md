@@ -120,7 +120,7 @@ Wave 0 validation note (2026-04-23): OWT packing smoke-slice (`max_docs=5000`, `
 Wave 0 validation note (2026-04-23): OWT+FineWeb-Edu fresh smoke (`500 + 500 docs`) with curriculum repetition budgets (`1.0` each) completed; dedup_rate=0.0000 on slice, repetition drops: OWT=500/FW-Edu=500 second-stage exposures, packed train fill_ratio=0.9990.
 
 Wave 1 — tokenizer + corpus shape decision (depends on Wave 0):
-- ⏳ **Tokenizer decision checkpoint**: **P5-DEC-4**: train 32K Unigram tokenizer on full Wave 0 + Wave 1 corpus sample before any additional pretraining. Config: `config/ephemeral/p5_wave1_tokenizer_32k_20260424.toml`. Outputs to `/mnt/d/Dev/data/prepared/p5_wave1_tokenizer_32k_20260424/`. All Wave 1 production prep configs reference this tokenizer; run tokenizer config first.
+- ✅ **Tokenizer decision checkpoint**: **P5-DEC-4**: 32K Unigram tokenizer trained on 215K docs (~287M tokens) from all 8 Wave 0+1 sources (OWT, FineWeb-Edu, Wikipedia, Cosmopedia, Gutenberg, ir_python, owm, NuminaMath). Model: `/mnt/d/Dev/data/prepared/p5_wave1_tokenizer_32k_20260424/p5_wave1_tokenizer_32k_20260424_tokenizer.model`. Fertility: NL 0.25 tok/char, code 0.33, math 0.46 (8→10% improvement vs 8K tokenizer on NL; code/math coverage substantially better).
 - ⏳ **Optional new sources** — production prep configs written, tokenizer training prerequisite pending:
 	- **Project Gutenberg** (61K English books, 3B token cap): `config/ephemeral/p5_wave1_gutenberg_prod_20260424.toml` → `/mnt/d/Dev/data/prepared/p5_wave1_gutenberg_20260424/`
 	- **StarCoder2 ir_python** (154K Python files): `config/ephemeral/p5_wave1_code_python_prod_20260424.toml` → `/mnt/d/Dev/data/prepared/p5_wave1_code_python_20260424/`
