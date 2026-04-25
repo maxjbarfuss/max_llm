@@ -133,7 +133,7 @@ Wave 1 source selection note (2026-04-24): Final Wave 1 source set: Gutenberg (b
 Wave 1 access note (2026-04-23): `bigcode/the-stack-v2` is now accessible for this account, but the currently usable split exposes metadata rows (`blob_id`, `src_encoding`, `path`, license/provenance fields) rather than direct `content`; `the-stack-v2-dedup` and `the-stack-v2-train-*-ids` remained separately gated at end of day. Adopting The Stack v2 in prep will require a content-materialization step against Software Heritage blobs.
 
 Wave 2 — low-risk architecture and inference wins (easy wins first):
-- ☐ **rope_base standardization**: set milestone configs from 13892 to 500000 (Llama-3 style)
+- ✅ **rope_base standardization**: set milestone configs from 13892 to 500000 (Llama-3 style); original training values preserved in comment for p4 checkpoint SFT
 - ☐ **YaRN RoPE scaling** for 2× context extension at inference; validate coherence at 2048 tokens
 - ☐ **KV-cache path** for autoregressive decoding, including MLA latent-cache variant (cache latent `z`)
 - ☐ Prompt templates (ChatML or Alpaca-style) and `ChatFormatter` for multi-turn inference
