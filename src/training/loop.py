@@ -40,40 +40,53 @@ def compute_loss_with_smoothing(
     targets: torch.Tensor,
     label_smoothing: float = 0.0,
     chunk_size: int = 4096,
+    z_loss_weight: float = 0.0,
 ) -> torch.Tensor:
-    """Compute cross-entropy loss with optional label smoothing.
+    """Compute cross-entropy loss with optional label smoothing and Z-loss.
 
     Processes the (B*T, V) logit matrix in chunks to avoid materializing a
     full (B*T, V) softmax tensor in the autograd graph.  At B=24, T=2048,
     V=8192 this saves ~800 MB compared to a single F.cross_entropy call.
+
+    Z-loss (PaLM): z_loss_weight * mean(logsumexp(logits, dim=-1)^2).
+    Penalises a growing log-partition function, stabilising logit scale.
+    Typical value: 1e-4.  Eval always uses z_loss_weight=0 so val_loss
+    reflects pure cross-entropy for perplexity comparison.
 
     Args:
         logits: Model output logits of shape (B, T, V).
         targets: Target token indices of shape (B, T).
         label_smoothing: Label smoothing factor (0.0 = no smoothing).
         chunk_size: Number of tokens per loss chunk (default 4096).
+        z_loss_weight: Weight for PaLM Z-loss regularizer (0.0 = disabled).
 
     Returns:
-        Scalar loss value.
+        Scalar loss value (CE + z_loss).
     """
     B, T, V = logits.shape
     logits_2d = logits.view(B * T, V)
     targets_1d = targets.view(B * T)
 
     loss_sum = logits_2d.new_zeros(())
+    z_loss_sum = logits_2d.new_zeros(()) if z_loss_weight > 0.0 else None
     for start in range(0, B * T, chunk_size):
         end = min(start + chunk_size, B * T)
+        chunk = logits_2d[start:end]
         if label_smoothing > 0:
-            log_probs = F.log_softmax(logits_2d[start:end], dim=-1)
+            log_probs = F.log_softmax(chunk, dim=-1)
             tgt = targets_1d[start:end]
             nll = -log_probs.gather(1, tgt.unsqueeze(1)).squeeze(1)
             smooth = -log_probs.mean(dim=-1)
             loss_sum = loss_sum + ((1 - label_smoothing) * nll + label_smoothing * smooth).sum()
         else:
-            loss_sum = loss_sum + F.cross_entropy(
-                logits_2d[start:end], targets_1d[start:end], reduction="sum"
-            )
-    return loss_sum / (B * T)
+            loss_sum = loss_sum + F.cross_entropy(chunk, targets_1d[start:end], reduction="sum")
+        if z_loss_sum is not None:
+            lse = torch.logsumexp(chunk, dim=-1)  # (chunk_tokens,)
+            z_loss_sum = z_loss_sum + (lse * lse).sum()
+    ce_loss = loss_sum / (B * T)
+    if z_loss_sum is not None:
+        return ce_loss + z_loss_weight * z_loss_sum / (B * T)
+    return ce_loss
 
 
 def evaluate(
@@ -136,6 +149,7 @@ def train_step(
     accumulate_grad: bool = False,
     label_smoothing: float = 0.0,
     gradient_accumulation_steps: int = 1,
+    z_loss_weight: float = 0.0,
 ) -> float:
     """Single forward + backward step with optional AMP.
 
@@ -151,9 +165,10 @@ def train_step(
         gradient_accumulation_steps: Number of micro-steps per optimizer step.
             The loss is divided by this before backward so that accumulated
             gradients equal the full-batch gradient regardless of accum count.
+        z_loss_weight: PaLM Z-loss regularizer weight (0.0 = disabled).
 
     Returns:
-        Scalar cross-entropy loss for this batch (unscaled, for logging).
+        Scalar loss for this batch (CE + z_loss, unscaled, for logging).
     """
     model.train()
     device = next(model.parameters()).device
@@ -167,10 +182,12 @@ def train_step(
     if use_amp and device.type == "cuda":
         with torch.autocast(device_type="cuda"):
             logits = model(x)  # (B, T, V)
-            loss = compute_loss_with_smoothing(logits, y, label_smoothing)
+            loss = compute_loss_with_smoothing(
+                logits, y, label_smoothing, z_loss_weight=z_loss_weight
+            )
     else:
         logits = model(x)  # (B, T, V)
-        loss = compute_loss_with_smoothing(logits, y, label_smoothing)
+        loss = compute_loss_with_smoothing(logits, y, label_smoothing, z_loss_weight=z_loss_weight)
 
     loss_value = loss.item()
     if not math.isfinite(loss_value):
@@ -259,6 +276,7 @@ def train(  # noqa: C901
     early_stopping_patience: int | None = None,
     early_stopping_min_delta: float = 0.0,
     label_smoothing: float = 0.0,
+    z_loss_weight: float = 0.0,
     tb_writer: Any | None = None,
     use_torch_compile: bool = False,
     checkpoint_interval: int = 0,
@@ -413,6 +431,7 @@ def train(  # noqa: C901
                     accumulate_grad=accumulate_grad,
                     label_smoothing=label_smoothing,
                     gradient_accumulation_steps=gradient_accumulation_steps,
+                    z_loss_weight=z_loss_weight,
                 )
             accumulated_loss += loss
             micro_step += 1

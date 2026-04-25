@@ -53,6 +53,7 @@ class TrainingConfig:
     early_stopping_patience: int | None = None
     early_stopping_min_delta: float = 0.0
     label_smoothing: float = 0.0
+    z_loss_weight: float = 0.0  # PaLM-style logit-scale regularizer; 1e-4 is a good default
     eval_on_test: bool = False
     eval_max_batches: int = 0  # 0 = no limit; set to cap expensive eval on large val sets
     benchmark_tasks: list[str] = field(default_factory=list)

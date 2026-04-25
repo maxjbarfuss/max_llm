@@ -518,6 +518,106 @@ class TestEnhancedTrainingFeatures:
         assert "gpu_memory_mb" not in metrics  # Not requested
 
 
+class TestZLoss:
+    """Z-loss regularizer correctness."""
+
+    def test_z_loss_disabled_matches_baseline(self):
+        """z_loss_weight=0 must return exactly the same value as not passing it."""
+        torch.manual_seed(0)
+        logits = torch.randn(2, 16, 64)
+        targets = torch.randint(0, 64, (2, 16))
+        baseline = compute_loss_with_smoothing(logits, targets)
+        with_zero = compute_loss_with_smoothing(logits, targets, z_loss_weight=0.0)
+        assert torch.equal(baseline, with_zero)
+
+    def test_z_loss_nonzero_increases_loss(self):
+        """With weight > 0, total loss must exceed CE-only loss."""
+        torch.manual_seed(1)
+        logits = torch.randn(2, 16, 64)
+        targets = torch.randint(0, 64, (2, 16))
+        ce_only = compute_loss_with_smoothing(logits, targets, z_loss_weight=0.0)
+        with_z = compute_loss_with_smoothing(logits, targets, z_loss_weight=1e-4)
+        assert with_z.item() > ce_only.item()
+
+    def test_z_loss_scales_with_weight(self):
+        """Doubling the weight doubles the z_loss contribution."""
+        torch.manual_seed(2)
+        logits = torch.randn(2, 8, 32)
+        targets = torch.randint(0, 32, (2, 8))
+        ce = compute_loss_with_smoothing(logits, targets, z_loss_weight=0.0)
+        low = compute_loss_with_smoothing(logits, targets, z_loss_weight=1e-4)
+        high = compute_loss_with_smoothing(logits, targets, z_loss_weight=2e-4)
+        z_low = (low - ce).item()
+        z_high = (high - ce).item()
+        assert abs(z_high - 2 * z_low) < 1e-6
+
+    def test_z_loss_formula(self):
+        """z_loss = weight * mean(logsumexp(logits, dim=-1)^2) — verify by hand."""
+        torch.manual_seed(3)
+        logits = torch.randn(1, 4, 8)
+        targets = torch.randint(0, 8, (1, 4))
+        weight = 1e-3
+        loss = compute_loss_with_smoothing(logits, targets, z_loss_weight=weight)
+        ce = compute_loss_with_smoothing(logits, targets, z_loss_weight=0.0)
+        lse = torch.logsumexp(logits.view(4, 8), dim=-1)
+        expected_z = weight * (lse * lse).mean()
+        assert torch.allclose(loss - ce, expected_z, atol=1e-6)
+
+    def test_z_loss_chunk_consistency(self):
+        """z_loss result is the same regardless of chunk_size."""
+        torch.manual_seed(4)
+        logits = torch.randn(3, 32, 128)
+        targets = torch.randint(0, 128, (3, 32))
+        full = compute_loss_with_smoothing(logits, targets, z_loss_weight=1e-4, chunk_size=3 * 32)
+        chunked = compute_loss_with_smoothing(logits, targets, z_loss_weight=1e-4, chunk_size=16)
+        assert torch.allclose(full, chunked, atol=1e-5)
+
+    def test_z_loss_gradients_flow(self):
+        """Gradients propagate through z_loss back to logits."""
+        torch.manual_seed(5)
+        logits = torch.randn(1, 8, 32, requires_grad=True)
+        targets = torch.randint(0, 32, (1, 8))
+        loss = compute_loss_with_smoothing(logits, targets, z_loss_weight=1e-4)
+        loss.backward()
+        assert logits.grad is not None
+        assert torch.isfinite(logits.grad).all()
+
+    def test_z_loss_gradient_direction(self):
+        """Z-loss gradient is non-negative: 2*lse*softmax(logits) >= 0 always."""
+        torch.manual_seed(6)
+        logits = torch.randn(1, 4, 16, requires_grad=True)
+        # Isolate the z_loss term (no CE) so CE doesn't confound the sign check.
+        # d/d(logits[i,k]) [ lse_i^2 ] = 2 * lse_i * softmax(logits[i,k]) >= 0
+        lse = torch.logsumexp(logits.view(4, 16), dim=-1)  # (4,)
+        z_term = (lse * lse).mean()
+        z_term.backward()
+        grad = logits.grad.detach()
+        assert (grad >= -1e-7).all(), "Z-loss gradient must be non-negative elementwise"
+
+    def test_train_step_with_z_loss_is_finite(self):
+        """train_step with z_loss_weight returns a finite float."""
+        model = _make_model()
+        x, y = _make_batch()
+        loss = train_step(model, x, y, _make_optimizer(model), z_loss_weight=1e-4)
+        assert isinstance(loss, float)
+        assert math.isfinite(loss)
+
+    def test_z_loss_with_label_smoothing(self):
+        """z_loss and label_smoothing compose correctly (both nonzero)."""
+        torch.manual_seed(7)
+        logits = torch.randn(2, 8, 32)
+        targets = torch.randint(0, 32, (2, 8))
+        ce_smooth = compute_loss_with_smoothing(
+            logits, targets, label_smoothing=0.1, z_loss_weight=0.0
+        )
+        combined = compute_loss_with_smoothing(
+            logits, targets, label_smoothing=0.1, z_loss_weight=1e-4
+        )
+        # combined must be larger and finite
+        assert combined.item() > ce_smooth.item()
+        assert torch.isfinite(combined)
+
+
 class TestChunkedLoss:
     """compute_loss_with_smoothing chunked CE correctness."""
 
