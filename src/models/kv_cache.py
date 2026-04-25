@@ -30,7 +30,7 @@ class LayerKVCache:
     slice-copy to avoid per-step allocation.  `length` tracks how many
     tokens have been written.
 
-    Raises AssertionError if an update would exceed max_seq_len.
+    Raises RuntimeError if an update would exceed max_seq_len.
     """
 
     def __init__(
@@ -70,10 +70,11 @@ class LayerKVCache:
         """
         T = new_k.shape[1]
         end = self._length + T
-        assert end <= self._max, (
-            f"KV-cache overflow: tried to write to position {end} but max_seq_len={self._max}. "
-            "Increase max_seq_len or call cache.reset()."
-        )
+        if end > self._max:
+            raise RuntimeError(
+                f"KV-cache overflow: tried to write to position {end} but max_seq_len={self._max}. "
+                "Increase max_seq_len or call cache.reset()."
+            )
         self._k[:, self._length : end].copy_(new_k)
         self._v[:, self._length : end].copy_(new_v)
         self._length = end
@@ -105,10 +106,21 @@ class ModelKVCache:
 
     @property
     def length(self) -> int:
-        """Tokens cached so far (reads from first non-None layer)."""
-        for c in self._layers:
-            if c is not None:
-                return c.length
+        """Tokens cached so far (requires all non-None layers to agree)."""
+        expected: int | None = None
+        for i, c in enumerate(self._layers):
+            if c is None:
+                continue
+            if expected is None:
+                expected = c.length
+                continue
+            if c.length != expected:
+                raise RuntimeError(
+                    "Inconsistent KV-cache lengths across layers: "
+                    f"layer 0 has length {expected}, layer {i} has length {c.length}."
+                )
+        if expected is not None:
+            return expected
         return 0
 
     def reset(self) -> None:

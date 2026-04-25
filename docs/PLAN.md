@@ -135,7 +135,7 @@ Wave 1 access note (2026-04-23): `bigcode/the-stack-v2` is now accessible for th
 Wave 2 — low-risk architecture and inference wins (easy wins first):
 - ✅ **rope_base standardization**: set milestone configs from 13892 to 500000 (Llama-3 style); original training values preserved in comment for p4 checkpoint SFT
 - ✅ **YaRN RoPE scaling**: NTK-by-parts frequency scaling + attn_scale=sqrt(1+0.1·log(s)) wired into all attention modules (MLA, MHA, SWA). Config params: rope_scaling_factor, rope_low_freq_factor, rope_high_freq_factor, rope_original_max_seq_len.
-- ✅ **KV-cache path**: LayerKVCache/ModelKVCache with pre-allocated buffers; threaded through MHA, MLA, standard/full_attn/block_attn residual paths. Bug: PyTorch SDPA is_causal=True uses upper-left convention → explicit bottom-right mask for T_q < T_k. 22/22 tests pass.
+- ✅ **KV-cache path**: LayerKVCache/ModelKVCache with pre-allocated buffers; threaded through MHA, MLA, standard/full_attn/block_attn residual paths. Bug: PyTorch SDPA is_causal=True uses upper-left convention → explicit bottom-right mask for T_q < T_k. Follow-up hardening complete: learned-pos cache offset fix, shared-layer full_attn/block_attn cache threading fix, explicit RuntimeError overflow checks (no assert dependency), and cross-layer cache-length consistency guard. 26/26 KV-cache tests pass.
 - ☐ Prompt templates (ChatML or Alpaca-style) and `ChatFormatter` for multi-turn inference
 
 Wave 3 — training stack upgrades (high impact):

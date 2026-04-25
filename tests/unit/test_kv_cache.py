@@ -66,6 +66,75 @@ def _mla_block_attn_model() -> LearningModel:
     return LearningModel.from_config(cfg, attention_backend="standard").eval()
 
 
+def _mha_full_attn_model(num_layers: int = 4) -> LearningModel:
+    cfg = ModelConfig(
+        hidden_size=128,
+        num_layers=num_layers,
+        num_heads=4,
+        vocab_size=64,
+        max_seq_length=32,
+        rope_base=10000,
+        pos_type="rope",
+        attn_type="mha",
+        norm_type="rms",
+        intermediate_size=256,
+        res_type="full_attn",
+    )
+    return LearningModel.from_config(cfg, attention_backend="standard").eval()
+
+
+def _mha_full_attn_shared_model(num_layers: int = 4) -> LearningModel:
+    cfg = ModelConfig(
+        hidden_size=128,
+        num_layers=num_layers,
+        num_heads=4,
+        vocab_size=64,
+        max_seq_length=32,
+        rope_base=10000,
+        pos_type="rope",
+        attn_type="mha",
+        norm_type="rms",
+        intermediate_size=256,
+        res_type="full_attn",
+        share_layer_weights=True,
+    )
+    return LearningModel.from_config(cfg, attention_backend="standard").eval()
+
+
+def _mha_block_attn_shared_model() -> LearningModel:
+    cfg = ModelConfig(
+        hidden_size=128,
+        num_layers=6,
+        num_heads=4,
+        vocab_size=64,
+        max_seq_length=32,
+        rope_base=10000,
+        pos_type="rope",
+        attn_type="mha",
+        norm_type="rms",
+        intermediate_size=256,
+        res_type="block_attn",
+        attn_res_num_blocks=3,
+        share_layer_weights=True,
+    )
+    return LearningModel.from_config(cfg, attention_backend="standard").eval()
+
+
+def _mha_learned_pos_model(num_layers: int = 2) -> LearningModel:
+    cfg = ModelConfig(
+        hidden_size=128,
+        num_layers=num_layers,
+        num_heads=4,
+        vocab_size=64,
+        max_seq_length=32,
+        pos_type="learned",
+        attn_type="mha",
+        norm_type="rms",
+        intermediate_size=256,
+    )
+    return LearningModel.from_config(cfg, attention_backend="standard").eval()
+
+
 # ---------------------------------------------------------------------------
 # LayerKVCache unit tests
 # ---------------------------------------------------------------------------
@@ -182,7 +251,20 @@ def test_model_kv_cache_length() -> None:
 
     assert mc.length == 0
     c0.update(torch.zeros(1, 3, 1, 4), torch.zeros(1, 3, 1, 4))
+    c1.update(torch.zeros(1, 3, 1, 4), torch.zeros(1, 3, 1, 4))
     assert mc.length == 3
+
+
+def test_model_kv_cache_length_desync_raises() -> None:
+    from src.models.kv_cache import LayerKVCache, ModelKVCache
+
+    c0 = LayerKVCache(max_seq_len=8, num_kv_heads=1, head_dim=4, batch_size=1)
+    c1 = LayerKVCache(max_seq_len=8, num_kv_heads=1, head_dim=4, batch_size=1)
+    mc = ModelKVCache([c0, c1])
+
+    c0.update(torch.zeros(1, 3, 1, 4), torch.zeros(1, 3, 1, 4))
+    with pytest.raises(RuntimeError, match="Inconsistent KV-cache lengths"):
+        _ = mc.length
 
 
 def test_model_kv_cache_getitem() -> None:
@@ -235,14 +317,18 @@ def test_make_kv_cache_mla_structure() -> None:
     cache = model.make_kv_cache(max_seq_len=32, batch_size=1, dtype=torch.float32)
 
     assert len(cache) == 2
-    assert cache[0]._k.shape == (1, 32, 2, head_dim)  # batch=1, seq=32, kv_heads=2, head_dim
-    assert cache[0]._v.shape == (1, 32, 2, head_dim)
+    layer0 = cache[0]
+    assert layer0 is not None
+    assert layer0._k.shape == (1, 32, 2, head_dim)  # batch=1, seq=32, kv_heads=2, head_dim
+    assert layer0._v.shape == (1, 32, 2, head_dim)
 
 
 def test_make_kv_cache_batch_size() -> None:
     model = _mha_model(num_layers=2)
     cache = model.make_kv_cache(max_seq_len=16, batch_size=3, dtype=torch.float32)
-    assert cache[0]._k.shape[0] == 3
+    layer0 = cache[0]
+    assert layer0 is not None
+    assert layer0._k.shape[0] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +406,22 @@ def test_mla_block_attn_kv_cache_correctness() -> None:
     _verify_kv_cache_correctness(_mla_block_attn_model(), seq_len=8)
 
 
+def test_mha_full_attn_kv_cache_correctness() -> None:
+    _verify_kv_cache_correctness(_mha_full_attn_model(), seq_len=8)
+
+
+def test_mha_full_attn_shared_layers_kv_cache_correctness() -> None:
+    _verify_kv_cache_correctness(_mha_full_attn_shared_model(), seq_len=8)
+
+
+def test_mha_block_attn_shared_layers_kv_cache_correctness() -> None:
+    _verify_kv_cache_correctness(_mha_block_attn_shared_model(), seq_len=8)
+
+
+def test_mha_learned_pos_kv_cache_correctness() -> None:
+    _verify_kv_cache_correctness(_mha_learned_pos_model(), seq_len=8)
+
+
 def test_kv_cache_correctness_all_positions() -> None:
     """Every intermediate position matches, not just the last."""
     torch.manual_seed(1)
@@ -391,8 +493,31 @@ def test_kv_cache_prefill_then_generation() -> None:
     assert torch.allclose(logits_ref, logits_gen, atol=1e-4)
 
 
+def test_kv_cache_layer_lengths_stay_synchronized() -> None:
+    """All non-None layer caches keep the same length across prefill+decode."""
+    torch.manual_seed(4)
+    model = _mha_model(num_layers=3)
+    vocab = model.token_embedding.embedding.num_embeddings
+    all_ids = torch.randint(0, vocab, (1, 7))
+
+    model.eval()
+    cache = model.make_kv_cache(max_seq_len=16, batch_size=1, dtype=torch.float32)
+
+    with torch.no_grad():
+        model(all_ids[:, :5], kv_caches=cache)  # prefill
+        _ = model(all_ids[:, 5:6], kv_caches=cache)  # decode 1
+        _ = model(all_ids[:, 6:7], kv_caches=cache)  # decode 2
+
+    lengths = [c.length for c in cache if c is not None]
+    assert lengths
+    assert all(layer_len == lengths[0] for layer_len in lengths)
+    assert cache.length == lengths[0] == 7
+
+
 def test_make_kv_cache_uses_model_max_seq_len_as_default() -> None:
     """make_kv_cache with no max_seq_len uses model.max_seq_len."""
     model = _mha_model()
     cache = model.make_kv_cache(batch_size=1, dtype=torch.float32)
-    assert cache[0]._k.shape[1] == model.max_seq_len
+    layer0 = cache[0]
+    assert layer0 is not None
+    assert layer0._k.shape[1] == model.max_seq_len

@@ -250,7 +250,8 @@ class LearningModel(nn.Module):
 
         # Learned position embedding (skipped for RoPE/ALiBi/RelPos variants)
         if self.position_embedding is not None:
-            h = tok_emb + self.position_embedding(x)  # (B, T, d_model)
+            pos_offset = kv_caches.length if kv_caches is not None else 0
+            h = tok_emb + self.position_embedding(x, pos_offset=pos_offset)  # (B, T, d_model)
         else:
             h = tok_emb
 
@@ -311,8 +312,11 @@ class LearningModel(nn.Module):
         values: list[torch.Tensor] = [h]
         sublayer_idx = 0
 
-        for block_idx, _block in enumerate(self.blocks):
-            block = cast(TransformerBlock, _block)
+        for block_idx in range(self.num_layers):
+            block = cast(
+                TransformerBlock,
+                self.blocks[0] if self.share_layer_weights else self.blocks[block_idx],
+            )
             kv = kv_caches[block_idx] if kv_caches is not None else None
             # Attention sublayer
             h_in = ar(sublayer_idx, values)
@@ -356,12 +360,14 @@ class LearningModel(nn.Module):
         sublayer_idx = 0
 
         for group_n in range(N):
-            group_blocks = self.blocks[group_n * S : (group_n + 1) * S]
             partial_b: torch.Tensor | None = None  # accumulates within-group outputs
 
-            for rel_i, _block in enumerate(group_blocks):
-                block = cast(TransformerBlock, _block)
+            for rel_i in range(S):
                 block_idx = group_n * S + rel_i
+                block = cast(
+                    TransformerBlock,
+                    self.blocks[0] if self.share_layer_weights else self.blocks[block_idx],
+                )
                 kv = kv_caches[block_idx] if kv_caches is not None else None
                 # --- Attention sublayer ---
                 # First sublayer of the group: sources = [b_0, ..., b_{n-1}]
