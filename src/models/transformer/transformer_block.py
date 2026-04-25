@@ -5,9 +5,6 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn as nn
 
-if TYPE_CHECKING:
-    from src.models.kv_cache import LayerKVCache
-
 from src.models.attention import make_attention
 from src.models.feedforward import make_ffn
 from src.models.norm import _VALID_NORM_TYPES, make_norm
@@ -15,6 +12,9 @@ from src.models.position.add_rope import AdditiveRoPE
 from src.models.position.alibi import ALiBi
 from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
+
+if TYPE_CHECKING:
+    from src.models.kv_cache import LayerKVCache
 
 
 class TransformerBlock(nn.Module):

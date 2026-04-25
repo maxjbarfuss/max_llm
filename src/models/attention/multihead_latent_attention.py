@@ -23,12 +23,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.models.position.add_rope import AdditiveRoPE
+from src.models.position.alibi import ALiBi
+from src.models.position.rel_pos_bias import RelativePositionBias
+from src.models.position.rope import RotaryEmbedding, _apply_rope
 
 if TYPE_CHECKING:
     from src.models.kv_cache import LayerKVCache
-from src.models.position.alibi import ALiBi
-from src.models.position.rel_pos_bias import RelativePositionBias
-from src.models.position.rope import RotaryEmbedding
 
 # Try to import Flash Attention 2
 try:
@@ -58,11 +58,6 @@ try:
 except ImportError:
     sage_attn_func = None  # type: ignore[assignment, unused-ignore]
     SAGE_ATTN_AVAILABLE = False
-
-
-def _rotate_half(x: torch.Tensor) -> torch.Tensor:
-    half = x.shape[-1] // 2
-    return torch.cat([-x[..., half:], x[..., :half]], dim=-1)
 
 
 class MultiHeadLatentAttention(nn.Module):
@@ -198,11 +193,8 @@ class MultiHeadLatentAttention(nn.Module):
             sin = self.rope.sin_cache[:, pos_offset : pos_offset + T, :, : self.rope_head_dim].to(
                 q_rope.dtype
             )
-            return (
-                q_rope * cos + _rotate_half(q_rope) * sin,
-                k_rope * cos + _rotate_half(k_rope) * sin,
-            )
-        # AdditiveRoPE: add positional signal (no offset for additive variant)
+            return _apply_rope(q_rope, cos, sin), _apply_rope(k_rope, cos, sin)
+        # AdditiveRoPE: add positional signal at the correct absolute position
         enc = self.rope.enc_cache[:, pos_offset : pos_offset + T, :, : self.rope_head_dim].to(
             q_rope.dtype
         )
@@ -247,7 +239,6 @@ class MultiHeadLatentAttention(nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        T: int,
         attn_bias: torch.Tensor | None,
         dropout_p: float,
     ) -> torch.Tensor:
@@ -283,7 +274,6 @@ class MultiHeadLatentAttention(nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        T: int,
         attn_bias: torch.Tensor | None,
         dropout_p: float,
     ) -> torch.Tensor:
@@ -362,8 +352,8 @@ class MultiHeadLatentAttention(nn.Module):
         elif backend == "sage":
             out = self._sage_attention(q, k, v)
         elif backend == "xformers":
-            out = self._xformers_attention(q, k, v, T, attn_bias, dropout_p)
+            out = self._xformers_attention(q, k, v, attn_bias, dropout_p)
         else:
-            out = self._standard_attention(q, k, v, T, attn_bias, dropout_p)
+            out = self._standard_attention(q, k, v, attn_bias, dropout_p)
 
         return self.out_proj(out.contiguous().view(B, T, self.d_model))

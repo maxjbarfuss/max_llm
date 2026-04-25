@@ -6,9 +6,6 @@ Supports Phase 2 (embedding-only, num_layers=0) through Phase 4+ (transformer-ba
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
-if TYPE_CHECKING:
-    from src.models.kv_cache import ModelKVCache
-
 import torch
 import torch.nn as nn
 from typing_extensions import Self
@@ -23,6 +20,9 @@ from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
 from src.models.residual.attn_residual import AttnResidual
 from src.models.transformer.transformer_block import TransformerBlock
+
+if TYPE_CHECKING:
+    from src.models.kv_cache import ModelKVCache
 
 
 def _build_pos_modules(

@@ -8,12 +8,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.models.position.add_rope import AdditiveRoPE
-
-if TYPE_CHECKING:
-    from src.models.kv_cache import LayerKVCache
 from src.models.position.alibi import ALiBi
 from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
+
+if TYPE_CHECKING:
+    from src.models.kv_cache import LayerKVCache
 
 # Try to import Flash Attention 2
 try:
@@ -237,7 +237,6 @@ class CausalMultiHeadAttention(nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        T: int,
         attn_bias: torch.Tensor | None,
         dropout_p: float,
     ) -> torch.Tensor:
@@ -255,7 +254,6 @@ class CausalMultiHeadAttention(nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        T: int,
         attn_bias: torch.Tensor | None,
         dropout_p: float,
     ) -> torch.Tensor:
@@ -337,10 +335,10 @@ class CausalMultiHeadAttention(nn.Module):
             attn_output = self._sage_attention(q, k, v)
 
         elif effective_backend == "xformers":
-            attn_output = self._xformers_attention(q, k, v, T, _attn_bias, runtime_dropout)
+            attn_output = self._xformers_attention(q, k, v, _attn_bias, runtime_dropout)
 
         else:  # standard — F.scaled_dot_product_attention (PyTorch 2.0+)
-            attn_output = self._standard_attention(q, k, v, T, _attn_bias, runtime_dropout)
+            attn_output = self._standard_attention(q, k, v, _attn_bias, runtime_dropout)
 
         attn_output = attn_output.contiguous().view(B, T, self.d_model)
         return self.out_proj(attn_output)
