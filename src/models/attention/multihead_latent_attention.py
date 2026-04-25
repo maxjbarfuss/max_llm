@@ -16,12 +16,16 @@ Projection layout (two fused GEMMs replace four separate ones):
 """
 
 import math
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from src.models.position.add_rope import AdditiveRoPE
+
+if TYPE_CHECKING:
+    from src.models.kv_cache import LayerKVCache
 from src.models.position.alibi import ALiBi
 from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
@@ -136,7 +140,7 @@ class MultiHeadLatentAttention(nn.Module):
             attention_backend in valid_backends
         ), f"attention_backend must be one of {valid_backends}, got {attention_backend}"
         self.attention_backend = self._select_attention_backend(attention_backend)
-        self._causal_bias_cache: dict[tuple[int, str, int, torch.dtype], torch.Tensor] = {}
+        self._causal_bias_cache: dict[tuple[int, int, str, int, torch.dtype], torch.Tensor] = {}
 
         # Content path: shared latent, then Q and fused KV
         self.latent_proj = nn.Linear(d_model, latent_dim, bias=False)
@@ -178,7 +182,7 @@ class MultiHeadLatentAttention(nn.Module):
         nn.init.zeros_(self.out_proj.bias)
 
     def _apply_rope_decoupled(
-        self, q_rope: torch.Tensor, k_rope: torch.Tensor
+        self, q_rope: torch.Tensor, k_rope: torch.Tensor, pos_offset: int = 0
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply positional encoding to the rope subspace of Q and K.
 
@@ -188,14 +192,20 @@ class MultiHeadLatentAttention(nn.Module):
         """
         T = q_rope.shape[1]
         if isinstance(self.rope, RotaryEmbedding):
-            cos = self.rope.cos_cache[:, :T, :, : self.rope_head_dim].to(q_rope.dtype)
-            sin = self.rope.sin_cache[:, :T, :, : self.rope_head_dim].to(q_rope.dtype)
+            cos = self.rope.cos_cache[:, pos_offset : pos_offset + T, :, : self.rope_head_dim].to(
+                q_rope.dtype
+            )
+            sin = self.rope.sin_cache[:, pos_offset : pos_offset + T, :, : self.rope_head_dim].to(
+                q_rope.dtype
+            )
             return (
                 q_rope * cos + _rotate_half(q_rope) * sin,
                 k_rope * cos + _rotate_half(k_rope) * sin,
             )
-        # AdditiveRoPE: add positional signal
-        enc = self.rope.enc_cache[:, :T, :, : self.rope_head_dim].to(q_rope.dtype)
+        # AdditiveRoPE: add positional signal (no offset for additive variant)
+        enc = self.rope.enc_cache[:, pos_offset : pos_offset + T, :, : self.rope_head_dim].to(
+            q_rope.dtype
+        )
         return q_rope + enc, k_rope + enc
 
     def _flash_attention(
@@ -244,16 +254,27 @@ class MultiHeadLatentAttention(nn.Module):
         assert LowerTriangularMask is not None and memory_efficient_attention is not None
         if attn_bias is None:
             return memory_efficient_attention(q, k, v, attn_bias=LowerTriangularMask(), p=dropout_p)
-        causal = self._causal_bias(T, q.device, q.dtype)
+        T_q, T_k = q.shape[1], k.shape[1]
+        causal = self._causal_bias(T_q, T_k, q.device, q.dtype)
         combined = (causal.unsqueeze(0) + attn_bias).unsqueeze(0).expand(q.shape[0], -1, -1, -1)
         return memory_efficient_attention(q, k, v, attn_bias=combined, p=dropout_p)
 
-    def _causal_bias(self, T: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-        """Return cached upper-triangular causal bias with -inf above diagonal."""
-        key = (T, device.type, device.index or -1, dtype)
+    def _causal_bias(
+        self, T_q: int, T_k: int, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
+        """Causal bias for (T_q, T_k) attention with bottom-right alignment.
+
+        For T_q == T_k: standard upper-triangular mask.
+        For T_q < T_k: query i attends to keys 0..i+(T_k-T_q) (generation with KV-cache).
+        PyTorch's is_causal=True uses upper-left convention and is wrong when T_q < T_k.
+        """
+        key = (T_q, T_k, device.type, device.index or -1, dtype)
         cached = self._causal_bias_cache.get(key)
         if cached is None:
-            cached = torch.triu(torch.full((T, T), float("-inf"), device=device, dtype=dtype), 1)
+            cached = torch.triu(
+                torch.full((T_q, T_k), float("-inf"), device=device, dtype=dtype),
+                T_k - T_q + 1,
+            )
             self._causal_bias_cache[key] = cached
         return cached
 
@@ -267,26 +288,34 @@ class MultiHeadLatentAttention(nn.Module):
         dropout_p: float,
     ) -> torch.Tensor:
         q_t, k_t, v_t = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
-        if attn_bias is None:
+        T_q, T_k = q_t.shape[2], k_t.shape[2]
+
+        if attn_bias is None and T_q == T_k:
             out = F.scaled_dot_product_attention(
                 q_t, k_t, v_t, dropout_p=dropout_p, is_causal=True, scale=self.softmax_scale
             )
         else:
-            # SDPA forbids is_causal=True when attn_mask is set;
-            # combine explicit causal bias with the additive position bias.
-            causal = self._causal_bias(T, q_t.device, q_t.dtype)
+            # Asymmetric (KV-cache generation) or bias present: explicit bottom-right mask.
+            # PyTorch's is_causal=True uses upper-left convention and is wrong when T_q < T_k.
+            causal = self._causal_bias(T_q, T_k, q_t.device, q_t.dtype)
+            mask = causal if attn_bias is None else causal + attn_bias
             out = F.scaled_dot_product_attention(
                 q_t,
                 k_t,
                 v_t,
-                attn_mask=causal + attn_bias,
+                attn_mask=mask,
                 dropout_p=dropout_p,
                 is_causal=False,
                 scale=self.softmax_scale,
             )
         return out.transpose(1, 2)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        kv_cache: "LayerKVCache | None" = None,
+    ) -> torch.Tensor:
+
         B, T, _ = x.shape
 
         # Content path: compress to latent, project Q and fused KV
@@ -299,16 +328,21 @@ class MultiHeadLatentAttention(nn.Module):
         v = v.view(B, T, self.num_kv_heads, self.head_dim)
 
         # Decoupled RoPE path: project from raw x, apply positional encoding
+        pos_offset = kv_cache.length if kv_cache is not None else 0
         q_rope, k_rope = self.qk_rope_proj(x).split(
             [self.num_heads * self.rope_head_dim, self.num_kv_heads * self.rope_head_dim], dim=-1
         )
         q_rope = q_rope.view(B, T, self.num_heads, self.rope_head_dim)
         k_rope = k_rope.view(B, T, self.num_kv_heads, self.rope_head_dim)
-        q_rope, k_rope = self._apply_rope_decoupled(q_rope, k_rope)
+        q_rope, k_rope = self._apply_rope_decoupled(q_rope, k_rope, pos_offset=pos_offset)
 
         # Assemble full Q/K heads
         q = torch.cat([q_content, q_rope], dim=-1)
         k = torch.cat([k_content, k_rope], dim=-1)
+
+        # Append new K/V to cache and retrieve the full sequence K/V
+        if kv_cache is not None:
+            k, v = kv_cache.update(k, v)
 
         attn_bias = (
             self.attn_bias.get_bias(T, q.device, q.dtype) if self.attn_bias is not None else None

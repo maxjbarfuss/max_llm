@@ -139,18 +139,23 @@ class RotaryEmbedding(nn.Module):
         self.register_buffer("cos_cache", cos, persistent=False)
         self.register_buffer("sin_cache", sin, persistent=False)
 
-    def forward(self, q: torch.Tensor, k: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, q: torch.Tensor, k: torch.Tensor, pos_offset: int = 0
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply rotary embedding to queries and keys.
 
         Args:
-            q: (B, T, num_heads, head_dim)
-            k: (B, T, num_heads, head_dim)
+            q:          (B, T, num_heads, head_dim)
+            k:          (B, T, num_heads, head_dim)
+            pos_offset: Index of the first token in this batch within the full
+                        sequence.  0 for normal training/prefill; set to the
+                        number of already-cached tokens during KV-cache generation.
 
         Returns:
             Rotated (q, k) with same shape and dtype.
         """
         T = q.shape[1]
         # Cast to input dtype here so _apply_rope stays in q/k dtype throughout (no upcast).
-        cos = self.cos_cache[:, :T].to(q.dtype)  # (1, T, 1, head_dim)
-        sin = self.sin_cache[:, :T].to(q.dtype)
+        cos = self.cos_cache[:, pos_offset : pos_offset + T].to(q.dtype)
+        sin = self.sin_cache[:, pos_offset : pos_offset + T].to(q.dtype)
         return _apply_rope(q, cos, sin), _apply_rope(k, cos, sin)

@@ -1,12 +1,16 @@
 """Causal multi-head self-attention module with multiple backend support."""
 
 import math
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from src.models.position.add_rope import AdditiveRoPE
+
+if TYPE_CHECKING:
+    from src.models.kv_cache import LayerKVCache
 from src.models.position.alibi import ALiBi
 from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
@@ -96,7 +100,7 @@ class CausalMultiHeadAttention(nn.Module):
         ), f"attention_backend must be one of {valid_backends}, got {attention_backend}"
 
         self.attention_backend = self._select_attention_backend(attention_backend)
-        self._causal_bias_cache: dict[tuple[int, str, int, torch.dtype], torch.Tensor] = {}
+        self._causal_bias_cache: dict[tuple[int, int, str, int, torch.dtype], torch.Tensor] = {}
 
         # Separate Q and KV projections to support GQA/MQA (no bias — modern practice)
         self.q_proj = nn.Linear(d_model, num_heads * self.head_dim, bias=False)
@@ -169,12 +173,22 @@ class CausalMultiHeadAttention(nn.Module):
         """Use dropout only in training mode."""
         return self.dropout_p if self.training else 0.0
 
-    def _causal_bias(self, T: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-        """Return cached upper-triangular causal bias with -inf above diagonal."""
-        key = (T, device.type, device.index or -1, dtype)
+    def _causal_bias(
+        self, T_q: int, T_k: int, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
+        """Causal bias for (T_q, T_k) attention with bottom-right alignment.
+
+        For T_q == T_k: standard upper-triangular mask.
+        For T_q < T_k: query i attends to keys 0..i+(T_k-T_q) (generation with KV-cache).
+        PyTorch's is_causal=True uses upper-left convention and is wrong when T_q < T_k.
+        """
+        key = (T_q, T_k, device.type, device.index or -1, dtype)
         cached = self._causal_bias_cache.get(key)
         if cached is None:
-            cached = torch.triu(torch.full((T, T), float("-inf"), device=device, dtype=dtype), 1)
+            cached = torch.triu(
+                torch.full((T_q, T_k), float("-inf"), device=device, dtype=dtype),
+                T_k - T_q + 1,
+            )
             self._causal_bias_cache[key] = cached
         return cached
 
@@ -231,7 +245,8 @@ class CausalMultiHeadAttention(nn.Module):
         if attn_bias is None:
             return memory_efficient_attention(q, k, v, attn_bias=LowerTriangularMask(), p=dropout_p)
 
-        causal = self._causal_bias(T, q.device, q.dtype)
+        T_q, T_k = q.shape[1], k.shape[1]
+        causal = self._causal_bias(T_q, T_k, q.device, q.dtype)
         combined = (causal.unsqueeze(0) + attn_bias).unsqueeze(0).expand(q.shape[0], -1, -1, -1)
         return memory_efficient_attention(q, k, v, attn_bias=combined, p=dropout_p)
 
@@ -249,7 +264,10 @@ class CausalMultiHeadAttention(nn.Module):
         k_std = k.transpose(1, 2)
         v_std = v.transpose(1, 2)
 
-        if attn_bias is None:
+        T_q, T_k = q_std.shape[2], k_std.shape[2]
+
+        if attn_bias is None and T_q == T_k:
+            # Square case: PyTorch's is_causal=True is correct and efficient.
             out = F.scaled_dot_product_attention(
                 q_std,
                 k_std,
@@ -259,14 +277,15 @@ class CausalMultiHeadAttention(nn.Module):
                 scale=self.softmax_scale,
             )
         else:
-            # SDPA forbids is_causal=True when attn_mask is set;
-            # combine explicit causal bias with the additive position bias.
-            causal = self._causal_bias(T, q_std.device, q_std.dtype)
+            # Asymmetric (KV-cache generation) or bias present: explicit bottom-right mask.
+            # PyTorch's is_causal=True uses upper-left convention and is wrong when T_q < T_k.
+            causal = self._causal_bias(T_q, T_k, q_std.device, q_std.dtype)
+            mask = causal if attn_bias is None else causal + attn_bias
             out = F.scaled_dot_product_attention(
                 q_std,
                 k_std,
                 v_std,
-                attn_mask=causal + attn_bias,
+                attn_mask=mask,
                 dropout_p=dropout_p,
                 is_causal=False,
                 scale=self.softmax_scale,
@@ -274,7 +293,12 @@ class CausalMultiHeadAttention(nn.Module):
 
         return out.transpose(1, 2)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        kv_cache: "LayerKVCache | None" = None,
+    ) -> torch.Tensor:
+
         B, T, d_model = x.shape
         assert (
             d_model == self.d_model
@@ -288,9 +312,14 @@ class CausalMultiHeadAttention(nn.Module):
         k = k.view(B, T, self.num_kv_heads, self.head_dim)
         v = v.view(B, T, self.num_kv_heads, self.head_dim)
 
-        # Apply RoPE to Q and K before attention (NHD layout)
+        # Apply RoPE to Q and K; pos_offset from cache so rotations are correct during generation
+        pos_offset = kv_cache.length if kv_cache is not None else 0
         if self.rope is not None:
-            q, k = self.rope(q, k)
+            q, k = self.rope(q, k, pos_offset=pos_offset)
+
+        # Append new K/V to cache and retrieve the full sequence K/V
+        if kv_cache is not None:
+            k, v = kv_cache.update(k, v)
 
         # Compute attention bias (None if not using ALiBi/RelPosBias)
         _attn_bias, effective_backend = self._prepare_attn_context(T, q.device, q.dtype)

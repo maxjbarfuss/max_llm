@@ -4,7 +4,10 @@ Supports Phase 2 (embedding-only, num_layers=0) through Phase 4+ (transformer-ba
 """
 
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from src.models.kv_cache import ModelKVCache
 
 import torch
 import torch.nn as nn
@@ -139,6 +142,7 @@ class LearningModel(nn.Module):
         self.d_model = d_model
         self.num_layers = num_layers
         self.num_heads = num_heads
+        self.max_seq_len = max_seq_len
         self.share_layer_weights = share_layer_weights
 
         # Factorized embeddings: use smaller embedding_dim if specified
@@ -226,7 +230,12 @@ class LearningModel(nn.Module):
         if not self.use_factorized:
             self.lm_head.weight = self.token_embedding.embedding.weight
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        kv_caches: "ModelKVCache | None" = None,
+    ) -> torch.Tensor:
+
         assert x.ndim == 2, f"LearningModel expects 2-D input (batch, seq_len), got shape {x.shape}"
         assert x.dtype == torch.long, f"LearningModel expects dtype=torch.long, got {x.dtype}"
         B, T = x.shape
@@ -245,7 +254,7 @@ class LearningModel(nn.Module):
         else:
             h = tok_emb
 
-        h = self._apply_transformer_blocks(h)
+        h = self._apply_transformer_blocks(h, kv_caches=kv_caches)
 
         # Final layer norm (skipped for num_layers=0 to support Phase 2 MLP-only models)
         if self.final_norm is not None:
@@ -261,44 +270,53 @@ class LearningModel(nn.Module):
         ), f"LearningModel output shape mismatch: expected {(B, T, self.vocab_size)}, got {logits.shape}"
         return logits
 
-    def _apply_transformer_blocks(self, h: torch.Tensor) -> torch.Tensor:
+    def _apply_transformer_blocks(
+        self,
+        h: torch.Tensor,
+        kv_caches: "ModelKVCache | None" = None,
+    ) -> torch.Tensor:
         """Dispatch to the appropriate residual variant."""
         if self.res_type == "full_attn":
-            return self._apply_blocks_full_attn_res(h)
+            return self._apply_blocks_full_attn_res(h, kv_caches=kv_caches)
         if self.res_type == "block_attn":
-            return self._apply_blocks_block_attn_res(h)
-        return self._apply_blocks_standard(h)
+            return self._apply_blocks_block_attn_res(h, kv_caches=kv_caches)
+        return self._apply_blocks_standard(h, kv_caches=kv_caches)
 
-    def _apply_blocks_standard(self, h: torch.Tensor) -> torch.Tensor:
+    def _apply_blocks_standard(
+        self,
+        h: torch.Tensor,
+        kv_caches: "ModelKVCache | None" = None,
+    ) -> torch.Tensor:
         """Standard pre-norm residual stack (original behaviour)."""
         if self.share_layer_weights:
             shared_block = self.blocks[0]
-            for _ in range(self.num_layers):
-                h = shared_block(h)
+            for i in range(self.num_layers):
+                kv = kv_caches[i] if kv_caches is not None else None
+                h = shared_block(h, kv_cache=kv)
             return h
-        for block in self.blocks:
-            h = block(h)
+        for i, block in enumerate(self.blocks):
+            kv = kv_caches[i] if kv_caches is not None else None
+            h = block(h, kv_cache=kv)
         return h
 
-    def _apply_blocks_full_attn_res(self, h: torch.Tensor) -> torch.Tensor:
-        """Full Attention Residuals: each sublayer attends over all prior outputs.
-
-        Each of the 2*L sublayer outputs is stored as a value in a growing list.
-        The input to sublayer l is softmax-attention over values [v_0 ... v_{l-1}].
-        A final aggregation query produces the output representation.
-        """
+    def _apply_blocks_full_attn_res(
+        self,
+        h: torch.Tensor,
+        kv_caches: "ModelKVCache | None" = None,
+    ) -> torch.Tensor:
+        """Full Attention Residuals: each sublayer attends over all prior outputs."""
         assert self.attn_res is not None
         ar = self.attn_res
 
-        # v_0 = token embedding (h before any transformer block)
         values: list[torch.Tensor] = [h]
         sublayer_idx = 0
 
-        for _block in self.blocks:
+        for block_idx, _block in enumerate(self.blocks):
             block = cast(TransformerBlock, _block)
+            kv = kv_caches[block_idx] if kv_caches is not None else None
             # Attention sublayer
             h_in = ar(sublayer_idx, values)
-            values.append(block.apply_attn_only(h_in))
+            values.append(block.apply_attn_only(h_in, kv_cache=kv))
             sublayer_idx += 1
 
             # FFN sublayer
@@ -306,10 +324,13 @@ class LearningModel(nn.Module):
             values.append(block.apply_ffn_only(h_in))
             sublayer_idx += 1
 
-        # Final aggregation: attend over all values to produce the output
         return ar(sublayer_idx, values)
 
-    def _apply_blocks_block_attn_res(self, h: torch.Tensor) -> torch.Tensor:
+    def _apply_blocks_block_attn_res(
+        self,
+        h: torch.Tensor,
+        kv_caches: "ModelKVCache | None" = None,
+    ) -> torch.Tensor:
         """Block Attention Residuals: attend over N block-level summaries.
 
         Layers are grouped into N = attn_res_num_blocks groups of S = L/N blocks.
@@ -340,6 +361,8 @@ class LearningModel(nn.Module):
 
             for rel_i, _block in enumerate(group_blocks):
                 block = cast(TransformerBlock, _block)
+                block_idx = group_n * S + rel_i
+                kv = kv_caches[block_idx] if kv_caches is not None else None
                 # --- Attention sublayer ---
                 # First sublayer of the group: sources = [b_0, ..., b_{n-1}]
                 # Subsequent sublayers: also include the partial block sum
@@ -362,12 +385,11 @@ class LearningModel(nn.Module):
                     stacked_sources,
                     valid_sources=valid_sources,
                 )
-                delta_attn = block.apply_attn_only(h_in)
+                delta_attn = block.apply_attn_only(h_in, kv_cache=kv)
                 partial_b = delta_attn if partial_b is None else partial_b + delta_attn
                 sublayer_idx += 1
 
                 # --- FFN sublayer ---
-                # partial_b always available here (attn sublayer ran first)
                 assert partial_b is not None
                 sources = [*block_sums, partial_b]
                 valid_sources = len(sources)
@@ -392,6 +414,57 @@ class LearningModel(nn.Module):
 
         # Final aggregation: attend over all N+1 block summaries
         return ar(sublayer_idx, block_sums)
+
+    def make_kv_cache(
+        self,
+        max_seq_len: int | None = None,
+        batch_size: int = 1,
+        dtype: torch.dtype = torch.float32,
+        device: torch.device | str | None = None,
+    ) -> "ModelKVCache":
+        """Allocate a KV-cache for autoregressive generation.
+
+        Args:
+            max_seq_len: Maximum context length (defaults to model.max_seq_len).
+            batch_size:  Batch size for the cache buffers.
+            dtype:       Buffer dtype (use bfloat16 to match training precision).
+            device:      Target device (defaults to the model's first parameter device).
+
+        Returns:
+            A ModelKVCache containing one LayerKVCache per transformer layer.
+        """
+        from src.models.attention.causal_mha import CausalMultiHeadAttention  # noqa: PLC0415
+        from src.models.attention.multihead_latent_attention import (  # noqa: PLC0415
+            MultiHeadLatentAttention,
+        )
+        from src.models.kv_cache import LayerKVCache, ModelKVCache  # noqa: PLC0415
+
+        _max_seq_len = max_seq_len if max_seq_len is not None else self.max_seq_len
+        if device is None:
+            try:
+                device = next(self.parameters()).device
+            except StopIteration:
+                device = torch.device("cpu")
+
+        def _layer_cache(attn: nn.Module) -> LayerKVCache | None:
+            if isinstance(attn, (CausalMultiHeadAttention, MultiHeadLatentAttention)):
+                return LayerKVCache(
+                    max_seq_len=_max_seq_len,
+                    num_kv_heads=attn.num_kv_heads,
+                    head_dim=attn.head_dim,
+                    batch_size=batch_size,
+                    device=device,
+                    dtype=dtype,
+                )
+            return None
+
+        if self.share_layer_weights:
+            attn: nn.Module = self.blocks[0].attention  # type: ignore[assignment]
+            layers: list[LayerKVCache | None] = [_layer_cache(attn) for _ in range(self.num_layers)]
+        else:
+            layers = [_layer_cache(cast(TransformerBlock, b).attention) for b in self.blocks]
+
+        return ModelKVCache(layers)
 
     def load_state_dict(
         self,

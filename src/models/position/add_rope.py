@@ -34,16 +34,19 @@ class AdditiveRoPE(nn.Module):
 
         self.register_buffer("enc_cache", enc, persistent=False)
 
-    def forward(self, q: torch.Tensor, k: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, q: torch.Tensor, k: torch.Tensor, pos_offset: int = 0
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Add positional encoding to Q and K.
 
         Args:
-            q: (B, T, num_heads, head_dim)
-            k: (B, T, num_heads, head_dim)
+            q:          (B, T, num_heads, head_dim)
+            k:          (B, T, num_heads, head_dim)
+            pos_offset: Index of the first token in the full sequence (for KV-cache generation).
 
         Returns:
             (q + enc, k + enc) with same shape and dtype.
         """
         T = q.shape[1]
-        enc = self.enc_cache[:, :T].to(q.dtype)  # (1, T, 1, head_dim)
+        enc = self.enc_cache[:, pos_offset : pos_offset + T].to(q.dtype)
         return q + enc, k + enc
