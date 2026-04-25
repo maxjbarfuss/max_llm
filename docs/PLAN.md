@@ -134,7 +134,7 @@ Wave 1 access note (2026-04-23): `bigcode/the-stack-v2` is now accessible for th
 
 Wave 2 — low-risk architecture and inference wins (easy wins first):
 - ✅ **rope_base standardization**: set milestone configs from 13892 to 500000 (Llama-3 style); original training values preserved in comment for p4 checkpoint SFT
-- ☐ **YaRN RoPE scaling** for 2× context extension at inference; validate coherence at 2048 tokens
+- ✅ **YaRN RoPE scaling**: NTK-by-parts frequency scaling + attn_scale=sqrt(1+0.1·log(s)) wired into all attention modules (MLA, MHA, SWA). Config params: rope_scaling_factor, rope_low_freq_factor, rope_high_freq_factor, rope_original_max_seq_len.
 - ☐ **KV-cache path** for autoregressive decoding, including MLA latent-cache variant (cache latent `z`)
 - ☐ Prompt templates (ChatML or Alpaca-style) and `ChatFormatter` for multi-turn inference
 
