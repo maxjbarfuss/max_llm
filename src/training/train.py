@@ -10,7 +10,7 @@ import os
 import random
 import time
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -33,7 +33,7 @@ from src.training.distributed import (
     wrap_model_fsdp,
 )
 from src.training.loop import train
-from src.training.optimizer import configure_optimizer_param_groups
+from src.training.optimizer import configure_muon_optimizer, configure_optimizer_param_groups
 from src.training.profiling import log_model_size
 from src.training.scheduler import (
     get_cosine_schedule_with_warmup,
@@ -637,13 +637,32 @@ def main() -> None:  # noqa: C901
     # fused AdamW: single CUDA kernel for all parameter updates (PyTorch 2.0+, CUDA only).
     # Disabled for FSDP: flat-param sharding is incompatible with the fused kernel.
     use_fused_optimizer = device.type == "cuda" and not want_fsdp
+    effective_muon_lr: float | None = None
     if use_fused_optimizer:
         print_once("Optimizer  : Using fused AdamW")
     elif want_fsdp:
         print_once("Optimizer  : Using standard AdamW (fused disabled for FSDP)")
 
     # Configure optimizer with parameter groups (selective weight decay)
-    if config.training.weight_decay > 0:
+    optimizer: torch.optim.Optimizer
+    if config.training.optimizer_type == "muon":
+        effective_muon_lr = config.training.muon_lr or config.training.learning_rate
+        print_once("Optimizer  : Using Muon for 2-D weight matrices and AdamW elsewhere")
+        optimizer = cast(
+            torch.optim.Optimizer,
+            configure_muon_optimizer(
+                model=model,
+                muon_lr=effective_muon_lr,
+                adamw_lr=config.training.learning_rate,
+                weight_decay=config.training.weight_decay,
+                betas=config.training.betas,
+                eps=config.training.epsilon,
+                muon_momentum=config.training.muon_momentum,
+                muon_ns_steps=config.training.muon_ns_steps,
+                adamw_fused=use_fused_optimizer,
+            ),
+        )
+    elif config.training.weight_decay > 0:
         print_once(
             "Optimizer  : Using selective weight decay " "(excluding bias and LayerNorm parameters)"
         )
@@ -654,16 +673,22 @@ def main() -> None:  # noqa: C901
             betas=config.training.betas,
             eps=config.training.epsilon,
         )
-        optimizer = torch.optim.AdamW(param_groups, fused=use_fused_optimizer)
+        optimizer = cast(
+            torch.optim.Optimizer,
+            torch.optim.AdamW(param_groups, fused=use_fused_optimizer),
+        )
     else:
         # No weight decay: use simple parameter list
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=config.training.learning_rate,
-            betas=config.training.betas,
-            eps=config.training.epsilon,
-            weight_decay=0.0,
-            fused=use_fused_optimizer,
+        optimizer = cast(
+            torch.optim.Optimizer,
+            torch.optim.AdamW(
+                model.parameters(),
+                lr=config.training.learning_rate,
+                betas=config.training.betas,
+                eps=config.training.epsilon,
+                weight_decay=0.0,
+                fused=use_fused_optimizer,
+            ),
         )
 
     ckpt_lr: float | None = None
@@ -674,16 +699,24 @@ def main() -> None:  # noqa: C901
         optimizer_state = _resume_ckpt.get("optimizer_state")
         if optimizer_state is not None:
             optimizer.load_state_dict(optimizer_state)
-            param_groups = optimizer_state.get("param_groups")
-            if param_groups and isinstance(param_groups, list):
-                first_lr = param_groups[0].get("lr")
+            resume_param_groups = cast(Any, optimizer_state.get("param_groups"))
+            if not resume_param_groups:
+                adamw_state = optimizer_state.get("adamw", {})
+                if isinstance(adamw_state, dict):
+                    resume_param_groups = cast(Any, adamw_state.get("param_groups"))
+            if resume_param_groups and isinstance(resume_param_groups, list):
+                first_lr = resume_param_groups[0].get("lr")
                 if isinstance(first_lr, float):
                     ckpt_lr = first_lr
         # LambdaLR with last_epoch >= 0 requires initial_lr in every param group.
         # Always use the config target LR as initial_lr so the scheduler's base_lr
         # reflects the intended target, not the checkpoint's (possibly different) LR.
         for group in optimizer.param_groups:
-            group["initial_lr"] = config.training.learning_rate
+            group["initial_lr"] = (
+                effective_muon_lr
+                if group.get("is_muon") and effective_muon_lr is not None
+                else config.training.learning_rate
+            )
 
     # For resumed runs with schedule restart, read checkpoint LR from optimizer_state
     # metadata if it was not captured while restoring optimizer state.
@@ -697,9 +730,13 @@ def main() -> None:  # noqa: C901
         _resume_ckpt = torch.load(resume_path, map_location="cpu")
         optimizer_state = _resume_ckpt.get("optimizer_state")
         if optimizer_state is not None:
-            param_groups = optimizer_state.get("param_groups")
-            if param_groups and isinstance(param_groups, list):
-                first_lr = param_groups[0].get("lr")
+            resume_param_groups = cast(Any, optimizer_state.get("param_groups"))
+            if not resume_param_groups:
+                adamw_state = optimizer_state.get("adamw", {})
+                if isinstance(adamw_state, dict):
+                    resume_param_groups = cast(Any, adamw_state.get("param_groups"))
+            if resume_param_groups and isinstance(resume_param_groups, list):
+                first_lr = resume_param_groups[0].get("lr")
                 if isinstance(first_lr, float):
                     ckpt_lr = first_lr
 

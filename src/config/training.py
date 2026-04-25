@@ -23,6 +23,10 @@ class TrainingConfig:
     epsilon: float
     gradient_clip_norm: float
     precision_schedule: list[tuple[int, int, str]]
+    optimizer_type: Literal["adamw", "muon"] = "adamw"
+    muon_lr: float | None = None
+    muon_momentum: float = 0.95
+    muon_ns_steps: int = 5
     scheduler_type: Literal["cosine", "wsd", "sgdr"] = "cosine"
     min_lr_ratio: float = 0.1
     wsd_stable_fraction: float = 0.7
@@ -66,6 +70,7 @@ class TrainingConfig:
         """Validate training configuration."""
         self._coerce_toml_types()
         self._validate_basics()
+        self._validate_optimizer()
         self._validate_regularization()
         self._validate_benchmark()
         self._validate_wsd()
@@ -96,6 +101,17 @@ class TrainingConfig:
             raise ValueError("resume_lr_hold_steps + warmup_steps must be < max_steps")
         if not (0 <= self.min_lr_ratio <= 1):
             raise ValueError("min_lr_ratio must be in [0, 1]")
+
+    def _validate_optimizer(self) -> None:
+        """Validate optimizer-specific hyperparameters."""
+        if self.optimizer_type not in {"adamw", "muon"}:
+            raise ValueError("optimizer_type must be one of {'adamw', 'muon'}")
+        if self.muon_lr is not None and not (0 < self.muon_lr < 1):
+            raise ValueError("muon_lr must be in (0, 1)")
+        if not (0 <= self.muon_momentum < 1):
+            raise ValueError("muon_momentum must be in [0, 1)")
+        if self.muon_ns_steps < 1:
+            raise ValueError("muon_ns_steps must be >= 1")
 
     def _validate_regularization(self) -> None:
         """Validate regularization hyperparameters."""

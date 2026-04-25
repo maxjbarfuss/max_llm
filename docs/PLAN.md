@@ -140,11 +140,21 @@ Wave 2 — low-risk architecture and inference wins (easy wins first):
 
 Wave 3 — training stack upgrades (high impact):
 - ✅ **Z-loss** in `compute_loss_with_smoothing()` for logit-scale stabilization (`1e-4 * log(sum(exp(logits)))^2`); review hardening complete: `z_loss_weight >= 0` config validation, analytically correct gradient test, and full quality gate pass.
-- ☐ **Muon optimizer** for 2-D weight matrices; keep AdamW for embeddings/head/bias/1-D params; run 5K-step Muon vs AdamW comparison
+- ✅ **Muon optimizer implementation** for 2-D weight matrices; AdamW retained for embeddings/head/bias/1-D params; composite Muon+AdamW checkpoint resume path wired into training
+- ✅ **Muon vs AdamW comparison**: matched 5K-step tiny-MHA runs completed on the p4 mixed unigram corpus. AdamW: best/final val_loss=`4.3605`, median throughput=`280k tok/s`, filtered mean throughput=`274k tok/s`, wall time ≈ `4m56s`. Original Muon: best/final val_loss=`4.1062`, median throughput=`214k tok/s`, filtered mean throughput=`212k tok/s`, wall time ≈ `6m23s`. Batched Muon optimization: best/final val_loss=`4.1070`, median throughput=`258k tok/s`, filtered mean throughput=`254k tok/s`, wall time ≈ `5m22s`. Batched Muon preserved the quality gain (`-0.2535` val loss vs AdamW, ~`5.8%` lower) while reducing the wall-time penalty from ~`29%` to ~`9%`.
+- ☐ **Aggressive training-throughput tuning before large-dataset runs**:
+	- Profile end-to-end tokens/sec by component: dataloader, forward, backward, optimizer, scheduler/checkpoint, eval cadence
+	- Tune model/training shape for hardware efficiency: sequence length, microbatch size, grad accumulation, attention backend, compile mode, activation checkpointing, precision, and optimizer settings
+	- Compare throughput-quality tradeoffs across AdamW, batched Muon, and reduced-NS-step Muon; choose default for large Phase 5 corpus runs
+	- Document target tokens/sec, memory headroom, and recommended config template before launching larger datasets
 - ☐ **μP (Maximal Update Parameterization)**:
 	- Update init + per-layer LR scaling for width transfer
 	- Run LR sweep on 6L/256H proxy (~5M params)
 	- Transfer LR directly to 12L/1024H and validate transfer error vs direct sweep
+
+Wave 3 validation note (2026-04-25): Muon optimizer implementation completed with Newton-Schulz orthogonalization, Muon+AdamW composite optimizer state serialization, `TrainingConfig` fields (`optimizer_type`, `muon_lr`, `muon_momentum`, `muon_ns_steps`), and training-entrypoint optimizer/resume wiring. Focused tests: `tests/unit/test_optimizer.py` and `tests/unit/test_config.py` passing (62 tests).
+Wave 3 validation note (2026-04-25): Muon comparison configs `config/ephemeral/p5_wave3_muon_cmp_adamw_20260425.toml` and `config/ephemeral/p5_wave3_muon_cmp_muon_20260425.toml` finished successfully. On this tiny MHA benchmark, Muon was less hardware-efficient than AdamW but more sample-efficient; by roughly AdamW's full wall-clock budget, Muon had already surpassed AdamW's final validation loss.
+Wave 3 validation note (2026-04-25): Aggressive Muon efficiency pass batched same-shape Newton-Schulz updates across Muon-managed matrices. Tiny MHA shape distribution was favorable (`12x 256x256`, `4x 256x512`, `4x 512x256`), reducing 20 per-parameter orthogonalization chains to 3 batched chains per step. Optimized config `config/ephemeral/p5_wave3_muon_cmp_muon_batched_20260425.toml` completed successfully with final val_loss=`4.1070`, median throughput=`258k tok/s`, and wall time ≈ `5m22s`.
 
 Wave 4 — data products for post-training (depends on Waves 0-1):
 - ☐ **SFT data**: curate 1-5M instruction-response pairs; produce domain subsets for continual learning

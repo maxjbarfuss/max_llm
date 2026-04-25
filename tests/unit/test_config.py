@@ -255,6 +255,31 @@ class TestTrainingConfig:
         with pytest.raises(ValueError, match="z_loss_weight"):
             make_training_config(z_loss_weight=-1e-4)
 
+    def test_muon_optimizer_defaults(self):
+        config = make_training_config()
+        assert config.optimizer_type == "adamw"
+        assert config.muon_lr is None
+        assert config.muon_momentum == 0.95
+        assert config.muon_ns_steps == 5
+
+    def test_muon_lr_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="muon_lr"):
+            make_training_config(muon_lr=0.0)
+
+        with pytest.raises(ValueError, match="muon_lr"):
+            make_training_config(muon_lr=1.0)
+
+    def test_muon_momentum_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="muon_momentum"):
+            make_training_config(muon_momentum=-0.1)
+
+        with pytest.raises(ValueError, match="muon_momentum"):
+            make_training_config(muon_momentum=1.0)
+
+    def test_muon_ns_steps_must_be_positive(self):
+        with pytest.raises(ValueError, match="muon_ns_steps"):
+            make_training_config(muon_ns_steps=0)
+
 
 class TestInferenceConfig:
     """Tests for InferenceConfig validation."""

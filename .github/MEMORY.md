@@ -6,8 +6,9 @@
 
 ## Current Work
 
-## Thinking Notes
+---
 
+## Thinking Notes
 
 ---
 
@@ -63,4 +64,3 @@
 - [SESSION_LOG.md](SESSION_LOG.md) — recent completed sessions
 - [SESSION_LOG_ARCHIVE.md](SESSION_LOG_ARCHIVE.md) — older completed sessions
 - [SKILLS.md](SKILLS.md#commit-workflow-required) — full before-commit checklist
-

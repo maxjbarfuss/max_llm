@@ -1,10 +1,18 @@
-"""Unit tests for optimizer parameter grouping utilities."""
+"""Unit tests for optimizer utilities."""
+
+from typing import cast
 
 import pytest
 import torch
 import torch.nn as nn
 
-from src.training.optimizer import configure_optimizer_param_groups
+from src.training.optimizer import (
+    MuonAdamWOptimizer,
+    MuonOptimizer,
+    configure_muon_optimizer,
+    configure_optimizer_param_groups,
+    zeropower_via_newtonschulz5,
+)
 
 
 class SimpleModel(nn.Module):
@@ -121,7 +129,7 @@ def test_embeddings_included_in_decay(model: nn.Module) -> None:
     )
 
     # Get embedding parameter ID
-    embedding_weight_id = id(model.embedding.weight)
+    embedding_weight_id = id(cast(SimpleModel, model).embedding.weight)
 
     # Get parameters in decay group
     decay_param_ids = {id(p) for p in param_groups[0]["params"]}
@@ -270,3 +278,178 @@ def test_frozen_params_excluded() -> None:
     # Trainable parameters should all be in groups
     trainable_param_ids = {id(p) for p in model.trainable.parameters()}
     assert trainable_param_ids.issubset(grouped_param_ids)
+
+
+class TestZeropowerNewtonSchulz5:
+    """Tests for Newton-Schulz orthogonalization helper."""
+
+    def test_preserves_shape_dtype_and_finiteness(self) -> None:
+        gradient = torch.randn(8, 4, dtype=torch.bfloat16)
+
+        orthogonalized = zeropower_via_newtonschulz5(gradient, steps=4)
+
+        assert orthogonalized.shape == gradient.shape
+        assert orthogonalized.dtype == gradient.dtype
+        assert torch.isfinite(orthogonalized).all()
+
+    def test_rectangular_result_has_near_orthonormal_rows(self) -> None:
+        gradient = torch.randn(4, 8, dtype=torch.float32)
+
+        orthogonalized = zeropower_via_newtonschulz5(gradient, steps=8)
+        baseline = gradient / gradient.norm()
+        baseline_gram = baseline @ baseline.T
+        gram = orthogonalized @ orthogonalized.T
+
+        assert torch.linalg.norm(gram - torch.eye(4)) < torch.linalg.norm(
+            baseline_gram - torch.eye(4)
+        )
+
+    def test_batched_result_matches_per_matrix_result(self) -> None:
+        gradients = torch.randn(3, 4, 8, dtype=torch.float32)
+
+        batched = zeropower_via_newtonschulz5(gradients, steps=5)
+        per_matrix = torch.stack(
+            [zeropower_via_newtonschulz5(gradient, steps=5) for gradient in gradients]
+        )
+
+        assert torch.allclose(batched, per_matrix, atol=1e-6, rtol=1e-6)
+
+
+class TestMuonOptimizer:
+    """Tests for the Muon optimizer step behavior."""
+
+    def test_updates_parameter_and_creates_fp32_momentum_state(self) -> None:
+        parameter = nn.Parameter(torch.randn(4, 4, dtype=torch.float16))
+        optimizer = MuonOptimizer([parameter], lr=0.1, momentum=0.9, ns_steps=4)
+        parameter.grad = torch.randn_like(parameter)
+        before = parameter.detach().clone()
+
+        optimizer.step()
+
+        assert not torch.allclose(parameter, before)
+        assert optimizer.state[parameter]["momentum_buffer"].dtype == torch.float32
+
+    def test_zero_grad_clears_gradient(self) -> None:
+        parameter = nn.Parameter(torch.randn(4, 4))
+        optimizer = MuonOptimizer([parameter], lr=0.1)
+        parameter.grad = torch.randn_like(parameter)
+
+        optimizer.zero_grad()
+
+        assert parameter.grad is None
+
+
+class ToyMuonModel(nn.Module):
+    """Small module exposing parameter names used by Muon routing."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.token_embedding = nn.Embedding(32, 8)
+        self.position_embedding = nn.Embedding(16, 8)
+        self.proj = nn.Linear(8, 8, bias=True)
+        self.norm = nn.LayerNorm(8)
+        self.lm_head = nn.Linear(8, 32, bias=False)
+        self.lm_head.weight = self.token_embedding.weight
+
+
+class TestConfigureMuonOptimizer:
+    """Tests for Muon/AdamW parameter routing."""
+
+    def test_routes_only_2d_non_embedding_weights_to_muon(self) -> None:
+        model = ToyMuonModel()
+
+        optimizer = configure_muon_optimizer(
+            model,
+            muon_lr=0.02,
+            adamw_lr=1e-3,
+            weight_decay=0.1,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+        )
+
+        muon_params = {
+            id(param) for group in optimizer.muon.param_groups for param in group["params"]
+        }
+        adamw_decay_params = {
+            id(param)
+            for group in optimizer.adamw.param_groups
+            if group["weight_decay"] > 0
+            for param in group["params"]
+        }
+        adamw_no_decay_params = {
+            id(param)
+            for group in optimizer.adamw.param_groups
+            if group["weight_decay"] == 0
+            for param in group["params"]
+        }
+
+        assert id(model.proj.weight) in muon_params
+        assert id(model.token_embedding.weight) in adamw_decay_params
+        assert id(model.position_embedding.weight) in adamw_decay_params
+        assert id(model.proj.bias) in adamw_no_decay_params
+        assert id(model.norm.weight) in adamw_no_decay_params
+        assert id(model.norm.bias) in adamw_no_decay_params
+        assert id(model.token_embedding.weight) not in muon_params
+        assert id(model.token_embedding.weight) not in (
+            {id(param) for group in optimizer.muon.param_groups for param in group["params"]}
+            & {id(param) for group in optimizer.adamw.param_groups for param in group["params"]}
+        )
+
+    def test_marks_param_groups_with_is_muon_flag(self) -> None:
+        model = ToyMuonModel()
+
+        optimizer = configure_muon_optimizer(
+            model,
+            muon_lr=0.02,
+            adamw_lr=1e-3,
+            weight_decay=0.1,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+        )
+
+        assert all(group.get("is_muon") is True for group in optimizer.muon.param_groups)
+        assert all(group.get("is_muon") is False for group in optimizer.adamw.param_groups)
+
+
+class TestMuonAdamWOptimizer:
+    """Tests for the composite Muon + AdamW optimizer wrapper."""
+
+    def test_step_and_state_dict_delegate_to_inner_optimizers(self) -> None:
+        muon_param = nn.Parameter(torch.randn(4, 4))
+        adamw_param = nn.Parameter(torch.randn(4))
+        muon = MuonOptimizer([muon_param], lr=0.02)
+        adamw = torch.optim.AdamW([adamw_param], lr=1e-3)
+        optimizer = MuonAdamWOptimizer(muon=muon, adamw=adamw)
+
+        muon_param.grad = torch.randn_like(muon_param)
+        adamw_param.grad = torch.randn_like(adamw_param)
+        before_muon = muon_param.detach().clone()
+        before_adamw = adamw_param.detach().clone()
+
+        optimizer.step()
+        state_dict = optimizer.state_dict()
+
+        assert not torch.allclose(muon_param, before_muon)
+        assert not torch.allclose(adamw_param, before_adamw)
+        assert set(state_dict) == {"muon", "adamw"}
+
+    def test_load_state_dict_restores_both_inner_optimizers(self) -> None:
+        muon_param = nn.Parameter(torch.randn(4, 4))
+        adamw_param = nn.Parameter(torch.randn(4))
+        optimizer = MuonAdamWOptimizer(
+            muon=MuonOptimizer([muon_param], lr=0.02),
+            adamw=torch.optim.AdamW([adamw_param], lr=1e-3),
+        )
+        muon_param.grad = torch.randn_like(muon_param)
+        adamw_param.grad = torch.randn_like(adamw_param)
+        optimizer.step()
+        saved = optimizer.state_dict()
+
+        restored = MuonAdamWOptimizer(
+            muon=MuonOptimizer([muon_param], lr=0.5),
+            adamw=torch.optim.AdamW([adamw_param], lr=0.5),
+        )
+        restored.load_state_dict(saved)
+
+        assert restored.muon.param_groups[0]["lr"] == pytest.approx(0.02)
+        assert restored.adamw.param_groups[0]["lr"] == pytest.approx(1e-3)
