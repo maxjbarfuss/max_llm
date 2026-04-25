@@ -30,6 +30,10 @@ def _build_pos_modules(
     rope_base: int | None,
     rel_pos_num_buckets: int,
     d_model: int,
+    rope_scaling_factor: float = 1.0,
+    rope_low_freq_factor: float = 1.0,
+    rope_high_freq_factor: float = 4.0,
+    rope_original_max_seq_len: int | None = None,
 ) -> tuple[
     LearnedPositionEmbedding | None,
     RotaryEmbedding | AdditiveRoPE | None,
@@ -41,7 +45,15 @@ def _build_pos_modules(
     )
     rope: RotaryEmbedding | AdditiveRoPE | None
     if pos_type == "rope":
-        rope = RotaryEmbedding(head_dim, max_seq_len, rope_base or 10000)
+        rope = RotaryEmbedding(
+            head_dim,
+            max_seq_len,
+            rope_base or 10000,
+            scaling_factor=rope_scaling_factor,
+            low_freq_factor=rope_low_freq_factor,
+            high_freq_factor=rope_high_freq_factor,
+            original_max_seq_len=rope_original_max_seq_len,
+        )
     elif pos_type == "add_rope":
         rope = AdditiveRoPE(head_dim, max_seq_len, rope_base or 10000)
     else:
@@ -108,6 +120,10 @@ class LearningModel(nn.Module):
         rope_base: int | None = None,
         pos_type: str = "learned",
         rel_pos_num_buckets: int = 32,
+        rope_scaling_factor: float = 1.0,
+        rope_low_freq_factor: float = 1.0,
+        rope_high_freq_factor: float = 4.0,
+        rope_original_max_seq_len: int | None = None,
         mla_latent_dim: int | None = None,
         attn_type: str = "mha",
         swa_window_size: int = 256,
@@ -138,7 +154,17 @@ class LearningModel(nn.Module):
 
         head_dim = d_model // num_heads
         pos_emb, rope, attn_bias = _build_pos_modules(
-            pos_type, head_dim, max_seq_len, num_heads, rope_base, rel_pos_num_buckets, d_model
+            pos_type,
+            head_dim,
+            max_seq_len,
+            num_heads,
+            rope_base,
+            rel_pos_num_buckets,
+            d_model,
+            rope_scaling_factor=rope_scaling_factor,
+            rope_low_freq_factor=rope_low_freq_factor,
+            rope_high_freq_factor=rope_high_freq_factor,
+            rope_original_max_seq_len=rope_original_max_seq_len,
         )
         self.position_embedding = pos_emb
 
@@ -398,6 +424,10 @@ class LearningModel(nn.Module):
             rope_base=config.rope_base,
             pos_type=config.pos_type,
             rel_pos_num_buckets=config.rel_pos_num_buckets,
+            rope_scaling_factor=config.rope_scaling_factor,
+            rope_low_freq_factor=config.rope_low_freq_factor,
+            rope_high_freq_factor=config.rope_high_freq_factor,
+            rope_original_max_seq_len=config.rope_original_max_seq_len,
             mla_latent_dim=config.mla_latent_dim,
             attn_type=config.attn_type,
             swa_window_size=config.swa_window_size,

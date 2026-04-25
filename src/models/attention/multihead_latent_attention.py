@@ -115,6 +115,9 @@ class MultiHeadLatentAttention(nn.Module):
         self.num_layers = num_layers
         self.rope = rope
         self.attn_bias = attn_bias
+        self.softmax_scale = 1.0 / math.sqrt(self.head_dim)
+        if isinstance(rope, RotaryEmbedding) and rope.attn_scale != 1.0:
+            self.softmax_scale *= rope.attn_scale
 
         default_rope_dim = min(32, max(2, self.head_dim // 2))
         if default_rope_dim % 2 != 0:
@@ -211,7 +214,7 @@ class MultiHeadLatentAttention(nn.Module):
             k,
             v,
             dropout_p=dropout_p,
-            softmax_scale=1.0 / math.sqrt(self.head_dim),
+            softmax_scale=self.softmax_scale,
             causal=True,
             alibi_slopes=alibi_slopes,
         )
@@ -226,7 +229,7 @@ class MultiHeadLatentAttention(nn.Module):
             v,
             tensor_layout="NHD",
             is_causal=True,
-            sm_scale=1.0 / math.sqrt(self.head_dim),
+            sm_scale=self.softmax_scale,
         )
 
     def _xformers_attention(
@@ -265,7 +268,9 @@ class MultiHeadLatentAttention(nn.Module):
     ) -> torch.Tensor:
         q_t, k_t, v_t = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
         if attn_bias is None:
-            out = F.scaled_dot_product_attention(q_t, k_t, v_t, dropout_p=dropout_p, is_causal=True)
+            out = F.scaled_dot_product_attention(
+                q_t, k_t, v_t, dropout_p=dropout_p, is_causal=True, scale=self.softmax_scale
+            )
         else:
             # SDPA forbids is_causal=True when attn_mask is set;
             # combine explicit causal bias with the additive position bias.
@@ -277,6 +282,7 @@ class MultiHeadLatentAttention(nn.Module):
                 attn_mask=causal + attn_bias,
                 dropout_p=dropout_p,
                 is_causal=False,
+                scale=self.softmax_scale,
             )
         return out.transpose(1, 2)
 

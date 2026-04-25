@@ -64,6 +64,8 @@ class SlidingWindowAttention(nn.Module):
         self.head_dim = d_model // num_heads
         self.groups = num_heads // num_kv_heads
         self.softmax_scale = 1.0 / math.sqrt(self.head_dim)
+        if isinstance(rope, RotaryEmbedding) and rope.attn_scale != 1.0:
+            self.softmax_scale *= rope.attn_scale
         self.dropout_p = dropout
         self.num_layers = num_layers
         self.window_size = window_size
@@ -171,6 +173,7 @@ class SlidingWindowAttention(nn.Module):
                 attn_mask=window_mask,
                 dropout_p=dropout_p,
                 is_causal=False,
+                scale=self.softmax_scale,
             ).transpose(1, 2)
 
         out = out.contiguous().view(B, T, self.d_model)

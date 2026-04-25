@@ -83,6 +83,8 @@ class CausalMultiHeadAttention(nn.Module):
         self.head_dim = d_model // num_heads
         self.groups = num_heads // num_kv_heads  # repeat factor for K/V in non-flash backends
         self.softmax_scale = 1.0 / math.sqrt(self.head_dim)
+        if isinstance(rope, RotaryEmbedding) and rope.attn_scale != 1.0:
+            self.softmax_scale *= rope.attn_scale
         self.dropout_p = dropout
         self.num_layers = num_layers
         self.rope = rope
@@ -254,6 +256,7 @@ class CausalMultiHeadAttention(nn.Module):
                 v_std,
                 dropout_p=dropout_p,
                 is_causal=True,
+                scale=self.softmax_scale,
             )
         else:
             # SDPA forbids is_causal=True when attn_mask is set;
@@ -266,6 +269,7 @@ class CausalMultiHeadAttention(nn.Module):
                 attn_mask=causal + attn_bias,
                 dropout_p=dropout_p,
                 is_causal=False,
+                scale=self.softmax_scale,
             )
 
         return out.transpose(1, 2)

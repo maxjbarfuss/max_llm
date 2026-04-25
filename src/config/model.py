@@ -36,6 +36,10 @@ class ModelConfig:
     # Optional: Phase 3+ features (MLA, MoE, GRU)
     mla_latent_dim: int = -1  # Defaults to hidden_size in __post_init__
     rope_base: int | None = None  # None = no RoPE; any int = enable RoPE with that frequency base
+    rope_scaling_factor: float = 1.0  # YaRN: s = target_ctx / train_ctx (1.0 = disabled)
+    rope_low_freq_factor: float = 1.0  # YaRN: low-frequency threshold α
+    rope_high_freq_factor: float = 4.0  # YaRN: high-frequency threshold β
+    rope_original_max_seq_len: int | None = None  # YaRN: training context length for thresholds
     intermediate_size: int | None = None  # Defaults to 4*hidden_size
     num_experts: int = 1
     experts_per_token: int = 1
@@ -106,6 +110,19 @@ class ModelConfig:
         if self.pos_type in {"rope", "add_rope"} and self.rope_base is None:
             raise ValueError(
                 f"pos_type='{self.pos_type}' requires rope_base to be set (e.g. rope_base = 10000)"
+            )
+        if self.rope_scaling_factor < 1.0:
+            raise ValueError(
+                f"rope_scaling_factor must be >= 1.0 (1.0 = disabled), got {self.rope_scaling_factor}"
+            )
+        if self.rope_high_freq_factor <= self.rope_low_freq_factor:
+            raise ValueError(
+                f"rope_high_freq_factor ({self.rope_high_freq_factor}) must be greater than "
+                f"rope_low_freq_factor ({self.rope_low_freq_factor})"
+            )
+        if self.rope_original_max_seq_len is not None and self.rope_original_max_seq_len <= 0:
+            raise ValueError(
+                f"rope_original_max_seq_len must be positive, got {self.rope_original_max_seq_len}"
             )
 
     def _validate_attn_type(self) -> None:
