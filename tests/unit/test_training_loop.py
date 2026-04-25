@@ -582,17 +582,20 @@ class TestZLoss:
         assert logits.grad is not None
         assert torch.isfinite(logits.grad).all()
 
-    def test_z_loss_gradient_direction(self):
-        """Z-loss gradient is non-negative: 2*lse*softmax(logits) >= 0 always."""
+    def test_z_loss_gradient_formula(self):
+        """Z-loss gradient matches analytic form: (2/N) * lse * softmax(logits)."""
         torch.manual_seed(6)
         logits = torch.randn(1, 4, 16, requires_grad=True)
-        # Isolate the z_loss term (no CE) so CE doesn't confound the sign check.
-        # d/d(logits[i,k]) [ lse_i^2 ] = 2 * lse_i * softmax(logits[i,k]) >= 0
+        # Isolate the z_loss term (no CE) so the analytic gradient is easy to verify.
+        # d/d(logits[i,k]) [ mean_i(lse_i^2) ] = (2/N) * lse_i * softmax(logits[i,k])
         lse = torch.logsumexp(logits.view(4, 16), dim=-1)  # (4,)
         z_term = (lse * lse).mean()
         z_term.backward()
-        grad = logits.grad.detach()
-        assert (grad >= -1e-7).all(), "Z-loss gradient must be non-negative elementwise"
+        grad = logits.grad.detach().view(4, 16)
+        expected = (
+            (2.0 / 4.0) * lse.unsqueeze(1) * torch.softmax(logits.detach().view(4, 16), dim=-1)
+        )
+        assert torch.allclose(grad, expected, atol=1e-6)
 
     def test_train_step_with_z_loss_is_finite(self):
         """train_step with z_loss_weight returns a finite float."""

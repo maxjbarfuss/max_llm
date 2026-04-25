@@ -139,7 +139,7 @@ Wave 2 — low-risk architecture and inference wins (easy wins first):
 - ☐ Prompt templates (ChatML or Alpaca-style) and `ChatFormatter` for multi-turn inference
 
 Wave 3 — training stack upgrades (high impact):
-- ✅ **Z-loss** in `compute_loss_with_smoothing()` for logit-scale stabilization (`1e-4 * log(sum(exp(logits)))^2`)
+- ✅ **Z-loss** in `compute_loss_with_smoothing()` for logit-scale stabilization (`1e-4 * log(sum(exp(logits)))^2`); review hardening complete: `z_loss_weight >= 0` config validation, analytically correct gradient test, and full quality gate pass.
 - ☐ **Muon optimizer** for 2-D weight matrices; keep AdamW for embeddings/head/bias/1-D params; run 5K-step Muon vs AdamW comparison
 - ☐ **μP (Maximal Update Parameterization)**:
 	- Update init + per-layer LR scaling for width transfer

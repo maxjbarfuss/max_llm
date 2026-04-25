@@ -247,6 +247,14 @@ class TestTrainingConfig:
         assert config.benchmark_tasks == ["hellaswag", "piqa"]
         assert config.benchmark_eval_interval == 500
 
+    def test_z_loss_weight_default(self):
+        config = make_training_config()
+        assert config.z_loss_weight == 0.0
+
+    def test_z_loss_weight_negative_raises(self):
+        with pytest.raises(ValueError, match="z_loss_weight"):
+            make_training_config(z_loss_weight=-1e-4)
+
 
 class TestInferenceConfig:
     """Tests for InferenceConfig validation."""

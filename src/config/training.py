@@ -66,6 +66,7 @@ class TrainingConfig:
         """Validate training configuration."""
         self._coerce_toml_types()
         self._validate_basics()
+        self._validate_regularization()
         self._validate_benchmark()
         self._validate_wsd()
         self._validate_schedule()
@@ -95,6 +96,11 @@ class TrainingConfig:
             raise ValueError("resume_lr_hold_steps + warmup_steps must be < max_steps")
         if not (0 <= self.min_lr_ratio <= 1):
             raise ValueError("min_lr_ratio must be in [0, 1]")
+
+    def _validate_regularization(self) -> None:
+        """Validate regularization hyperparameters."""
+        if self.z_loss_weight < 0:
+            raise ValueError("z_loss_weight must be >= 0")
 
     def _validate_benchmark(self) -> None:
         """Validate benchmark harness configuration."""
