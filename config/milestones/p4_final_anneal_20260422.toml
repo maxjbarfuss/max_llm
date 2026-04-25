@@ -4,6 +4,16 @@
 # cleaner, more structured text so the model consolidates factual/narrative
 # patterns at a lower-entropy regime. Short run at low LR.
 #
+# ── Wave 2 standardization note (2026-04-24) ─────────────────────────────────
+# rope_base was updated 13892 → 500_000 (Llama-3 style) for Phase 5+ work.
+# max_seq_length was updated 1024 → 2048 to match Wave 1 packed sequence length.
+# The original p4 checkpoint at outputs/milestones/p4_final_anneal_20260422/
+# was trained with rope_base=13892, max_seq_length=1024, vocab_size=8192.
+# For inference or SFT ON THAT CHECKPOINT specifically, override with those
+# original values; for fresh Wave 1 pretraining (32K tokenizer, new vocab)
+# use the values below.
+# ─────────────────────────────────────────────────────────────────────────────
+#
 # Corpus (train):
 #   Wikipedia EN 2026-03-01   7.403B tokens   (full; already tokenized)
 #   Cosmopedia v2 (fresh)     ~3.980B tokens  (seed=31415; ~77% unseen vs prior 7B run)
@@ -40,7 +50,7 @@ hidden_size = 1024
 num_heads = 16
 num_kv_heads = 4
 vocab_size = 8192
-max_seq_length = 1024
+max_seq_length = 2048
 num_layers = 12
 norm_type = "flash"
 dropout = 0.0
@@ -48,7 +58,7 @@ ffn_type = "xielu"
 intermediate_size = 4096
 mla_latent_dim = 512
 pos_type = "rope"
-rope_base = 13892
+rope_base = 500000
 attn_type = "mla"
 res_type = "block_attn"
 attn_res_num_blocks = 6
@@ -97,7 +107,7 @@ tokenizer_mode = "utf8"
 tokenizer_vocab_size = 8192
 tokenizer_backend = "unigram"
 unigram_model_path = "data/fast/p3_tiny10_wiki100_owt12_fineweb_unigram8192_20260312_tokenizer.model"
-max_length = 1024
+max_length = 2048
 num_workers = 4
 prefetch_factor = 4
 seed = 7777
