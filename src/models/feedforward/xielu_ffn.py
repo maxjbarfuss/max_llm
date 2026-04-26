@@ -37,10 +37,100 @@ def _inv_softplus(y: float) -> float:
     return math.log(math.exp(y) - 1.0)
 
 
+class _XIELUFunction(torch.autograd.Function):
+    """Memory-efficient xIELU forward/backward.
+
+    Forward saves only the input tensor and the two raw α parameters; the
+    pos/neg/expm1/mask intermediates over (B, T, H) are recomputed in
+    backward. This roughly halves the activation memory carried between
+    forward and backward for the FFN's xIELU stage, raising the OOM ceiling.
+    """
+
+    @staticmethod
+    def forward(
+        ctx: torch.autograd.function.FunctionCtx,
+        x: torch.Tensor,
+        alpha_p_raw: torch.Tensor,
+        alpha_n_raw: torch.Tensor,
+        beta: float,
+        eps: float,
+    ) -> torch.Tensor:
+        alpha_p = F.softplus(alpha_p_raw)
+        alpha_n = beta + F.softplus(alpha_n_raw)
+        pos = alpha_p * x * x + beta * x
+        neg_x = torch.clamp_max(x, eps)
+        neg = alpha_n * torch.expm1(neg_x) - alpha_n * x + beta * x
+        out = torch.where(x > 0, pos, neg)
+        ctx.save_for_backward(x, alpha_p_raw, alpha_n_raw)
+        ctx.beta = beta  # type: ignore[attr-defined]
+        ctx.eps = eps  # type: ignore[attr-defined]
+        return out
+
+    @staticmethod
+    def backward(
+        ctx: torch.autograd.function.FunctionCtx,
+        grad_out: torch.Tensor,
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None, None, None]:
+        x, alpha_p_raw, alpha_n_raw = ctx.saved_tensors  # type: ignore[attr-defined]
+        beta: float = ctx.beta  # type: ignore[attr-defined]
+        eps: float = ctx.eps  # type: ignore[attr-defined]
+        needs_x, needs_ap, needs_an = ctx.needs_input_grad[:3]  # type: ignore[attr-defined]
+
+        alpha_p = F.softplus(alpha_p_raw)
+        alpha_n = beta + F.softplus(alpha_n_raw)
+        mask = x > 0  # bool, (B, T, H)
+
+        grad_x: torch.Tensor | None = None
+        grad_alpha_p_raw: torch.Tensor | None = None
+        grad_alpha_n_raw: torch.Tensor | None = None
+
+        # Recompute negative-branch primitives once; reuse for x and α_n grads.
+        neg_x = torch.clamp_max(x, eps)
+        # exp(neg_x) is bounded above by exp(eps) ≈ 1, and below by 0.
+        exp_neg = torch.exp(neg_x)
+        # clamp gates the gradient when x > eps (a thin sliver of (eps, 0]).
+        clamp_active = (x <= eps).to(x.dtype)
+
+        if needs_x:
+            d_pos_dx = 2.0 * alpha_p * x + beta
+            d_neg_dx = alpha_n * exp_neg * clamp_active - alpha_n + beta
+            grad_x = grad_out * torch.where(mask, d_pos_dx, d_neg_dx)
+
+        if needs_ap:
+            # d out / d alpha_p = x*x on positive branch, 0 on negative branch.
+            # alpha_p = softplus(alpha_p_raw) ⇒ chain by sigmoid(alpha_p_raw).
+            contrib_p = grad_out * x * x
+            contrib_p = torch.where(
+                mask, contrib_p, torch.zeros((), dtype=x.dtype, device=x.device)
+            )
+            grad_alpha_p_raw = contrib_p.sum().reshape(alpha_p_raw.shape) * torch.sigmoid(
+                alpha_p_raw
+            )
+
+        if needs_an:
+            # d out / d alpha_n = expm1(neg_x) - x on negative branch, 0 on positive.
+            # alpha_n = beta + softplus(alpha_n_raw) ⇒ chain by sigmoid(alpha_n_raw).
+            expm1_neg = torch.expm1(neg_x)
+            contrib_n = grad_out * (expm1_neg - x)
+            contrib_n = torch.where(
+                mask, torch.zeros((), dtype=x.dtype, device=x.device), contrib_n
+            )
+            grad_alpha_n_raw = contrib_n.sum().reshape(alpha_n_raw.shape) * torch.sigmoid(
+                alpha_n_raw
+            )
+
+        return grad_x, grad_alpha_p_raw, grad_alpha_n_raw, None, None
+
+
 class xIELU(nn.Module):
     """xIELU activation function (arXiv:2411.13010).
 
     2 shared trainable scalars per module; applied identically across all features/positions.
+
+    Uses a custom autograd Function that saves only the input tensor and the
+    two scalar α parameters between forward and backward. The pos/neg/expm1/
+    where intermediates over (B, T, H) are recomputed in backward, which is
+    a strict memory win at modest extra FLOPs.
     """
 
     def __init__(
@@ -58,11 +148,7 @@ class xIELU(nn.Module):
         self.alpha_n = nn.Parameter(torch.tensor([_inv_softplus(alpha_n_init - beta)]))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        alpha_p = F.softplus(self.alpha_p)
-        alpha_n = self.beta + F.softplus(self.alpha_n)
-        pos = alpha_p * x * x + self.beta * x
-        neg = alpha_n * torch.expm1(torch.clamp_max(x, self.eps)) - alpha_n * x + self.beta * x
-        return torch.where(x > 0, pos, neg)
+        return _XIELUFunction.apply(x, self.alpha_p, self.alpha_n, self.beta, self.eps)
 
 
 class xIELUFFN(nn.Module):

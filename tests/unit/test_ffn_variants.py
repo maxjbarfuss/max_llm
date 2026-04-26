@@ -201,6 +201,59 @@ class TestxIELU:
         assert abs(alpha_p - 0.8) < 0.01
         assert abs(alpha_n - 0.8) < 0.01
 
+    def test_matches_eager_reference(self) -> None:
+        """Custom autograd Function output and grads match an eager reference."""
+        import torch.nn.functional as F
+
+        torch.manual_seed(0)
+        act = xIELU()
+        x = torch.randn(B, T, D, dtype=torch.float64, requires_grad=True)
+        # Cast params to f64 for the comparison.
+        act.alpha_p.data = act.alpha_p.data.to(torch.float64)
+        act.alpha_n.data = act.alpha_n.data.to(torch.float64)
+
+        # Reference (eager) implementation.
+        def ref(xv: torch.Tensor, ap: torch.Tensor, an: torch.Tensor) -> torch.Tensor:
+            alpha_p = F.softplus(ap)
+            alpha_n = act.beta + F.softplus(an)
+            pos = alpha_p * xv * xv + act.beta * xv
+            neg_x = torch.clamp_max(xv, act.eps)
+            neg = alpha_n * torch.expm1(neg_x) - alpha_n * xv + act.beta * xv
+            return torch.where(xv > 0, pos, neg)
+
+        # Forward equivalence.
+        x_ref = x.detach().clone().requires_grad_(True)
+        ap_ref = act.alpha_p.detach().clone().requires_grad_(True)
+        an_ref = act.alpha_n.detach().clone().requires_grad_(True)
+        y_ref = ref(x_ref, ap_ref, an_ref)
+        y = act(x)
+        assert torch.allclose(y, y_ref, atol=1e-10, rtol=1e-10)
+
+        # Backward equivalence (use a non-trivial upstream grad).
+        g = torch.randn_like(y)
+        y.backward(g)
+        y_ref.backward(g)
+        assert torch.allclose(x.grad, x_ref.grad, atol=1e-10, rtol=1e-10)
+        assert torch.allclose(act.alpha_p.grad, ap_ref.grad, atol=1e-10, rtol=1e-10)
+        assert torch.allclose(act.alpha_n.grad, an_ref.grad, atol=1e-10, rtol=1e-10)
+
+    def test_gradcheck(self) -> None:
+        """torch.autograd.gradcheck against numerical gradients."""
+        torch.manual_seed(0)
+        act = xIELU()
+        act.alpha_p.data = act.alpha_p.data.to(torch.float64)
+        act.alpha_n.data = act.alpha_n.data.to(torch.float64)
+        x = torch.randn(3, 5, dtype=torch.float64, requires_grad=True)
+        # gradcheck needs (Tensor, ...) inputs to a function.
+        from src.models.feedforward.xielu_ffn import _XIELUFunction
+
+        assert torch.autograd.gradcheck(
+            lambda xv, ap, an: _XIELUFunction.apply(xv, ap, an, act.beta, act.eps),
+            (x, act.alpha_p, act.alpha_n),
+            eps=1e-6,
+            atol=1e-5,
+        )
+
 
 # ---------------------------------------------------------------------------
 # xIELUFFN
