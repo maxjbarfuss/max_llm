@@ -160,7 +160,7 @@ class TestLearningModelGradientCheckpointing:
     def test_checkpointing_enable_validates_mode_and_interval(self):
         """Invalid checkpointing options fail early."""
         model = LearningModel.from_config(make_model_config(), attention_backend="standard")
-        with pytest.raises(ValueError, match="mode must be 'full' or 'ffn'"):
+        with pytest.raises(ValueError, match="mode must be 'full', 'ffn', or 'attn_res_fused'"):
             model.gradient_checkpointing_enable(mode="attention")
         with pytest.raises(ValueError, match="interval must be >= 1"):
             model.gradient_checkpointing_enable(interval=0)
@@ -181,6 +181,62 @@ class TestLearningModelGradientCheckpointing:
         baseline = LearningModel.from_config(config, attention_backend="standard")
         every2 = deepcopy(baseline)
         every2.gradient_checkpointing_enable(mode=mode, interval=2)
+        baseline.train()
+        every2.train()
+
+        x = torch.randint(0, config.vocab_size, (2, 16))
+        torch.testing.assert_close(every2(x), baseline(x))
+
+    def test_attn_res_fused_matches_baseline_output_and_gradients(self):
+        """attn_res_fused on block_attn should produce identical outputs and gradients to baseline."""
+        torch.manual_seed(55)
+        config = make_model_config(
+            hidden_size=64,
+            num_layers=8,
+            num_heads=4,
+            max_seq_length=32,
+            res_type="block_attn",
+            attn_res_num_blocks=4,
+        )
+        baseline = LearningModel.from_config(config, attention_backend="standard")
+        fused = deepcopy(baseline)
+        fused.gradient_checkpointing_enable(mode="attn_res_fused")
+        baseline.train()
+        fused.train()
+
+        x = torch.randint(0, config.vocab_size, (2, 16))
+        baseline_loss = baseline(x).sum()
+        fused_loss = fused(x).sum()
+        torch.testing.assert_close(fused_loss, baseline_loss)
+
+        baseline_loss.backward()
+        fused_loss.backward()
+        torch.testing.assert_close(
+            fused.token_embedding.embedding.weight.grad,
+            baseline.token_embedding.embedding.weight.grad,
+        )
+        # Also verify attn_res query gradients flow correctly
+        assert fused.attn_res is not None
+        assert baseline.attn_res is not None
+        torch.testing.assert_close(
+            fused.attn_res.queries.grad,
+            baseline.attn_res.queries.grad,
+        )
+
+    def test_attn_res_fused_with_interval(self):
+        """attn_res_fused with interval=2 should produce the same output as baseline."""
+        torch.manual_seed(77)
+        config = make_model_config(
+            hidden_size=64,
+            num_layers=8,
+            num_heads=4,
+            max_seq_length=32,
+            res_type="block_attn",
+            attn_res_num_blocks=4,
+        )
+        baseline = LearningModel.from_config(config, attention_backend="standard")
+        every2 = deepcopy(baseline)
+        every2.gradient_checkpointing_enable(mode="attn_res_fused", interval=2)
         baseline.train()
         every2.train()
 

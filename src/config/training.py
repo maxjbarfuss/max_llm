@@ -49,8 +49,8 @@ class TrainingConfig:
     torch_compile_fullgraph: bool = False
     torch_compile_dynamic: bool = False
     attention_backend: str = "standard"
-    selective_checkpointing: bool = False  # Disabled by default
-    selective_checkpointing_mode: Literal["full", "ffn"] = "full"
+    selective_checkpointing: bool = False
+    selective_checkpointing_mode: Literal["full", "ffn", "attn_res_fused"] = "full"
     selective_checkpointing_interval: int = 1  # checkpoint every N blocks; 2 = skip every other
     resume_from_checkpoint: str | None = None
     resume_optimizer_state: bool = True
@@ -109,9 +109,9 @@ class TrainingConfig:
 
     def _validate_checkpointing(self) -> None:
         """Validate activation checkpointing configuration."""
-        if self.selective_checkpointing_mode not in {"full", "ffn"}:
+        if self.selective_checkpointing_mode not in {"full", "ffn", "attn_res_fused"}:
             raise ValueError(
-                f"selective_checkpointing_mode must be 'full' or 'ffn', "
+                f"selective_checkpointing_mode must be 'full', 'ffn', or 'attn_res_fused', "
                 f"got '{self.selective_checkpointing_mode}'"
             )
         if self.selective_checkpointing_interval < 1:

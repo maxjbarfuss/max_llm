@@ -37,16 +37,21 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `norm_type` | `"layer"` \| `"rms"` \| `"flash"` \| `"dyt"` \| `"crms"` | `"layer"` | Normalization variant: `"layer"` = LayerNorm (P3 default); `"rms"` = RMSNorm (P4+ recommended); `"flash"` = parameter-free RMSNorm (scale absorbed into adjacent linear weights); `"dyt"` = Dynamic Tanh `γ⊙tanh(α·x)`, replaces norm with bounded nonlinearity (Zhai et al. 2025); `"crms"` = Centered RMSNorm (mean-subtract then RMSNorm, bridges RMSNorm and LayerNorm) |
 | `ffn_type` | `"gelu"` \| `"swiglu"` \| `"relu2"` \| `"xielu"` | `"gelu"` | FFN activation variant: `"swiglu"` (Llama, no bias, hidden=4d×2/3); `"relu2"` (sparse ~50%, no params); `"xielu"` (piecewise quad/exp, 2 trainable scalars) |
 | `intermediate_size` | int | `4 × hidden_size` | FFN hidden dimension; overrides the 4× default; for SwiGLU use `swiglu_intermediate_size(hidden_size)` (rounds to 256 multiple) |
+| `ffn_chunk_size` | int | `null` | Split the sequence into chunks of this size through each FFN to cap peak `(B,T,intermediate_size)` activation memory; `null` = disabled; trades throughput for memory |
 | `pos_type` | string | `"learned"` | Positional encoding: `"learned"` (additive table), `"rope"` (rotary), `"add_rope"` (additive sinusoidal on Q/K), `"alibi"` (linear bias, no params), `"rel_pos"` (learned T5-style bucket bias) |
 | `rope_base` | int | `null` | Frequency base for `pos_type = "rope"` or `"add_rope"` (e.g. `10000`); ignored for other variants; back-compat: setting this without `pos_type` auto-selects `pos_type = "rope"` |
+| `rope_scaling_factor` | float | `1.0` | YaRN NTK-by-parts context extension scale s = target_ctx / train_ctx; `1.0` = disabled; set to `target_len / train_len` to extend effective context |
+| `rope_low_freq_factor` | float | `1.0` | YaRN α — low-frequency wavelength threshold; dims whose wavelength exceeds α × `rope_original_max_seq_len` are scaled fully by 1/s |
+| `rope_high_freq_factor` | float | `4.0` | YaRN β — high-frequency wavelength threshold; dims below β × `rope_original_max_seq_len` are left unchanged; dims between α and β are blended |
+| `rope_original_max_seq_len` | int | `null` | YaRN training context length used to compute wavelength thresholds; required when `rope_scaling_factor > 1.0` |
 | `rel_pos_num_buckets` | int | `32` | Distance buckets for `pos_type = "rel_pos"`; ignored for other variants |
-| `attn_type` | `"mha"` \| `"swa"` \| `"rla"` | `"mha"` | Attention variant: `"mha"` = standard causal MHA (default); `"swa"` = Sliding Window Attention — each token attends only to the last `swa_window_size` tokens (Flash Attention 2 native support, otherwise band mask); `"rla"` = Residual Linear Attention — O(T·D²) ELU+1 kernel + learned input residual to prevent rank collapse; incompatible with `pos_type = "rope"` or `"add_rope"` |
-| `swa_window_size` | int | `256` | Window width for `attn_type = "swa"`; must be ≥ 1; ignored for `"mha"` and `"rla"` |
+| `attn_type` | `"mha"` \| `"swa"` \| `"rla"` \| `"mla"` | `"mha"` | Attention variant: `"mha"` = standard causal MHA; `"swa"` = Sliding Window — each token attends to the last `swa_window_size` tokens (Flash Attention 2 native; otherwise band mask); `"rla"` = Residual Linear Attention — O(T·D²) ELU+1 kernel + learned input residual; incompatible with RoPE; `"mla"` = Multi-head Latent Attention — low-rank KV compression via `mla_latent_dim`; requires `pos_type = "rope"` or `"add_rope"` |
+| `swa_window_size` | int | `256` | Window width for `attn_type = "swa"`; must be ≥ 1; ignored for other variants |
 | `res_type` | `"standard"` \| `"full_attn"` \| `"block_attn"` | `"standard"` | Residual connection variant: `"standard"` = fixed additive residual (default); `"full_attn"` = Full Attention Residuals — each sublayer input is softmax attention over all prior sublayer outputs (O(L²), practical for small models); `"block_attn"` = Block Attention Residuals — layers grouped into `attn_res_num_blocks` blocks, attention over N block-level summaries (O(N²), recommended for scale; paper shows 1.25× compute advantage at N≈8). Queries zero-initialized so initial weights are uniform. Ref: Kimi Team 2025 |
 | `attn_res_num_blocks` | int | `8` | Block count N for `res_type = "block_attn"`; `num_layers` must be divisible by N; N=1 collapses to standard residuals, N=num_layers ≈ full_attn; ignored for `"standard"` and `"full_attn"` |
 | `embedding_dim` | int | `null` | Factorized embedding dimension; `null` = no factorization |
 | `share_layer_weights` | bool | `false` | Share a single physical block across all `num_layers` — drastically cuts capacity; avoid for real training |
-| `mla_latent_dim` | int | `hidden_size` | MLA latent KV dimension (Phase 6+); set < `hidden_size` to compress |
+| `mla_latent_dim` | int | `hidden_size` | MLA latent KV dimension; set < `hidden_size` to compress KV size; only meaningful when `attn_type = "mla"` |
 | `num_experts` | int | `1` | Total MoE experts (Phase 6+); `1` = dense |
 | `experts_per_token` | int | `1` | Top-k experts per token (Phase 6+) |
 | `moe_frequency` | int | `0` | Insert MoE every N blocks (Phase 6+); `0` = dense throughout |
@@ -60,7 +65,11 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
-| `learning_rate` | float | ✅ required | Peak LR; `3e-4`–`4e-3` typical for P3 |
+| `optimizer_type` | `"adamw"` \| `"muon"` | `"adamw"` | `"adamw"` = standard AdamW for all params; `"muon"` = Newton-Schulz orthogonalized gradient for non-embedding 2-D matrices + AdamW for embeddings, lm_head, biases, and 1-D params |
+| `learning_rate` | float | ✅ required | Peak LR; `3e-4`–`4e-3` typical for P3; used for AdamW params (and Muon if `muon_lr` is unset) |
+| `muon_lr` | float | `null` | Separate peak LR for Muon-managed parameters; `null` inherits `learning_rate` for all groups |
+| `muon_momentum` | float | `0.95` | Nesterov momentum for Muon parameter groups |
+| `muon_ns_steps` | int | `5` | Newton-Schulz iteration steps; more = closer to true orthogonalization at higher compute cost |
 | `weight_decay` | float | ✅ required | L2 regularization; `0.05` recommended; applied to all params with `ndim ≥ 2` |
 | `betas` | `[float, float]` | ✅ required | AdamW momentum; `[0.9, 0.95]` recommended |
 | `epsilon` | float | ✅ required | AdamW stability term; `1e-8` standard |
@@ -72,12 +81,14 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 |-------|------|---------|-------|
 | `max_steps` | int | ✅ required | Total training steps |
 | `warmup_steps` | int | ✅ required | Linear LR warmup steps; must be ≤ `max_steps` |
-| `scheduler_type` | `"cosine"` \| `"wsd"` | `"cosine"` | `wsd` = Warmup-Stable-Decay; recommended for long runs |
+| `scheduler_type` | `"cosine"` \| `"wsd"` \| `"sgdr"` | `"cosine"` | LR schedule: `"cosine"` = single cosine decay; `"wsd"` = Warmup-Stable-Decay; `"sgdr"` = cosine restarts (preferred for new experiments) |
 | `min_lr_ratio` | float | `0.1` | LR floor as fraction of peak; e.g. `0.05` → decay to 5% of peak |
 | `wsd_stable_fraction` | float | `0.7` | Fraction of total steps held at peak LR (WSD only) |
 | `wsd_decay_fraction` | float | `0.2` | Fraction of total steps spent decaying (WSD only) |
-| `wsd_decay_shape` | `"linear"` \| `"sqrt"` \| `"lowered_linear"` | `"sqrt"` | Decay curve shape (WSD only); `sqrt` recommended |
+| `wsd_decay_shape` | `"linear"` \| `"sqrt"` \| `"lowered_linear"` | `"sqrt"` | Decay curve shape (WSD only); `"sqrt"` recommended |
 | `wsd_lowered_linear_alpha` | float | `0.7` | Exponent for `lowered_linear` shape: higher = stays high longer (WSD only) |
+| `sgdr_num_cycles` | int | `4` | Number of cosine restart cycles (SGDR only) |
+| `sgdr_cycle_decay` | float | `0.8` | Per-restart cycle length multiplier (SGDR only); `< 1.0` shortens successive cycles |
 
 ### Batching and Precision
 
@@ -99,10 +110,13 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `attention_backend` | string | `"standard"` | `"flash"` (recommended), `"sage"`, `"xformers"`, `"standard"`; see [OPTIMIZATION.md](../docs/OPTIMIZATION.md) |
-| `use_torch_compile` | bool | `false` | AOT kernel fusion; incompatible with `flash` and `sage` backends |
-| `selective_checkpointing` | bool | `false` | Gradient checkpointing — trades compute for memory (Phase 4+) |
-| `selective_checkpointing_mode` | `"full"` \| `"ffn"` | `"full"` | `"full"` recomputes the whole block; `"ffn"` runs attention eagerly and only recomputes the FFN sublayer (less memory savings, less compute overhead) |
-| `selective_checkpointing_interval` | int | `1` | Checkpoint every N blocks; `2` checkpoints every other block, recovering roughly half the compute while keeping the memory benefit of those blocks |
+| `use_torch_compile` | bool | `false` | AOT kernel fusion via `torch.compile`; incompatible with `flash` and `sage` backends |
+| `torch_compile_mode` | string \| `null` | `null` | `torch.compile` mode: `null` = framework default; `"reduce-overhead"` = CUDA graphs; `"max-autotune"` = kernel auto-tuning (slow first run); `"max-autotune-no-cudagraphs"` |
+| `torch_compile_fullgraph` | bool | `false` | Require a single contiguous graph (errors on graph breaks); leave `false` for partial compilation |
+| `torch_compile_dynamic` | bool | `false` | Track dynamic shapes; useful for variable-length sequences at the cost of reduced kernel specialization |
+| `selective_checkpointing` | bool | `false` | Activation checkpointing — recompute activations during backward to trade compute for memory |
+| `selective_checkpointing_mode` | `"full"` \| `"ffn"` \| `"attn_res_fused"` | `"full"` | `"full"` recomputes each sublayer (norm + op + residual add); `"ffn"` runs attention eagerly and recomputes only the FFN sublayer; `"attn_res_fused"` is `block_attn`-only — fuses ar() + sublayer + residual add per sublayer so the mixer output and sublayer delta are both recomputed, saving ~2×(B,T,D) per sublayer beyond `"full"` |
+| `selective_checkpointing_interval` | int | `1` | Checkpoint every N-th block; `2` = every other block, halving recompute cost while keeping savings on checkpointed blocks |
 
 ### Checkpointing and Logging
 
@@ -111,10 +125,21 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `checkpoint_interval` | int | `1000` | Save a checkpoint every N steps |
 | `keep_last_n_checkpoints` | int | `3` | Delete older checkpoints; keeps the N most recent |
 | `resume_from_checkpoint` | string | `null` | Path to checkpoint `.pt` file to resume from |
+| `resume_optimizer_state` | bool | `true` | Restore optimizer state (momentum buffers, step counters) from checkpoint; set `false` to restart optimizer fresh while keeping model weights |
+| `resume_scheduler_state` | bool | `true` | Restore LR scheduler state from checkpoint; set `false` to restart schedule from step 0 |
+| `resume_lr_hold_steps` | int | `0` | Extra warmup-hold steps inserted after resume before the scheduler resumes decay; useful when adapting a checkpoint to new data |
 | `eval_interval` | int | `100` | Run validation every N steps |
 | `eval_max_batches` | int | `0` | Cap validation batches per eval; `0` = no limit; set to ~64 for large val sets |
 | `eval_on_test` | bool | `false` | Also evaluate on `data.test_dataset_path` at each eval interval |
 | `log_interval` | int | `10` | Print training stats every N steps |
+
+### Memory Optimization
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `use_chunked_loss` | bool | `false` | Chunked LM-head + CE: projects hidden states per time-chunk inside `torch.utils.checkpoint` so peak logit memory is `O(B·chunk_size·V)` instead of `O(B·T·V)`; numerically equivalent to the standard path |
+| `loss_chunk_size` | int | `256` | Time-axis chunk size for `use_chunked_loss`; smaller = lower peak memory, more checkpoint recompute |
+| `z_loss_weight` | float | `0.0` | PaLM-style logit-scale regularizer: adds `z_loss_weight × mean(logsumexp(logits)²)` to training loss to prevent logit explosion; `1e-4` is a good starting value; excluded from validation loss |
 
 ### External Benchmarks (MCQ Harness)
 

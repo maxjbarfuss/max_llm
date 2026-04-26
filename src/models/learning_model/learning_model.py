@@ -434,6 +434,7 @@ class LearningModel(nn.Module):
                     self.blocks[0] if self.share_layer_weights else self.blocks[block_idx],
                 )
                 kv = kv_caches[block_idx] if kv_caches is not None else None
+
                 # --- Attention sublayer ---
                 # First sublayer of the group: sources = [b_0, ..., b_{n-1}]
                 # Subsequent sublayers: also include the partial block sum
@@ -443,17 +444,53 @@ class LearningModel(nn.Module):
                     assert partial_b is not None
                     sources = [*block_sums, partial_b]
 
-                h_in = ar(sublayer_idx, sources)
-                delta_attn = self._run_attn_only(block, h_in, block_idx, kv_cache=kv)
-                partial_b = delta_attn if partial_b is None else partial_b + delta_attn
+                if (
+                    self.gradient_checkpointing_mode == "attn_res_fused"
+                    and self._should_checkpoint(block_idx, kv)
+                ):
+                    # Fuse ar() + attn sublayer + residual add into one checkpoint unit.
+                    # pb_prev is passed explicitly so checkpoint saves it as an input
+                    # (not a closure capture), keeping gradients clean.
+                    _pb_prev = h.new_zeros(h.shape) if partial_b is None else partial_b
+
+                    def _fused_attn(
+                        pb_prev: torch.Tensor,
+                        *srcs: torch.Tensor,
+                        _b: TransformerBlock = block,
+                        _idx: int = sublayer_idx,
+                    ) -> torch.Tensor:
+                        return pb_prev + _b.apply_attn_only(ar(_idx, list(srcs)))
+
+                    partial_b = self._checkpoint_tensor_fn(_fused_attn, _pb_prev, *sources)
+                else:
+                    h_in = ar(sublayer_idx, sources)
+                    delta_attn = self._run_attn_only(block, h_in, block_idx, kv_cache=kv)
+                    partial_b = delta_attn if partial_b is None else partial_b + delta_attn
                 sublayer_idx += 1
 
                 # --- FFN sublayer ---
                 assert partial_b is not None
                 sources = [*block_sums, partial_b]
-                h_in = ar(sublayer_idx, sources)
-                delta_ffn = self._run_ffn_only(block, h_in, block_idx)
-                partial_b = partial_b + delta_ffn
+
+                if (
+                    self.gradient_checkpointing_mode == "attn_res_fused"
+                    and self._should_checkpoint(block_idx)
+                ):
+                    _pb = partial_b
+
+                    def _fused_ffn(
+                        pb_prev: torch.Tensor,
+                        *srcs: torch.Tensor,
+                        _b: TransformerBlock = block,
+                        _idx: int = sublayer_idx,
+                    ) -> torch.Tensor:
+                        return pb_prev + _b.apply_ffn_only(ar(_idx, list(srcs)))
+
+                    partial_b = self._checkpoint_tensor_fn(_fused_ffn, _pb, *sources)
+                else:
+                    h_in = ar(sublayer_idx, sources)
+                    delta_ffn = self._run_ffn_only(block, h_in, block_idx)
+                    partial_b = partial_b + delta_ffn
                 sublayer_idx += 1
 
             assert partial_b is not None
@@ -463,9 +500,26 @@ class LearningModel(nn.Module):
         return ar(sublayer_idx, block_sums)
 
     def gradient_checkpointing_enable(self, mode: str = "full", interval: int = 1) -> None:
-        """Enable activation checkpointing for training-time transformer blocks."""
-        if mode not in {"full", "ffn"}:
-            raise ValueError("gradient checkpointing mode must be 'full' or 'ffn'")
+        """Enable activation checkpointing for training-time transformer blocks.
+
+        Args:
+            mode: Recomputation strategy. One of:
+                "full" — recompute each sublayer (norm + op + residual add) in both the
+                    attention and FFN paths. Maximum memory savings, ~2× compute overhead.
+                "ffn" — run attention eagerly; recompute only the FFN sublayer. Lower memory
+                    savings than "full" with less recompute cost.
+                "attn_res_fused" — block_attn residual path only. Fuses ar() + sublayer +
+                    residual add into one checkpoint unit per sublayer so the ar() output and
+                    the sublayer delta are both recomputed instead of retained. Saves ~2 extra
+                    (B,T,D) tensors per sublayer compared to "full" on this path. Falls back
+                    to "full" behaviour on standard and full_attn residual paths.
+            interval: Checkpoint every N-th block (1 = all blocks, 2 = every other, etc.).
+                Blocks whose index is not divisible by interval run eagerly.
+        """
+        if mode not in {"full", "ffn", "attn_res_fused"}:
+            raise ValueError(
+                "gradient checkpointing mode must be 'full', 'ffn', or 'attn_res_fused'"
+            )
         if interval < 1:
             raise ValueError("gradient checkpointing interval must be >= 1")
         self.gradient_checkpointing = True

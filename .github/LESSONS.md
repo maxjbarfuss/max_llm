@@ -154,6 +154,14 @@
 
 ---
 
+## L019 — Sync `config/README.md` When Adding Config Fields
+
+**Observed behavior**: Agent added multiple new `TrainingConfig` and `ModelConfig` fields (Muon optimizer, SGDR schedule, YaRN RoPE, ffn_chunk_size, checkpoint modes, resume fields, memory-optimization fields) across several sessions without updating `config/README.md`. The TOML field reference fell out of date and new fields were undiscoverable without reading source.
+
+**Correct approach**: `config/README.md` is the canonical TOML field reference — the single place an operator looks up what fields are available and what they do. Whenever a field is added to or removed from `ModelConfig`, `TrainingConfig`, `DataConfig`, or `InferenceConfig`, update the corresponding table row in `config/README.md` in the same commit. Also check `src/training/README.md` if the field affects the training invocation surface.
+
+---
+
 ## Adding a New Lesson
 
 When @maxjbarfuss observes a repeated agent mistake, add a new entry with the next sequential number:
