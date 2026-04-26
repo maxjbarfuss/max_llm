@@ -1012,6 +1012,8 @@ def main() -> None:  # noqa: C901
         early_stopping_min_delta=config.training.early_stopping_min_delta,
         label_smoothing=config.training.label_smoothing,
         z_loss_weight=config.training.z_loss_weight,
+        use_chunked_loss=config.training.use_chunked_loss,
+        loss_chunk_size=config.training.loss_chunk_size,
         tb_writer=tb_writer,
         use_torch_compile=use_torch_compile,
         checkpoint_interval=config.training.checkpoint_interval,

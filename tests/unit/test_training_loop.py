@@ -9,7 +9,13 @@ import torch
 import src.training.loop as loop
 from src.config.model import ModelConfig
 from src.models.learning_model import LearningModel
-from src.training.loop import compute_loss_with_smoothing, optimizer_step, train, train_step
+from src.training.loop import (
+    compute_chunked_lm_loss,
+    compute_loss_with_smoothing,
+    optimizer_step,
+    train,
+    train_step,
+)
 from src.training.train import create_simple_loaders
 
 
@@ -680,3 +686,145 @@ class TestChunkedLoss:
         assert logits.grad is not None
         assert logits.grad.shape == logits.shape
         assert torch.isfinite(logits.grad).all()
+
+
+class TestChunkedLMHeadLoss:
+    """compute_chunked_lm_loss / chunked LM-head training path."""
+
+    @staticmethod
+    def _full_loss(
+        hidden: torch.Tensor,
+        weight: torch.Tensor,
+        targets: torch.Tensor,
+        label_smoothing: float = 0.0,
+        z_loss_weight: float = 0.0,
+    ) -> torch.Tensor:
+        import torch.nn.functional as F
+
+        logits = F.linear(hidden, weight)
+        return compute_loss_with_smoothing(
+            logits,
+            targets,
+            label_smoothing=label_smoothing,
+            z_loss_weight=z_loss_weight,
+        )
+
+    def test_matches_full_loss_no_smoothing(self):
+        torch.manual_seed(0)
+        B, T, D, V = 2, 32, 16, 64
+        hidden = torch.randn(B, T, D)
+        weight = torch.randn(V, D)
+        targets = torch.randint(0, V, (B, T))
+        full = self._full_loss(hidden, weight, targets)
+        chunked = compute_chunked_lm_loss(hidden, weight, targets, chunk_size=8)
+        assert torch.allclose(full, chunked, atol=1e-5)
+
+    def test_matches_full_loss_with_smoothing_and_zloss(self):
+        torch.manual_seed(1)
+        B, T, D, V = 2, 24, 16, 64
+        hidden = torch.randn(B, T, D)
+        weight = torch.randn(V, D)
+        targets = torch.randint(0, V, (B, T))
+        full = self._full_loss(hidden, weight, targets, label_smoothing=0.1, z_loss_weight=1e-3)
+        chunked = compute_chunked_lm_loss(
+            hidden,
+            weight,
+            targets,
+            label_smoothing=0.1,
+            z_loss_weight=1e-3,
+            chunk_size=7,
+        )
+        assert torch.allclose(full, chunked, atol=1e-5)
+
+    def test_gradients_match_full_path(self):
+        """Chunked path must produce the same hidden + weight gradients as the
+        full ``lm_head(h) → CE`` reference within fp32 numerical tolerance.
+        """
+        torch.manual_seed(2)
+        B, T, D, V = 2, 16, 8, 32
+        hidden_a = torch.randn(B, T, D, requires_grad=True)
+        weight_a = torch.randn(V, D, requires_grad=True)
+        targets = torch.randint(0, V, (B, T))
+
+        loss_full = self._full_loss(
+            hidden_a, weight_a, targets, label_smoothing=0.05, z_loss_weight=1e-4
+        )
+        loss_full.backward()
+
+        hidden_b = hidden_a.detach().clone().requires_grad_(True)
+        weight_b = weight_a.detach().clone().requires_grad_(True)
+        loss_chunked = compute_chunked_lm_loss(
+            hidden_b,
+            weight_b,
+            targets,
+            label_smoothing=0.05,
+            z_loss_weight=1e-4,
+            chunk_size=5,
+        )
+        loss_chunked.backward()
+
+        assert torch.allclose(loss_full, loss_chunked, atol=1e-5)
+        assert hidden_a.grad is not None and hidden_b.grad is not None
+        assert weight_a.grad is not None and weight_b.grad is not None
+        assert torch.allclose(hidden_a.grad, hidden_b.grad, atol=1e-5)
+        assert torch.allclose(weight_a.grad, weight_b.grad, atol=1e-5)
+
+    def test_chunk_size_invariance(self):
+        torch.manual_seed(3)
+        B, T, D, V = 2, 24, 8, 32
+        hidden = torch.randn(B, T, D)
+        weight = torch.randn(V, D)
+        targets = torch.randint(0, V, (B, T))
+        a = compute_chunked_lm_loss(hidden, weight, targets, chunk_size=T)
+        b = compute_chunked_lm_loss(hidden, weight, targets, chunk_size=4)
+        c = compute_chunked_lm_loss(hidden, weight, targets, chunk_size=1)
+        assert torch.allclose(a, b, atol=1e-5)
+        assert torch.allclose(a, c, atol=1e-5)
+
+    def test_invalid_chunk_size_raises(self):
+        hidden = torch.randn(1, 4, 8)
+        weight = torch.randn(16, 8)
+        targets = torch.randint(0, 16, (1, 4))
+        with pytest.raises(ValueError, match="chunk_size"):
+            compute_chunked_lm_loss(hidden, weight, targets, chunk_size=0)
+
+    def test_train_step_chunked_matches_default(self):
+        """train_step with use_chunked_loss=True yields the same loss value
+        and same parameter updates (within tolerance) as the default path.
+        """
+        torch.manual_seed(7)
+        model_a = _make_model()
+        model_b = _make_model()
+        model_b.load_state_dict(model_a.state_dict())
+
+        x, y = _make_batch()
+        opt_a = torch.optim.SGD(model_a.parameters(), lr=1e-2)
+        opt_b = torch.optim.SGD(model_b.parameters(), lr=1e-2)
+
+        loss_a = train_step(model_a, x, y, opt_a)
+        optimizer_step(opt_a, model=model_a)
+
+        loss_b = train_step(model_b, x, y, opt_b, use_chunked_loss=True, loss_chunk_size=3)
+        optimizer_step(opt_b, model=model_b)
+
+        assert abs(loss_a - loss_b) < 1e-4
+        for p_a, p_b in zip(model_a.parameters(), model_b.parameters(), strict=True):
+            assert torch.allclose(p_a, p_b, atol=1e-4)
+
+    def test_train_step_chunked_requires_forward_hidden(self):
+        """A model without forward_hidden raises a clear error."""
+
+        class Dummy(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.lin = torch.nn.Linear(4, 8)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.lin(x.float())
+
+        model = Dummy()
+        x = torch.randint(0, 4, (2, 4))
+        y = torch.randint(0, 8, (2, 4))
+        opt = torch.optim.SGD(model.parameters(), lr=1e-3)
+        with pytest.raises(AttributeError, match="forward_hidden"):
+            train_step(model, x, y, opt, use_chunked_loss=True)

@@ -148,7 +148,7 @@ Wave 3 — training stack upgrades (high impact):
 	- Compare throughput-quality tradeoffs across AdamW, batched Muon, and reduced-NS-step Muon; choose default for large Phase 5 corpus runs
 	- Document target tokens/sec, memory headroom, and recommended config template before launching larger datasets
 - ☐ **Architecture/code memory optimizations before the next shape sweep**:
-	- Implement a training-only chunked LM-head / cross-entropy path so long-context and 32K-vocab runs do not materialize full `(B,T,V)` logits for the whole sequence.
+	- ✅ Implemented a training-only chunked LM-head / cross-entropy path so long-context and 32K-vocab runs do not materialize full `(B,T,V)` logits for the whole sequence. `compute_chunked_lm_loss` projects `forward_hidden(x)` per time-chunk inside `torch.utils.checkpoint`, so logit memory drops from `(B,T,V)` to `(B,chunk_size,V)`; gated by `training.use_chunked_loss` + `training.loss_chunk_size` (default 256). Numerically equivalent to the existing CE+Z-loss formula; verified by 7 unit tests including hidden+weight gradient parity.
 	- Add a memory-efficient xIELU backward path, likely via a custom autograd function that recomputes branches, because the current ceiling fails in xIELU/FFN activation memory.
 	- Add optional FFN sequence chunking for long-context probes, trading throughput for lower peak `(B,T,intermediate_size)` activation memory.
 	- Extend checkpointing controls beyond the current blunt full-block mode: config-wired mode/interval, FFN-only comparison, and a block-attn residual + sublayer recompute mode.

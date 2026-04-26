@@ -18,10 +18,104 @@ from typing import Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 from torch.utils.data import DataLoader
 
 from src.training.distributed import get_rank, get_world_size
 from src.training.profiling import ComponentProfiler
+
+
+def _unwrap_module(model: nn.Module) -> nn.Module:
+    """Return the underlying module from a DDP/FSDP wrapper if any."""
+    inner = getattr(model, "module", model)
+    assert isinstance(inner, nn.Module)
+    return inner
+
+
+def _chunk_lm_loss_fn(
+    h_chunk: torch.Tensor,
+    targets_chunk: torch.Tensor,
+    weight: torch.Tensor,
+    label_smoothing: float,
+    z_loss_weight: float,
+) -> torch.Tensor:
+    """Project a hidden chunk through ``weight`` and return the summed
+    CE (+ z_loss * z_loss_weight) over that chunk.
+
+    Returning a scalar lets ``torch.utils.checkpoint`` discard the
+    intermediate ``(B, t, V)`` logits between forward and backward.
+    """
+    logits = F.linear(h_chunk, weight)  # (B, t, V), no bias on lm_head
+    B_, t_, V_ = logits.shape
+    logits_2d = logits.reshape(B_ * t_, V_)
+    targets_1d = targets_chunk.reshape(B_ * t_)
+    if label_smoothing > 0:
+        log_probs = F.log_softmax(logits_2d, dim=-1)
+        nll = -log_probs.gather(1, targets_1d.unsqueeze(1)).squeeze(1)
+        smooth = -log_probs.mean(dim=-1)
+        chunk_sum = ((1 - label_smoothing) * nll + label_smoothing * smooth).sum()
+    else:
+        chunk_sum = F.cross_entropy(logits_2d, targets_1d, reduction="sum")
+    if z_loss_weight > 0.0:
+        lse = torch.logsumexp(logits_2d, dim=-1)
+        chunk_sum = chunk_sum + z_loss_weight * (lse * lse).sum()
+    return chunk_sum
+
+
+def compute_chunked_lm_loss(
+    hidden: torch.Tensor,
+    lm_head_weight: torch.Tensor,
+    targets: torch.Tensor,
+    label_smoothing: float = 0.0,
+    z_loss_weight: float = 0.0,
+    chunk_size: int = 256,
+) -> torch.Tensor:
+    """Memory-efficient chunked CE (+ Z-loss) over the LM-head projection.
+
+    Splits along the time axis; each chunk's ``(B, chunk_size, V)`` logits
+    are produced inside ``torch.utils.checkpoint`` so they are recomputed
+    on backward instead of being kept alive across the full sequence.
+
+    Numerically equivalent to ``compute_loss_with_smoothing(lm_head(hidden),
+    targets, ...)`` for the same ``label_smoothing`` and ``z_loss_weight``.
+
+    Args:
+        hidden: ``(B, T, d_model)`` final hidden states (post final-norm).
+        lm_head_weight: ``(vocab_size, d_model)`` LM-head weight (no bias).
+        targets: ``(B, T)`` integer targets.
+        label_smoothing: Label smoothing factor.
+        z_loss_weight: PaLM-style logit-norm regularizer weight.
+        chunk_size: Time-axis chunk size; auto-clamped to ``T``.
+
+    Returns:
+        Scalar mean loss (CE + z_loss).
+    """
+    assert hidden.dim() == 3, f"hidden must be (B, T, D), got {tuple(hidden.shape)}"
+    assert targets.shape == hidden.shape[:2], (
+        f"targets shape {tuple(targets.shape)} does not match hidden " f"{tuple(hidden.shape[:2])}"
+    )
+    if chunk_size <= 0:
+        raise ValueError(f"chunk_size must be > 0, got {chunk_size}")
+    B, T, _ = hidden.shape
+    chunk_size = min(chunk_size, T)
+    total = hidden.new_zeros(())
+    for start in range(0, T, chunk_size):
+        end = min(start + chunk_size, T)
+        h_c = hidden[:, start:end, :]
+        y_c = targets[:, start:end]
+        # use_reentrant=False propagates autocast and avoids the legacy
+        # reentrant-autograd path; required when inputs are leaf params.
+        chunk_sum = checkpoint(
+            _chunk_lm_loss_fn,
+            h_c,
+            y_c,
+            lm_head_weight,
+            label_smoothing,
+            z_loss_weight,
+            use_reentrant=False,
+        )
+        total = total + chunk_sum
+    return total / (B * T)
 
 
 def compute_perplexity(loss: float) -> float:
@@ -151,6 +245,8 @@ def train_step(
     label_smoothing: float = 0.0,
     gradient_accumulation_steps: int = 1,
     z_loss_weight: float = 0.0,
+    use_chunked_loss: bool = False,
+    loss_chunk_size: int = 256,
 ) -> float:
     """Single forward + backward step with optional AMP.
 
@@ -167,6 +263,10 @@ def train_step(
             The loss is divided by this before backward so that accumulated
             gradients equal the full-batch gradient regardless of accum count.
         z_loss_weight: PaLM Z-loss regularizer weight (0.0 = disabled).
+        use_chunked_loss: If True, use the chunked LM-head / CE path that
+            never materializes the full ``(B, T, vocab)`` logits tensor.
+            Training-only — eval still uses the standard path.
+        loss_chunk_size: Time-axis chunk size for the chunked LM-head path.
 
     Returns:
         Scalar loss for this batch (CE + z_loss, unscaled, for logging).
@@ -179,16 +279,37 @@ def train_step(
     if not accumulate_grad:
         optimizer.zero_grad()
 
-    # Forward pass with optional AMP
-    if use_amp and device.type == "cuda":
-        with torch.autocast(device_type="cuda"):
+    autocast_ctx = (
+        torch.autocast(device_type="cuda")
+        if (use_amp and device.type == "cuda")
+        else contextlib.nullcontext()
+    )
+    with autocast_ctx:
+        if use_chunked_loss:
+            inner = _unwrap_module(model)
+            if not hasattr(inner, "forward_hidden"):
+                raise AttributeError(
+                    "use_chunked_loss=True requires the model to expose a "
+                    "forward_hidden(x) method that returns pre-LM-head hidden states."
+                )
+            hidden = inner.forward_hidden(x)  # type: ignore[operator]
+            lm_head = inner.lm_head
+            assert (
+                isinstance(lm_head, nn.Linear) and lm_head.bias is None
+            ), "Chunked LM-head loss requires lm_head to be nn.Linear(bias=False)."
+            loss = compute_chunked_lm_loss(
+                hidden,
+                lm_head.weight,
+                y,
+                label_smoothing=label_smoothing,
+                z_loss_weight=z_loss_weight,
+                chunk_size=loss_chunk_size,
+            )
+        else:
             logits = model(x)  # (B, T, V)
             loss = compute_loss_with_smoothing(
                 logits, y, label_smoothing, z_loss_weight=z_loss_weight
             )
-    else:
-        logits = model(x)  # (B, T, V)
-        loss = compute_loss_with_smoothing(logits, y, label_smoothing, z_loss_weight=z_loss_weight)
 
     loss_value = loss.item()
     if not math.isfinite(loss_value):
@@ -278,6 +399,8 @@ def train(  # noqa: C901
     early_stopping_min_delta: float = 0.0,
     label_smoothing: float = 0.0,
     z_loss_weight: float = 0.0,
+    use_chunked_loss: bool = False,
+    loss_chunk_size: int = 256,
     tb_writer: Any | None = None,
     use_torch_compile: bool = False,
     checkpoint_interval: int = 0,
@@ -451,6 +574,8 @@ def train(  # noqa: C901
                         label_smoothing=label_smoothing,
                         gradient_accumulation_steps=gradient_accumulation_steps,
                         z_loss_weight=z_loss_weight,
+                        use_chunked_loss=use_chunked_loss,
+                        loss_chunk_size=loss_chunk_size,
                     )
             accumulated_loss += loss
             micro_step += 1

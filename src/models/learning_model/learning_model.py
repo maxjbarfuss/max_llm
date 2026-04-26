@@ -232,15 +232,18 @@ class LearningModel(nn.Module):
         if not self.use_factorized:
             self.lm_head.weight = self.token_embedding.embedding.weight
 
-    def forward(
+    def forward_hidden(
         self,
         x: torch.Tensor,
         kv_caches: "ModelKVCache | None" = None,
     ) -> torch.Tensor:
+        """Run the trunk and return final hidden states (B, T, d_model) before lm_head.
 
+        Used by the chunked LM-head / cross-entropy training path so the full
+        ``(B, T, vocab_size)`` logits tensor is never materialized.
+        """
         assert x.ndim == 2, f"LearningModel expects 2-D input (batch, seq_len), got shape {x.shape}"
         assert x.dtype == torch.long, f"LearningModel expects dtype=torch.long, got {x.dtype}"
-        B, T = x.shape
 
         # Token and position embeddings
         tok_emb = self.token_embedding(x)  # (B, T, embedding_dim)
@@ -262,6 +265,16 @@ class LearningModel(nn.Module):
         # Final layer norm (skipped for num_layers=0 to support Phase 2 MLP-only models)
         if self.final_norm is not None:
             h = self.final_norm(h)
+        return h
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        kv_caches: "ModelKVCache | None" = None,
+    ) -> torch.Tensor:
+
+        B, T = x.shape
+        h = self.forward_hidden(x, kv_caches=kv_caches)
 
         # LM head
         logits = self.lm_head(h)

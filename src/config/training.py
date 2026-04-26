@@ -58,6 +58,8 @@ class TrainingConfig:
     early_stopping_min_delta: float = 0.0
     label_smoothing: float = 0.0
     z_loss_weight: float = 0.0  # PaLM-style logit-scale regularizer; 1e-4 is a good default
+    use_chunked_loss: bool = False  # Training-only chunked LM-head + CE path
+    loss_chunk_size: int = 256  # Time-axis chunk size for chunked LM-head loss
     eval_on_test: bool = False
     eval_max_batches: int = 0  # 0 = no limit; set to cap expensive eval on large val sets
     benchmark_tasks: list[str] = field(default_factory=list)
@@ -117,6 +119,8 @@ class TrainingConfig:
         """Validate regularization hyperparameters."""
         if self.z_loss_weight < 0:
             raise ValueError("z_loss_weight must be >= 0")
+        if self.loss_chunk_size <= 0:
+            raise ValueError("loss_chunk_size must be > 0")
 
     def _validate_benchmark(self) -> None:
         """Validate benchmark harness configuration."""
