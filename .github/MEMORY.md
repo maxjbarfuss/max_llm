@@ -6,13 +6,9 @@
 
 ## Current Work
 
-Added config-wired activation checkpointing modes and interval. `TrainingConfig` now has `selective_checkpointing_mode` ("full" or "ffn") and `selective_checkpointing_interval` (≥1). `src/training/train.py` passes these to `model.gradient_checkpointing_enable()`. `_run_attn_only` in `LearningModel` now skips checkpointing in "ffn" mode (matches existing `_run_block` behaviour for standard path). Tests cover config validation and numeric equivalence for interval and ffn-mode on full_attn/block_attn residual paths.
-
 ---
 
 ## Thinking Notes
-
-Files changed: `src/config/training.py`, `src/training/train.py`, `src/models/learning_model/learning_model.py`, `tests/unit/test_config.py`, `tests/unit/test_learning_model.py`. Validation: `make test-quick` clean, `ruff check`, `mypy`, `black --check` all clean.
 
 ---
 

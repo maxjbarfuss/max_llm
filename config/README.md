@@ -101,6 +101,8 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `attention_backend` | string | `"standard"` | `"flash"` (recommended), `"sage"`, `"xformers"`, `"standard"`; see [OPTIMIZATION.md](../docs/OPTIMIZATION.md) |
 | `use_torch_compile` | bool | `false` | AOT kernel fusion; incompatible with `flash` and `sage` backends |
 | `selective_checkpointing` | bool | `false` | Gradient checkpointing — trades compute for memory (Phase 4+) |
+| `selective_checkpointing_mode` | `"full"` \| `"ffn"` | `"full"` | `"full"` recomputes the whole block; `"ffn"` runs attention eagerly and only recomputes the FFN sublayer (less memory savings, less compute overhead) |
+| `selective_checkpointing_interval` | int | `1` | Checkpoint every N blocks; `2` checkpoints every other block, recovering roughly half the compute while keeping the memory benefit of those blocks |
 
 ### Checkpointing and Logging
 
