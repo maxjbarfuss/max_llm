@@ -41,6 +41,7 @@ class ModelConfig:
     rope_high_freq_factor: float = 4.0  # YaRN: high-frequency threshold β
     rope_original_max_seq_len: int | None = None  # YaRN: training context length for thresholds
     intermediate_size: int | None = None  # Defaults to 4*hidden_size
+    ffn_chunk_size: int | None = None  # None = disabled; positive chunks sequence FFN path
     num_experts: int = 1
     experts_per_token: int = 1
     moe_frequency: int = 0
@@ -185,6 +186,8 @@ class ModelConfig:
 
         if self.intermediate_size is not None and self.intermediate_size <= 0:
             raise ValueError("intermediate_size must be positive when provided")
+        if self.ffn_chunk_size is not None and self.ffn_chunk_size <= 0:
+            raise ValueError("ffn_chunk_size must be positive when provided")
         if self.gru_hidden_size is not None and self.gru_hidden_size <= 0:
             raise ValueError("gru_hidden_size must be positive when provided")
 

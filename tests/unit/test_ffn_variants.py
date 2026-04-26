@@ -1,5 +1,7 @@
 """Tests for SwiGLU, ReLU², and xIELU feed-forward network variants."""
 
+from typing import Protocol, cast
+
 import pytest
 import torch
 
@@ -12,8 +14,10 @@ D = 128
 B, T = 2, 16
 
 
-# ---------------------------------------------------------------------------
-# swiglu_intermediate_size helper
+class _ChunkedFFN(Protocol):
+    ffn_chunk_size: int | None
+
+
 # ---------------------------------------------------------------------------
 
 
@@ -42,6 +46,48 @@ def test_make_ffn_forward_shape(ffn_type: str) -> None:
 def test_make_ffn_invalid_type() -> None:
     with pytest.raises(AssertionError):
         make_ffn("relu3", D, D * 4)
+
+
+def _intermediate_for(ffn_type: str) -> int:
+    return swiglu_intermediate_size(D) if ffn_type == "swiglu" else D * 4
+
+
+@pytest.mark.parametrize("ffn_type", ["gelu", "swiglu", "relu2", "xielu"])
+def test_chunked_ffn_matches_full_forward_and_backward(ffn_type: str) -> None:
+    torch.manual_seed(0)
+    intermediate = _intermediate_for(ffn_type)
+    full = make_ffn(ffn_type, D, intermediate, dropout=0.0)
+    chunked = make_ffn(ffn_type, D, intermediate, dropout=0.0, ffn_chunk_size=5)
+    chunked.load_state_dict(full.state_dict())
+    atol = rtol = 1e-5
+
+    x_full = torch.randn(B, T, D, requires_grad=True)
+    x_chunked = x_full.detach().clone().requires_grad_(True)
+
+    out_full = full(x_full)
+    out_chunked = chunked(x_chunked)
+    assert torch.allclose(out_full, out_chunked, atol=atol, rtol=rtol)
+
+    grad = torch.randn_like(out_full)
+    out_full.backward(grad)
+    out_chunked.backward(grad)
+    assert x_full.grad is not None
+    assert x_chunked.grad is not None
+    assert torch.allclose(x_full.grad, x_chunked.grad, atol=atol, rtol=rtol)
+
+    full_grads = dict(full.named_parameters())
+    chunked_grads = dict(chunked.named_parameters())
+    assert full_grads.keys() == chunked_grads.keys()
+    for name, full_param in full_grads.items():
+        chunked_grad = chunked_grads[name].grad
+        assert full_param.grad is not None
+        assert chunked_grad is not None
+        assert torch.allclose(full_param.grad, chunked_grad, atol=atol, rtol=rtol)
+
+
+def test_make_ffn_invalid_chunk_size() -> None:
+    with pytest.raises(ValueError, match="ffn_chunk_size"):
+        make_ffn("gelu", D, D * 4, ffn_chunk_size=0)
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +279,12 @@ class TestxIELU:
         g = torch.randn_like(y)
         y.backward(g)
         y_ref.backward(g)
+        assert x.grad is not None
+        assert x_ref.grad is not None
+        assert act.alpha_p.grad is not None
+        assert ap_ref.grad is not None
+        assert act.alpha_n.grad is not None
+        assert an_ref.grad is not None
         assert torch.allclose(x.grad, x_ref.grad, atol=1e-10, rtol=1e-10)
         assert torch.allclose(act.alpha_p.grad, ap_ref.grad, atol=1e-10, rtol=1e-10)
         assert torch.allclose(act.alpha_n.grad, an_ref.grad, atol=1e-10, rtol=1e-10)
@@ -253,6 +305,8 @@ class TestxIELU:
             eps=1e-6,
             atol=1e-5,
         )
+
+        # swiglu_intermediate_size helper
 
 
 # ---------------------------------------------------------------------------
@@ -320,5 +374,28 @@ def test_learning_model_from_config_swiglu() -> None:
         intermediate_size=swiglu_intermediate_size(D),
     )
     model = LearningModel.from_config(config, attention_backend="standard")
+    x = torch.randint(0, 256, (1, 16))
+    assert model(x).shape == (1, 16, 256)
+
+
+def test_learning_model_from_config_ffn_chunk_size() -> None:
+    from src.config.model import ModelConfig
+    from src.models.learning_model.learning_model import LearningModel
+
+    config = ModelConfig(
+        hidden_size=D,
+        vocab_size=256,
+        max_seq_length=32,
+        num_layers=2,
+        num_heads=4,
+        norm_type="rms",
+        ffn_type="xielu",
+        intermediate_size=D * 4,
+        ffn_chunk_size=4,
+    )
+    model = LearningModel.from_config(config, attention_backend="standard")
+    for block in model.blocks:
+        ffn = cast(_ChunkedFFN, block.feedforward)
+        assert ffn.ffn_chunk_size == 4
     x = torch.randint(0, 256, (1, 16))
     assert model(x).shape == (1, 16, 256)

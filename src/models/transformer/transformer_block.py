@@ -36,6 +36,7 @@ class TransformerBlock(nn.Module):
         rope:              Optional RotaryEmbedding to apply to Q/K (MHA/SWA only).
         ffn_type:          One of "gelu", "swiglu", "relu2", "xielu" (default: "gelu").
         intermediate_size: FFN hidden dimension. Overrides ff_expansion_ratio when set.
+        ffn_chunk_size:    Optional sequence chunk size for FFN execution.
         mla_latent_dim:    Latent dimension used when attn_type="mla".
         attn_bias:         Optional ALiBi or RelativePositionBias to add to attention logits.
         attn_type:         One of "mha", "swa", "rla", "mla" (default: "mha").
@@ -55,6 +56,7 @@ class TransformerBlock(nn.Module):
         rope: RotaryEmbedding | AdditiveRoPE | None = None,
         ffn_type: str = "gelu",
         intermediate_size: int | None = None,
+        ffn_chunk_size: int | None = None,
         mla_latent_dim: int | None = None,
         attn_bias: ALiBi | RelativePositionBias | None = None,
         attn_type: str = "mha",
@@ -86,7 +88,14 @@ class TransformerBlock(nn.Module):
         _intermediate = (
             intermediate_size if intermediate_size is not None else d_model * ff_expansion_ratio
         )
-        self.feedforward = make_ffn(ffn_type, d_model, _intermediate, dropout, num_layers)
+        self.feedforward = make_ffn(
+            ffn_type,
+            d_model,
+            _intermediate,
+            dropout,
+            num_layers,
+            ffn_chunk_size,
+        )
 
     @staticmethod
     def _validate_init(d_model: int, num_heads: int, norm_type: str) -> None:

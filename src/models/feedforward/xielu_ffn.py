@@ -21,15 +21,20 @@ Performance: 10.207 ppl vs ReLU² 10.352 / SwiGLU 10.517 on 1.1B model / 126B to
 """
 
 import math
+from collections.abc import Callable
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.feedforward.chunking import chunk_sequence, validate_ffn_chunk_size
+
 _BETA = 0.5
 _EPS = -1e-6  # clamp_max for expm1 stability
 _ALPHA_P_INIT = 0.8
 _ALPHA_N_INIT = 0.8
+_ApplyFn = Callable[..., torch.Tensor]
 
 
 def _inv_softplus(y: float) -> float:
@@ -48,7 +53,7 @@ class _XIELUFunction(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        ctx: torch.autograd.function.FunctionCtx,
+        ctx: Any,
         x: torch.Tensor,
         alpha_p_raw: torch.Tensor,
         alpha_n_raw: torch.Tensor,
@@ -62,19 +67,17 @@ class _XIELUFunction(torch.autograd.Function):
         neg = alpha_n * torch.expm1(neg_x) - alpha_n * x + beta * x
         out = torch.where(x > 0, pos, neg)
         ctx.save_for_backward(x, alpha_p_raw, alpha_n_raw)
-        ctx.beta = beta  # type: ignore[attr-defined]
-        ctx.eps = eps  # type: ignore[attr-defined]
+        ctx.beta = beta
+        ctx.eps = eps
         return out
 
     @staticmethod
-    def backward(
-        ctx: torch.autograd.function.FunctionCtx,
-        grad_out: torch.Tensor,
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None, None, None]:
-        x, alpha_p_raw, alpha_n_raw = ctx.saved_tensors  # type: ignore[attr-defined]
-        beta: float = ctx.beta  # type: ignore[attr-defined]
-        eps: float = ctx.eps  # type: ignore[attr-defined]
-        needs_x, needs_ap, needs_an = ctx.needs_input_grad[:3]  # type: ignore[attr-defined]
+    def backward(ctx: Any, *grad_outputs: Any) -> Any:
+        (grad_out,) = grad_outputs
+        x, alpha_p_raw, alpha_n_raw = ctx.saved_tensors
+        beta: float = ctx.beta
+        eps: float = ctx.eps
+        needs_x, needs_ap, needs_an = ctx.needs_input_grad[:3]
 
         alpha_p = F.softplus(alpha_p_raw)
         alpha_n = beta + F.softplus(alpha_n_raw)
@@ -148,7 +151,8 @@ class xIELU(nn.Module):
         self.alpha_n = nn.Parameter(torch.tensor([_inv_softplus(alpha_n_init - beta)]))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return _XIELUFunction.apply(x, self.alpha_p, self.alpha_n, self.beta, self.eps)
+        apply = cast(_ApplyFn, _XIELUFunction.apply)  # pyright: ignore
+        return apply(x, self.alpha_p, self.alpha_n, self.beta, self.eps)
 
 
 class xIELUFFN(nn.Module):
@@ -170,9 +174,12 @@ class xIELUFFN(nn.Module):
         intermediate_size: int,
         dropout: float = 0.0,
         num_layers: int = 1,
+        ffn_chunk_size: int | None = None,
     ) -> None:
         super().__init__()
+        validate_ffn_chunk_size(ffn_chunk_size)
         self.d_model = d_model
+        self.ffn_chunk_size = ffn_chunk_size
 
         self.linear1 = nn.Linear(d_model, intermediate_size, bias=True)
         self.activation = xIELU()
@@ -191,4 +198,7 @@ class xIELUFFN(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         assert x.ndim == 3, f"xIELUFFN expects (B, T, d_model), got {x.shape}"
         assert x.shape[-1] == self.d_model, f"xIELUFFN input dim {x.shape[-1]} != {self.d_model}"
+        return chunk_sequence(x, self.ffn_chunk_size, self._forward_chunk)
+
+    def _forward_chunk(self, x: torch.Tensor) -> torch.Tensor:
         return self.linear2(self.dropout(self.activation(self.linear1(x))))

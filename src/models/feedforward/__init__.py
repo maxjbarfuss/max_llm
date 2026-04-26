@@ -16,6 +16,7 @@ def make_ffn(
     intermediate_size: int,
     dropout: float = 0.0,
     num_layers: int = 1,
+    ffn_chunk_size: int | None = None,
 ) -> nn.Module:
     """Factory for feed-forward network variants.
 
@@ -25,16 +26,21 @@ def make_ffn(
         intermediate_size: Hidden dimension. For SwiGLU, use swiglu_intermediate_size(d_model).
         dropout:           Dropout probability.
         num_layers:        Total transformer layers (for scaled residual init).
+        ffn_chunk_size:    Optional sequence chunk size for FFN execution.
     """
     assert ffn_type in _FFN_TYPES, f"ffn_type must be one of {_FFN_TYPES}, got '{ffn_type}'"
     if ffn_type == "swiglu":
-        return SwiGLU(d_model, intermediate_size, dropout, num_layers)
+        return SwiGLU(d_model, intermediate_size, dropout, num_layers, ffn_chunk_size)
     if ffn_type == "relu2":
-        return ReLU2FFN(d_model, intermediate_size, dropout, num_layers)
+        return ReLU2FFN(d_model, intermediate_size, dropout, num_layers, ffn_chunk_size)
     if ffn_type == "xielu":
-        return xIELUFFN(d_model, intermediate_size, dropout, num_layers)
+        return xIELUFFN(d_model, intermediate_size, dropout, num_layers, ffn_chunk_size)
     return FeedForward(
-        d_model, dropout=dropout, num_layers=num_layers, intermediate_size=intermediate_size
+        d_model,
+        dropout=dropout,
+        num_layers=num_layers,
+        intermediate_size=intermediate_size,
+        ffn_chunk_size=ffn_chunk_size,
     )
 
 

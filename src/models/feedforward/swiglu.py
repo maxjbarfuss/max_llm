@@ -18,6 +18,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.feedforward.chunking import chunk_sequence, validate_ffn_chunk_size
+
 
 def swiglu_intermediate_size(d_model: int) -> int:
     """Compute SwiGLU intermediate size: 4 × d_model × 2/3, rounded to next multiple of 256."""
@@ -42,9 +44,12 @@ class SwiGLU(nn.Module):
         intermediate_size: int,
         dropout: float = 0.0,
         num_layers: int = 1,
+        ffn_chunk_size: int | None = None,
     ) -> None:
         super().__init__()
+        validate_ffn_chunk_size(ffn_chunk_size)
         self.d_model = d_model
+        self.ffn_chunk_size = ffn_chunk_size
 
         # No bias — Llama convention for gated FFNs
         self.gate_proj = nn.Linear(d_model, intermediate_size, bias=False)
@@ -63,4 +68,7 @@ class SwiGLU(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         assert x.ndim == 3, f"SwiGLU expects (B, T, d_model), got {x.shape}"
         assert x.shape[-1] == self.d_model, f"SwiGLU input dim {x.shape[-1]} != {self.d_model}"
+        return chunk_sequence(x, self.ffn_chunk_size, self._forward_chunk)
+
+    def _forward_chunk(self, x: torch.Tensor) -> torch.Tensor:
         return self.down_proj(self.dropout(F.silu(self.gate_proj(x)) * self.up_proj(x)))

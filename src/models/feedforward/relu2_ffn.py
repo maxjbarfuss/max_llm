@@ -20,6 +20,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.feedforward.chunking import chunk_sequence, validate_ffn_chunk_size
+
 
 class ReLU2FFN(nn.Module):
     """Feed-forward network with ReLU² activation.
@@ -37,9 +39,12 @@ class ReLU2FFN(nn.Module):
         intermediate_size: int,
         dropout: float = 0.0,
         num_layers: int = 1,
+        ffn_chunk_size: int | None = None,
     ) -> None:
         super().__init__()
+        validate_ffn_chunk_size(ffn_chunk_size)
         self.d_model = d_model
+        self.ffn_chunk_size = ffn_chunk_size
 
         self.linear1 = nn.Linear(d_model, intermediate_size, bias=True)
         self.linear2 = nn.Linear(intermediate_size, d_model, bias=True)
@@ -57,4 +62,7 @@ class ReLU2FFN(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         assert x.ndim == 3, f"ReLU2FFN expects (B, T, d_model), got {x.shape}"
         assert x.shape[-1] == self.d_model, f"ReLU2FFN input dim {x.shape[-1]} != {self.d_model}"
+        return chunk_sequence(x, self.ffn_chunk_size, self._forward_chunk)
+
+    def _forward_chunk(self, x: torch.Tensor) -> torch.Tensor:
         return self.linear2(self.dropout(F.relu(self.linear1(x)).pow(2)))

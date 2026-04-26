@@ -5,6 +5,8 @@ import math
 import torch
 import torch.nn as nn
 
+from src.models.feedforward.chunking import chunk_sequence, validate_ffn_chunk_size
+
 
 class FeedForward(nn.Module):
     """Feed-forward network: Linear(d_model -> 4*d_model) -> GELU(tanh) -> Linear(4*d_model -> d_model)."""
@@ -16,10 +18,13 @@ class FeedForward(nn.Module):
         dropout: float = 0.0,
         num_layers: int = 1,
         intermediate_size: int | None = None,
+        ffn_chunk_size: int | None = None,
     ) -> None:
         super().__init__()
+        validate_ffn_chunk_size(ffn_chunk_size)
         self.d_model = d_model
         self.num_layers = num_layers
+        self.ffn_chunk_size = ffn_chunk_size
         hidden_dim = (
             intermediate_size if intermediate_size is not None else d_model * expansion_ratio
         )
@@ -51,6 +56,9 @@ class FeedForward(nn.Module):
             x.shape[-1] == self.d_model
         ), f"FeedForward input last dim {x.shape[-1]} != d_model {self.d_model}"
         in_shape = x.shape
-        x = self.linear2(self.dropout(self.activation(self.linear1(x))))
+        x = chunk_sequence(x, self.ffn_chunk_size, self._forward_chunk)
         assert x.shape == in_shape, f"FeedForward output shape {x.shape} != input shape {in_shape}"
         return x
+
+    def _forward_chunk(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear2(self.dropout(self.activation(self.linear1(x))))
