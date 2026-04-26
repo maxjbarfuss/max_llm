@@ -87,6 +87,30 @@ class TestAttnResidual:
         out_stacked = ar.forward_stacked(0, padded, valid_sources=len(sources))
         assert torch.allclose(out_list, out_stacked, atol=1e-5)
 
+    def test_list_path_does_not_stack_source_tensors(self, monkeypatch) -> None:
+        """List path should avoid allocating a large (B,T,n_src,d) tensor."""
+        B, T, d = 2, 8, 64
+        ar = AttnResidual(num_sublayers=4, d_model=d)
+        sources = [torch.randn(B, T, d) for _ in range(3)]
+        original_stack = torch.stack
+
+        def guarded_stack(
+            tensors: list[torch.Tensor] | tuple[torch.Tensor, ...],
+            dim: int = 0,
+            *,
+            out: torch.Tensor | None = None,
+        ) -> torch.Tensor:
+            tensor_list = list(tensors)
+            if tensor_list and isinstance(tensor_list[0], torch.Tensor):
+                assert tensor_list[0].ndim != 3, "source tensors should not be stacked"
+            if out is None:
+                return original_stack(tensor_list, dim=dim)
+            return original_stack(tensor_list, dim=dim, out=out)
+
+        monkeypatch.setattr(torch, "stack", guarded_stack)
+        out = ar(0, sources)
+        assert out.shape == (B, T, d)
+
 
 # ---------------------------------------------------------------------------
 # TransformerBlock sublayer methods

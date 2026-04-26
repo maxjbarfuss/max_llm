@@ -57,9 +57,17 @@ class AttnResidual(nn.Module):
         Returns:
             Tensor of shape (B, T, d_model): weighted combination of sources.
         """
-        # V: (B, T, n_src, d)
-        V = torch.stack(sources, dim=-2)
-        return self.forward_stacked(query_idx, V, valid_sources=len(sources))
+        assert sources, "AttnResidual requires at least one source tensor"
+        q = self.queries[query_idx].to(sources[0].dtype)  # (d,)
+        scores = torch.stack(
+            [(self.key_norm(source) * q).sum(-1) for source in sources],
+            dim=-1,
+        )
+        weights = F.softmax(scores, dim=-1)
+        out = sources[0] * weights[..., 0:1]
+        for source_idx, source in enumerate(sources[1:], start=1):
+            out = out + source * weights[..., source_idx : source_idx + 1]
+        return out
 
     def forward_stacked(
         self,

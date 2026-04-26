@@ -4,14 +4,16 @@ Supports Phase 2 (embedding-only, num_layers=0) through Phase 4+ (transformer-ba
 """
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 from typing_extensions import Self
 
 from src.config.model import ModelConfig
 from src.models.embeddings.token_embedding import TokenEmbedding
+from src.models.kv_cache import LayerKVCache, ModelKVCache
 from src.models.norm import make_norm
 from src.models.position.add_rope import AdditiveRoPE
 from src.models.position.alibi import ALiBi
@@ -20,9 +22,6 @@ from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
 from src.models.residual.attn_residual import AttnResidual
 from src.models.transformer.transformer_block import TransformerBlock
-
-if TYPE_CHECKING:
-    from src.models.kv_cache import ModelKVCache
 
 
 def _build_pos_modules(
@@ -144,6 +143,9 @@ class LearningModel(nn.Module):
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len
         self.share_layer_weights = share_layer_weights
+        self.gradient_checkpointing = False
+        self.gradient_checkpointing_mode = "full"
+        self.gradient_checkpointing_interval = 1
 
         # Factorized embeddings: use smaller embedding_dim if specified
         self.embedding_dim = embedding_dim or d_model
@@ -290,15 +292,60 @@ class LearningModel(nn.Module):
     ) -> torch.Tensor:
         """Standard pre-norm residual stack (original behaviour)."""
         if self.share_layer_weights:
-            shared_block = self.blocks[0]
+            shared_block = cast(TransformerBlock, self.blocks[0])
             for i in range(self.num_layers):
                 kv = kv_caches[i] if kv_caches is not None else None
-                h = shared_block(h, kv_cache=kv)
+                h = self._run_block(shared_block, h, i, kv_cache=kv)
             return h
         for i, block in enumerate(self.blocks):
             kv = kv_caches[i] if kv_caches is not None else None
-            h = block(h, kv_cache=kv)
+            h = self._run_block(cast(TransformerBlock, block), h, i, kv_cache=kv)
         return h
+
+    def _should_checkpoint(self, block_idx: int, kv_cache: LayerKVCache | None = None) -> bool:
+        return (
+            self.training
+            and self.gradient_checkpointing
+            and kv_cache is None
+            and self.num_layers > 0
+            and block_idx % self.gradient_checkpointing_interval == 0
+        )
+
+    @staticmethod
+    def _checkpoint_tensor_fn(fn: Any, *args: torch.Tensor) -> torch.Tensor:
+        return checkpoint(fn, *args, use_reentrant=False)
+
+    def _run_block(
+        self,
+        block: TransformerBlock,
+        h: torch.Tensor,
+        block_idx: int,
+        kv_cache: LayerKVCache | None = None,
+    ) -> torch.Tensor:
+        if not self._should_checkpoint(block_idx, kv_cache):
+            return block(h, kv_cache=kv_cache)
+        if self.gradient_checkpointing_mode == "ffn":
+            h = block._apply_attention_residual(h, kv_cache=None)  # noqa: SLF001
+            return self._checkpoint_tensor_fn(block._apply_feedforward_residual, h)  # noqa: SLF001
+        return self._checkpoint_tensor_fn(lambda tensor: block(tensor, kv_cache=None), h)
+
+    def _run_attn_only(
+        self,
+        block: TransformerBlock,
+        h: torch.Tensor,
+        block_idx: int,
+        kv_cache: LayerKVCache | None = None,
+    ) -> torch.Tensor:
+        if not self._should_checkpoint(block_idx, kv_cache):
+            return block.apply_attn_only(h, kv_cache=kv_cache)
+        return self._checkpoint_tensor_fn(lambda tensor: block.apply_attn_only(tensor), h)
+
+    def _run_ffn_only(
+        self, block: TransformerBlock, h: torch.Tensor, block_idx: int
+    ) -> torch.Tensor:
+        if not self._should_checkpoint(block_idx):
+            return block.apply_ffn_only(h)
+        return self._checkpoint_tensor_fn(block.apply_ffn_only, h)
 
     def _apply_blocks_full_attn_res(
         self,
@@ -320,12 +367,12 @@ class LearningModel(nn.Module):
             kv = kv_caches[block_idx] if kv_caches is not None else None
             # Attention sublayer
             h_in = ar(sublayer_idx, values)
-            values.append(block.apply_attn_only(h_in, kv_cache=kv))
+            values.append(self._run_attn_only(block, h_in, block_idx, kv_cache=kv))
             sublayer_idx += 1
 
             # FFN sublayer
             h_in = ar(sublayer_idx, values)
-            values.append(block.apply_ffn_only(h_in))
+            values.append(self._run_ffn_only(block, h_in, block_idx))
             sublayer_idx += 1
 
         return ar(sublayer_idx, values)
@@ -352,9 +399,6 @@ class LearningModel(nn.Module):
         )
         ar = self.attn_res
         S = self.num_layers // N  # transformer blocks per group
-        B, T, _ = h.shape
-        max_sources = N + 1
-
         # b_0 = token embedding; block_sums grows to [b_0, b_1, ..., b_N]
         block_sums: list[torch.Tensor] = [h]
         sublayer_idx = 0
@@ -378,40 +422,16 @@ class LearningModel(nn.Module):
                     assert partial_b is not None
                     sources = [*block_sums, partial_b]
 
-                valid_sources = len(sources)
-                stacked_sources = torch.stack(sources, dim=-2)
-                if valid_sources < max_sources:
-                    pad = stacked_sources.new_zeros(
-                        (B, T, max_sources - valid_sources, self.d_model)
-                    )
-                    stacked_sources = torch.cat((stacked_sources, pad), dim=-2)
-
-                h_in = ar.forward_stacked(
-                    sublayer_idx,
-                    stacked_sources,
-                    valid_sources=valid_sources,
-                )
-                delta_attn = block.apply_attn_only(h_in, kv_cache=kv)
+                h_in = ar(sublayer_idx, sources)
+                delta_attn = self._run_attn_only(block, h_in, block_idx, kv_cache=kv)
                 partial_b = delta_attn if partial_b is None else partial_b + delta_attn
                 sublayer_idx += 1
 
                 # --- FFN sublayer ---
                 assert partial_b is not None
                 sources = [*block_sums, partial_b]
-                valid_sources = len(sources)
-                stacked_sources = torch.stack(sources, dim=-2)
-                if valid_sources < max_sources:
-                    pad = stacked_sources.new_zeros(
-                        (B, T, max_sources - valid_sources, self.d_model)
-                    )
-                    stacked_sources = torch.cat((stacked_sources, pad), dim=-2)
-
-                h_in = ar.forward_stacked(
-                    sublayer_idx,
-                    stacked_sources,
-                    valid_sources=valid_sources,
-                )
-                delta_ffn = block.apply_ffn_only(h_in)
+                h_in = ar(sublayer_idx, sources)
+                delta_ffn = self._run_ffn_only(block, h_in, block_idx)
                 partial_b = partial_b + delta_ffn
                 sublayer_idx += 1
 
@@ -420,6 +440,20 @@ class LearningModel(nn.Module):
 
         # Final aggregation: attend over all N+1 block summaries
         return ar(sublayer_idx, block_sums)
+
+    def gradient_checkpointing_enable(self, mode: str = "full", interval: int = 1) -> None:
+        """Enable activation checkpointing for training-time transformer blocks."""
+        if mode not in {"full", "ffn"}:
+            raise ValueError("gradient checkpointing mode must be 'full' or 'ffn'")
+        if interval < 1:
+            raise ValueError("gradient checkpointing interval must be >= 1")
+        self.gradient_checkpointing = True
+        self.gradient_checkpointing_mode = mode
+        self.gradient_checkpointing_interval = interval
+
+    def gradient_checkpointing_disable(self) -> None:
+        """Disable activation checkpointing."""
+        self.gradient_checkpointing = False
 
     def make_kv_cache(
         self,

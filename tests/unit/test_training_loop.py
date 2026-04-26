@@ -1,5 +1,6 @@
 """Unit tests for the Phase 2/3 training loop."""
 
+import csv
 import math
 
 import pytest
@@ -516,6 +517,35 @@ class TestEnhancedTrainingFeatures:
         assert len(metrics["perplexities"]) == 10
         assert len(metrics["tokens_per_sec"]) == 10
         assert "gpu_memory_mb" not in metrics  # Not requested
+
+    def test_train_writes_component_profile_with_gradient_accumulation(self, tmp_path):
+        """Component profiling writes one row per optimizer step, not per micro-batch."""
+        from torch.utils.data import DataLoader, TensorDataset
+
+        model = _make_model()
+        x = torch.randint(0, 128, (24, 8))
+        y = torch.randint(0, 128, (24, 8))
+        loader = DataLoader(TensorDataset(x, y), batch_size=4)
+        profile_path = tmp_path / "component_profile.csv"
+
+        metrics = train(
+            model=model,
+            train_loader=loader,
+            optimizer=_make_optimizer(model),
+            max_steps=3,
+            log_interval=0,
+            gradient_accumulation_steps=2,
+            component_profile_path=profile_path,
+        )
+
+        assert len(metrics["losses"]) == 3
+        with profile_path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+
+        assert [row["step"] for row in rows] == ["1", "2", "3"]
+        assert all(float(row["forward_backward_ms"]) > 0 for row in rows)
+        assert all(float(row["optimizer_ms"]) > 0 for row in rows)
+        assert all(float(row["step_ms"]) >= float(row["forward_backward_ms"]) for row in rows)
 
 
 class TestZLoss:

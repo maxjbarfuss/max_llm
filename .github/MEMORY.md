@@ -6,9 +6,11 @@
 
 ## Current Work
 
+
 ---
 
 ## Thinking Notes
+
 
 ---
 

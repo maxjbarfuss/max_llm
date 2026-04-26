@@ -147,6 +147,13 @@ Wave 3 — training stack upgrades (high impact):
 	- Tune model/training shape for hardware efficiency: sequence length, microbatch size, grad accumulation, attention backend, compile mode, activation checkpointing, precision, and optimizer settings
 	- Compare throughput-quality tradeoffs across AdamW, batched Muon, and reduced-NS-step Muon; choose default for large Phase 5 corpus runs
 	- Document target tokens/sec, memory headroom, and recommended config template before launching larger datasets
+- ☐ **Architecture/code memory optimizations before the next shape sweep**:
+	- Implement a training-only chunked LM-head / cross-entropy path so long-context and 32K-vocab runs do not materialize full `(B,T,V)` logits for the whole sequence.
+	- Add a memory-efficient xIELU backward path, likely via a custom autograd function that recomputes branches, because the current ceiling fails in xIELU/FFN activation memory.
+	- Add optional FFN sequence chunking for long-context probes, trading throughput for lower peak `(B,T,intermediate_size)` activation memory.
+	- Extend checkpointing controls beyond the current blunt full-block mode: config-wired mode/interval, FFN-only comparison, and a block-attn residual + sublayer recompute mode.
+	- Revisit FSDP for larger parameter sweeps: current model-level `shard_grad_op` lowers memory slightly but does not raise the activation-dominated microbatch ceiling; full-shard/per-block wrapping needs either non-block_attn variants or a block_attn-compatible sharded execution path.
+	- Integrate training-side sequence-packing masks/varlen attention so packed corpora increase useful tokens per memory footprint instead of only improving prep artifacts.
 - ☐ **μP (Maximal Update Parameterization)**:
 	- Update init + per-layer LR scaling for width transfer
 	- Run LR sweep on 6L/256H proxy (~5M params)
@@ -155,6 +162,7 @@ Wave 3 — training stack upgrades (high impact):
 Wave 3 validation note (2026-04-25): Muon optimizer implementation completed with Newton-Schulz orthogonalization, Muon+AdamW composite optimizer state serialization, `TrainingConfig` fields (`optimizer_type`, `muon_lr`, `muon_momentum`, `muon_ns_steps`), and training-entrypoint optimizer/resume wiring. Focused tests: `tests/unit/test_optimizer.py` and `tests/unit/test_config.py` passing (62 tests).
 Wave 3 validation note (2026-04-25): Muon comparison configs `config/ephemeral/p5_wave3_muon_cmp_adamw_20260425.toml` and `config/ephemeral/p5_wave3_muon_cmp_muon_20260425.toml` finished successfully. On this tiny MHA benchmark, Muon was less hardware-efficient than AdamW but more sample-efficient; by roughly AdamW's full wall-clock budget, Muon had already surpassed AdamW's final validation loss.
 Wave 3 validation note (2026-04-25): Aggressive Muon efficiency pass batched same-shape Newton-Schulz updates across Muon-managed matrices. Tiny MHA shape distribution was favorable (`12x 256x256`, `4x 256x512`, `4x 512x256`), reducing 20 per-parameter orthogonalization chains to 3 batched chains per step. Optimized config `config/ephemeral/p5_wave3_muon_cmp_muon_batched_20260425.toml` completed successfully with final val_loss=`4.1070`, median throughput=`258k tok/s`, and wall time ≈ `5m22s`.
+Wave 3 validation note (2026-04-26): Memory-efficiency first slice completed. Real LearningModel activation checkpointing now activates before DDP/FSDP wrapping; `--profile` writes per-rank component-profile CSVs; eager block_attn residual mixing no longer allocates padded `(B,T,n_src,d)` source tensors. On dual 24 GB-class GPUs with 12L/1024H/2048 tokens, MLA + Flash + xIELU + block_attn: DDP checkpointed batch_size=18 succeeds at ~21.9 GiB/rank and batch_size=19 OOMs during backward; FSDP model-level `shard_grad_op` checkpointed batch_size=18 succeeds at ~21.6 GiB/rank and batch_size=19 also OOMs. Next shape expansion should prioritize chunked logits/loss, memory-efficient xIELU, FFN sequence chunking, and more selective checkpointing before more manual config probing.
 
 Wave 4 — data products for post-training (depends on Waves 0-1):
 - ☐ **SFT data**: curate 1-5M instruction-response pairs; produce domain subsets for continual learning

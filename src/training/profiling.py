@@ -8,6 +8,10 @@ Provides:
 """
 
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -91,6 +95,122 @@ class GPUMemoryMonitor:
             "reserved_mb": self.reserved_mb(),
             "peak_mb": self.peak_mb(),
         }
+
+
+@dataclass
+class ComponentProfileRow:
+    """One optimizer-step component profile sample."""
+
+    step: int
+    epoch: int
+    rank: int
+    data_wait_ms: float = 0.0
+    forward_backward_ms: float = 0.0
+    optimizer_ms: float = 0.0
+    eval_ms: float = 0.0
+    checkpoint_ms: float = 0.0
+    benchmark_ms: float = 0.0
+    step_ms: float = 0.0
+    peak_memory_mb: float = 0.0
+    allocated_memory_mb: float = 0.0
+    reserved_memory_mb: float = 0.0
+
+
+class ComponentProfiler:
+    """Collect step-level time and memory samples for training components."""
+
+    fieldnames = [
+        "step",
+        "epoch",
+        "rank",
+        "data_wait_ms",
+        "forward_backward_ms",
+        "optimizer_ms",
+        "eval_ms",
+        "checkpoint_ms",
+        "benchmark_ms",
+        "step_ms",
+        "peak_memory_mb",
+        "allocated_memory_mb",
+        "reserved_memory_mb",
+    ]
+
+    def __init__(self, rank: int = 0, device: torch.device | None = None) -> None:
+        self.rank = rank
+        self.device = device
+        self._current: ComponentProfileRow | None = None
+        self.rows: list[ComponentProfileRow] = []
+
+    def start_step(self, step: int, epoch: int, data_wait_ms: float = 0.0) -> None:
+        if self.device is not None and self.device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats(self.device)
+        self._current = ComponentProfileRow(
+            step=step,
+            epoch=epoch,
+            rank=self.rank,
+            data_wait_ms=data_wait_ms,
+        )
+
+    @property
+    def current_row(self) -> ComponentProfileRow | None:
+        return self._current
+
+    @contextmanager
+    def record(self, field: str) -> Iterator[None]:
+        start = time.perf_counter()
+        try:
+            yield
+        finally:
+            if self._current is not None:
+                elapsed_ms = (time.perf_counter() - start) * 1000
+                setattr(self._current, field, getattr(self._current, field) + elapsed_ms)
+
+    def finish_step(self) -> ComponentProfileRow | None:
+        if self._current is None:
+            return None
+        row = self._current
+        row.step_ms = (
+            row.data_wait_ms
+            + row.forward_backward_ms
+            + row.optimizer_ms
+            + row.eval_ms
+            + row.checkpoint_ms
+            + row.benchmark_ms
+        )
+        if self.device is not None and self.device.type == "cuda":
+            row.peak_memory_mb = torch.cuda.max_memory_allocated(self.device) / _MB
+            row.allocated_memory_mb = torch.cuda.memory_allocated(self.device) / _MB
+            row.reserved_memory_mb = torch.cuda.memory_reserved(self.device) / _MB
+        self.rows.append(row)
+        self._current = None
+        return row
+
+    def write_csv(self, path: str | Path) -> None:
+        import csv
+
+        csv_path = Path(path)
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        with csv_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=self.fieldnames)
+            writer.writeheader()
+            for row in self.rows:
+                writer.writerow(
+                    {
+                        "step": row.step,
+                        "epoch": row.epoch,
+                        "rank": row.rank,
+                        "data_wait_ms": f"{row.data_wait_ms:.3f}",
+                        "forward_backward_ms": f"{row.forward_backward_ms:.3f}",
+                        "optimizer_ms": f"{row.optimizer_ms:.3f}",
+                        "eval_ms": f"{row.eval_ms:.3f}",
+                        "checkpoint_ms": f"{row.checkpoint_ms:.3f}",
+                        "benchmark_ms": f"{row.benchmark_ms:.3f}",
+                        "step_ms": f"{row.step_ms:.3f}",
+                        "peak_memory_mb": f"{row.peak_memory_mb:.1f}",
+                        "allocated_memory_mb": f"{row.allocated_memory_mb:.1f}",
+                        "reserved_memory_mb": f"{row.reserved_memory_mb:.1f}",
+                    }
+                )
 
 
 class ThroughputContext:

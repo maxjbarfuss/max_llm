@@ -1,6 +1,7 @@
 """Unit tests for LearningModel."""
 
 import io
+from copy import deepcopy
 
 import pytest
 import torch
@@ -126,3 +127,48 @@ class TestLearningModelForward:
         x = torch.randint(0, config.vocab_size, (1, 17))
         with pytest.raises(AssertionError, match="seq_len 17 exceeds max_seq_len 16"):
             model(x)
+
+
+class TestLearningModelGradientCheckpointing:
+    """Activation checkpointing API behaviour."""
+
+    @pytest.mark.parametrize("mode", ["full", "ffn"])
+    def test_checkpointing_matches_uncheckpointed_forward_and_gradients(self, mode: str):
+        """Checkpointing should preserve outputs and gradients for deterministic blocks."""
+        torch.manual_seed(123)
+        config = make_model_config(hidden_size=64, num_layers=2, max_seq_length=32)
+        baseline = LearningModel.from_config(config, attention_backend="standard")
+        checkpointed = deepcopy(baseline)
+        checkpointed.gradient_checkpointing_enable(mode=mode)
+        baseline.train()
+        checkpointed.train()
+
+        x = torch.randint(0, config.vocab_size, (2, 16))
+        baseline_loss = baseline(x).sum()
+        checkpointed_loss = checkpointed(x).sum()
+
+        torch.testing.assert_close(checkpointed_loss, baseline_loss)
+        baseline_loss.backward()
+        checkpointed_loss.backward()
+
+        baseline_grad = baseline.token_embedding.embedding.weight.grad
+        checkpointed_grad = checkpointed.token_embedding.embedding.weight.grad
+        assert baseline_grad is not None
+        assert checkpointed_grad is not None
+        torch.testing.assert_close(checkpointed_grad, baseline_grad)
+
+    def test_checkpointing_enable_validates_mode_and_interval(self):
+        """Invalid checkpointing options fail early."""
+        model = LearningModel.from_config(make_model_config(), attention_backend="standard")
+        with pytest.raises(ValueError, match="mode must be 'full' or 'ffn'"):
+            model.gradient_checkpointing_enable(mode="attention")
+        with pytest.raises(ValueError, match="interval must be >= 1"):
+            model.gradient_checkpointing_enable(interval=0)
+
+    def test_checkpointing_disable_clears_flag(self):
+        """Checkpointing can be disabled after being enabled."""
+        model = LearningModel.from_config(make_model_config(), attention_backend="standard")
+        model.gradient_checkpointing_enable()
+        assert model.gradient_checkpointing is True
+        model.gradient_checkpointing_disable()
+        assert model.gradient_checkpointing is False

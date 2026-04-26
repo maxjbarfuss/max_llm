@@ -20,7 +20,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from src.training.distributed import get_world_size
+from src.training.distributed import get_rank, get_world_size
+from src.training.profiling import ComponentProfiler
 
 
 def compute_perplexity(loss: float) -> float:
@@ -284,6 +285,7 @@ def train(  # noqa: C901
     eval_max_batches: int = 0,
     benchmark_interval: int = 0,
     benchmark_fn: Any | None = None,
+    component_profile_path: str | Path | None = None,
 ) -> dict[str, list[float]]:
     """Train for exactly max_steps gradient steps with modern training features.
 
@@ -384,6 +386,9 @@ def train(  # noqa: C901
     start_time = step_start_time
     tokens_in_step = 0
     consecutive_bad_steps = 0
+    component_profiler: ComponentProfiler | None = None
+    if component_profile_path is not None:
+        component_profiler = ComponentProfiler(rank=get_rank(), device=device)
 
     while step < max_steps and not should_stop_early:
         # Per-epoch setup: randomize TokenDataset sequence offsets so successive
@@ -394,6 +399,7 @@ def train(  # noqa: C901
         if hasattr(getattr(train_loader, "sampler", None), "set_epoch"):
             train_loader.sampler.set_epoch(epoch)  # type: ignore[attr-defined]
 
+        data_wait_start = time.perf_counter()
         for batch in train_loader:
             if step >= max_steps or should_stop_early:
                 break
@@ -405,6 +411,13 @@ def train(  # noqa: C901
             is_last_micro_step = (micro_step + 1) % gradient_accumulation_steps == 0
             is_first_micro_step = micro_step % gradient_accumulation_steps == 0
             accumulate_grad = not is_last_micro_step
+
+            if component_profiler is not None:
+                data_wait_ms = (time.perf_counter() - data_wait_start) * 1000
+                if is_first_micro_step:
+                    component_profiler.start_step(step + 1, epoch, data_wait_ms=data_wait_ms)
+                elif component_profiler.current_row is not None:
+                    component_profiler.current_row.data_wait_ms += data_wait_ms
 
             # Mark CUDA graph step begin only when using torch.compile, once per
             # accumulation cycle at the first micro-step. Calling this
@@ -421,18 +434,24 @@ def train(  # noqa: C901
                 ctx = contextlib.nullcontext()
 
             with ctx:
-                loss = train_step(
-                    model=model,
-                    x=x,
-                    y=y,
-                    optimizer=optimizer,
-                    scaler=scaler,
-                    use_amp=use_amp,
-                    accumulate_grad=accumulate_grad,
-                    label_smoothing=label_smoothing,
-                    gradient_accumulation_steps=gradient_accumulation_steps,
-                    z_loss_weight=z_loss_weight,
+                profile_ctx = (
+                    component_profiler.record("forward_backward_ms")
+                    if component_profiler is not None
+                    else contextlib.nullcontext()
                 )
+                with profile_ctx:
+                    loss = train_step(
+                        model=model,
+                        x=x,
+                        y=y,
+                        optimizer=optimizer,
+                        scaler=scaler,
+                        use_amp=use_amp,
+                        accumulate_grad=accumulate_grad,
+                        label_smoothing=label_smoothing,
+                        gradient_accumulation_steps=gradient_accumulation_steps,
+                        z_loss_weight=z_loss_weight,
+                    )
             accumulated_loss += loss
             micro_step += 1
 
@@ -442,17 +461,23 @@ def train(  # noqa: C901
                 avg_loss = accumulated_loss / gradient_accumulation_steps
 
                 # Optimizer step with gradient clipping (returns inf grad_norm if non-finite)
-                grad_norm = optimizer_step(
-                    optimizer=optimizer,
-                    scaler=scaler,
-                    use_amp=use_amp,
-                    gradient_clip_norm=gradient_clip_norm,
-                    model=model,
+                profile_ctx = (
+                    component_profiler.record("optimizer_ms")
+                    if component_profiler is not None
+                    else contextlib.nullcontext()
                 )
+                with profile_ctx:
+                    grad_norm = optimizer_step(
+                        optimizer=optimizer,
+                        scaler=scaler,
+                        use_amp=use_amp,
+                        gradient_clip_norm=gradient_clip_norm,
+                        model=model,
+                    )
 
-                # LR scheduler always steps to keep schedule aligned with step count
-                if lr_scheduler is not None:
-                    lr_scheduler.step()
+                    # LR scheduler always steps to keep schedule aligned with step count.
+                    if lr_scheduler is not None:
+                        lr_scheduler.step()
 
                 # Skip isolated bad steps; abort on 3 consecutive non-finite values
                 if not math.isfinite(avg_loss) or not math.isfinite(grad_norm):
@@ -471,6 +496,9 @@ def train(  # noqa: C901
                     tokens_in_step = 0
                     step_start_time = time.time()
                     step += 1
+                    if component_profiler is not None:
+                        component_profiler.finish_step()
+                    data_wait_start = time.perf_counter()
                     continue  # skip logging/checkpointing; outer reset block bypassed
 
                 consecutive_bad_steps = 0
@@ -498,9 +526,15 @@ def train(  # noqa: C901
                 test_loss = None
                 if eval_interval and (step + 1) % eval_interval == 0:
                     if val_loader is not None:
-                        val_loss = evaluate(
-                            model, val_loader, use_amp, label_smoothing, eval_max_batches_opt
+                        profile_ctx = (
+                            component_profiler.record("eval_ms")
+                            if component_profiler is not None
+                            else contextlib.nullcontext()
                         )
+                        with profile_ctx:
+                            val_loss = evaluate(
+                                model, val_loader, use_amp, label_smoothing, eval_max_batches_opt
+                            )
                         val_losses.append(val_loss)
 
                         # Early stopping check
@@ -522,9 +556,15 @@ def train(  # noqa: C901
                                 should_stop_early = True
 
                     if test_loader is not None:
-                        test_loss = evaluate(
-                            model, test_loader, use_amp, label_smoothing, eval_max_batches_opt
+                        profile_ctx = (
+                            component_profiler.record("eval_ms")
+                            if component_profiler is not None
+                            else contextlib.nullcontext()
                         )
+                        with profile_ctx:
+                            test_loss = evaluate(
+                                model, test_loader, use_amp, label_smoothing, eval_max_batches_opt
+                            )
                         test_losses.append(test_loss)
 
                 current_lr = optimizer.param_groups[0]["lr"]
@@ -602,7 +642,13 @@ def train(  # noqa: C901
                     and checkpoint_fn is not None
                     and (step + 1) % checkpoint_interval == 0
                 ):
-                    checkpoint_fn(step + 1, val_loss=val_loss)
+                    profile_ctx = (
+                        component_profiler.record("checkpoint_ms")
+                        if component_profiler is not None
+                        else contextlib.nullcontext()
+                    )
+                    with profile_ctx:
+                        checkpoint_fn(step + 1, val_loss=val_loss)
 
                 # Optional external benchmark callback (for MCQ harness, etc.)
                 if (
@@ -610,18 +656,31 @@ def train(  # noqa: C901
                     and benchmark_fn is not None
                     and (step + 1) % benchmark_interval == 0
                 ):
-                    benchmark_fn(step + 1)
+                    profile_ctx = (
+                        component_profiler.record("benchmark_ms")
+                        if component_profiler is not None
+                        else contextlib.nullcontext()
+                    )
+                    with profile_ctx:
+                        benchmark_fn(step + 1)
+
+                if component_profiler is not None:
+                    component_profiler.finish_step()
 
                 # Reset for next step
                 accumulated_loss = 0.0
                 tokens_in_step = 0
                 step_start_time = time.time()
                 step += 1
+                data_wait_start = time.perf_counter()
 
         epoch += 1
 
     if csv_file is not None:
         csv_file.close()
+    if component_profiler is not None:
+        assert component_profile_path is not None
+        component_profiler.write_csv(component_profile_path)
 
     result = {"losses": losses, "perplexities": perplexities}
     if log_tokens_per_sec:

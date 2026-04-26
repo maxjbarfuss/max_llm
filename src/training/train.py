@@ -549,6 +549,12 @@ def main() -> None:  # noqa: C901
     if args.profile and is_main_process():
         log_model_size(model)
 
+    # Apply gradient checkpointing before distributed wrapping so wrapper
+    # modules do not hide the LearningModel checkpointing API.
+    if config.training.selective_checkpointing:
+        model.gradient_checkpointing_enable()
+        print_once("Gradient checkpointing: Enabled")
+
     want_fsdp = want_distributed and config.training.distributed_backend == "fsdp"
 
     if want_distributed:
@@ -579,17 +585,6 @@ def main() -> None:  # noqa: C901
                 device_ids=[distributed_info["local_rank"]],
                 find_unused_parameters=(config.training.attention_backend == "sage"),
             )  # type: ignore[assignment]
-
-    # Apply gradient checkpointing if enabled (reduces activation memory ~4×)
-    if config.training.selective_checkpointing:
-        if hasattr(model, "gradient_checkpointing_enable"):
-            model.gradient_checkpointing_enable()  # type: ignore[operator]
-            print_once("Gradient checkpointing: Enabled")
-        else:
-            print_once(
-                "Warning: selective_checkpointing=true but model has no checkpointing API. "
-                "Implement gradient_checkpointing_enable() on the model to activate this."
-            )
 
     # Apply torch.compile if enabled (Phase 3+)
     # Note: torch.compile should be applied AFTER DDP/FSDP wrapping.
@@ -990,6 +985,13 @@ def main() -> None:  # noqa: C901
 
     # Train
     csv_log_path = Path(config.output_dir) / "loss_curve.csv"
+    component_profile_path = None
+    if args.profile:
+        component_profile_path = (
+            Path(config.output_dir) / f"component_profile_rank{distributed_info['rank']}.csv"
+            if distributed_info is not None
+            else Path(config.output_dir) / "component_profile.csv"
+        )
     metrics = train(
         model=model,
         train_loader=train_loader,
@@ -1017,6 +1019,7 @@ def main() -> None:  # noqa: C901
         eval_max_batches=config.training.eval_max_batches,
         benchmark_interval=config.training.benchmark_eval_interval,
         benchmark_fn=_periodic_benchmark,
+        component_profile_path=component_profile_path,
     )
     if tb_writer is not None:
         tb_writer.close()

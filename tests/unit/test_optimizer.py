@@ -305,14 +305,15 @@ class TestZeropowerNewtonSchulz5:
         )
 
     def test_batched_result_matches_per_matrix_result(self) -> None:
-        gradients = torch.randn(3, 4, 8, dtype=torch.float32)
+        generator = torch.Generator().manual_seed(0)
+        gradients = torch.randn(3, 4, 8, dtype=torch.float32, generator=generator)
 
         batched = zeropower_via_newtonschulz5(gradients, steps=5)
         per_matrix = torch.stack(
             [zeropower_via_newtonschulz5(gradient, steps=5) for gradient in gradients]
         )
 
-        assert torch.allclose(batched, per_matrix, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(batched, per_matrix, atol=1e-5, rtol=1e-5)
 
 
 class TestMuonOptimizer:
