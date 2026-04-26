@@ -11,6 +11,9 @@ _NULLABLE_FIELDS = (
     "tokenizer_vocab_path",
     "validation_dataset_path",
     "test_dataset_path",
+    "packing_metadata_path",
+    "validation_packing_metadata_path",
+    "test_packing_metadata_path",
 )
 
 
@@ -38,6 +41,9 @@ class DataConfig:
     validation_dataset_path: str | None = None
     test_dataset_path: str | None = None
     tokenizer_vocab_path: str | None = None
+    packing_metadata_path: str | None = None
+    validation_packing_metadata_path: str | None = None
+    test_packing_metadata_path: str | None = None
     seed: int = 42
 
     def _validate_tokenizer(self) -> None:

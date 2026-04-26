@@ -3,6 +3,7 @@
 import csv
 import math
 
+import numpy as np
 import pytest
 import torch
 
@@ -828,3 +829,63 @@ class TestChunkedLMHeadLoss:
         opt = torch.optim.SGD(model.parameters(), lr=1e-3)
         with pytest.raises(AttributeError, match="forward_hidden"):
             train_step(model, x, y, opt, use_chunked_loss=True)
+
+    def test_loss_mask_matches_selected_positions(self):
+        torch.manual_seed(11)
+        logits = torch.randn(2, 4, 16, requires_grad=True)
+        targets = torch.randint(0, 16, (2, 4))
+        loss_mask = torch.tensor(
+            [[True, False, True, True], [False, True, False, True]], dtype=torch.bool
+        )
+
+        masked = compute_loss_with_smoothing(logits, targets, loss_mask=loss_mask)
+        selected_logits = logits[loss_mask]
+        selected_targets = targets[loss_mask]
+        expected = torch.nn.functional.cross_entropy(selected_logits, selected_targets)
+
+        assert torch.allclose(masked, expected, atol=1e-6)
+
+    def test_chunked_lm_loss_mask_matches_full_masked_loss(self):
+        torch.manual_seed(12)
+        hidden = torch.randn(2, 5, 8, requires_grad=True)
+        weight = torch.randn(16, 8, requires_grad=True)
+        targets = torch.randint(0, 16, (2, 5))
+        loss_mask = torch.tensor(
+            [[True, True, False, True, False], [False, True, True, False, True]],
+            dtype=torch.bool,
+        )
+
+        full_logits = torch.nn.functional.linear(hidden, weight)
+        full = compute_loss_with_smoothing(full_logits, targets, loss_mask=loss_mask)
+        chunked = compute_chunked_lm_loss(
+            hidden, weight, targets, chunk_size=2, loss_mask=loss_mask
+        )
+
+        assert torch.allclose(full, chunked, atol=1e-6)
+
+
+class TestPackedTokenDataset:
+    def test_create_loader_uses_packed_boundaries_for_masks(self):
+        tokens = np.asarray([10, 11, 12, 13, 14, 15, 20, 21, 22, 0, 0, 0], dtype=np.int32)
+        sequence_offsets = np.asarray([0, 2, 3], dtype=np.int64)
+        boundaries = np.asarray([2, 6, 3], dtype=np.int32)
+
+        train_loader, val_loader, _ = create_simple_loaders(
+            tokens,
+            seq_len=5,
+            batch_size=1,
+            train_packing_metadata=(sequence_offsets, boundaries),
+            validation_split=0.5,
+            num_workers=0,
+        )
+
+        x, y, document_ids, loss_mask = next(iter(train_loader))
+        assert x.shape == y.shape == document_ids.shape == loss_mask.shape == (1, 5)
+        assert document_ids[0].tolist() == [0, 0, 1, 1, 1]
+        assert loss_mask[0].tolist() == [True, False, True, True, True]
+
+        x_val, y_val, doc_ids_val, mask_val = next(iter(val_loader))
+        assert x_val[0].tolist() == [20, 21, 22, 0, 0]
+        assert y_val[0].tolist() == [21, 22, 0, 0, 0]
+        assert doc_ids_val[0].tolist() == [0, 0, 0, -1, -1]
+        assert mask_val[0].tolist() == [True, True, False, False, False]

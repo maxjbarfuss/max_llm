@@ -356,6 +356,21 @@ class TestDataConfig:
         assert config.tokenizer_backend == "unigram"
         assert config.unigram_model_path == "./tokenizers/unigram.model"
 
+    def test_packing_metadata_paths_default_and_empty_string(self):
+        config = make_data_config()
+        assert config.packing_metadata_path is None
+        assert config.validation_packing_metadata_path is None
+        assert config.test_packing_metadata_path is None
+
+        config = make_data_config(
+            packing_metadata_path="",
+            validation_packing_metadata_path="   ",
+            test_packing_metadata_path="",
+        )
+        assert config.packing_metadata_path is None
+        assert config.validation_packing_metadata_path is None
+        assert config.test_packing_metadata_path is None
+
     def test_unigram_model_path_validation(self):
         """Unigram model path cannot be empty when provided."""
         with pytest.raises(ValueError, match="unigram_model_path cannot be empty"):

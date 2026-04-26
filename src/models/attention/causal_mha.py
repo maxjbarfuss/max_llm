@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.attention.masks import document_causal_bias
 from src.models.position.add_rope import AdditiveRoPE
 from src.models.position.alibi import ALiBi
 from src.models.position.rel_pos_bias import RelativePositionBias
@@ -256,6 +257,7 @@ class CausalMultiHeadAttention(nn.Module):
         v: torch.Tensor,
         attn_bias: torch.Tensor | None,
         dropout_p: float,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # F.scaled_dot_product_attention expects (B, num_heads, T, head_dim)
         q_std = q.transpose(1, 2)
@@ -264,7 +266,7 @@ class CausalMultiHeadAttention(nn.Module):
 
         T_q, T_k = q_std.shape[2], k_std.shape[2]
 
-        if attn_bias is None and T_q == T_k:
+        if attn_bias is None and document_ids is None and T_q == T_k:
             # Square case: PyTorch's is_causal=True is correct and efficient.
             out = F.scaled_dot_product_attention(
                 q_std,
@@ -279,6 +281,10 @@ class CausalMultiHeadAttention(nn.Module):
             # PyTorch's is_causal=True uses upper-left convention and is wrong when T_q < T_k.
             causal = self._causal_bias(T_q, T_k, q_std.device, q_std.dtype)
             mask = causal if attn_bias is None else causal + attn_bias
+            if document_ids is not None:
+                if T_q != T_k:
+                    raise ValueError("document_ids attention mask requires square self-attention")
+                mask = mask + document_causal_bias(document_ids, q_std.dtype)
             out = F.scaled_dot_product_attention(
                 q_std,
                 k_std,
@@ -295,6 +301,7 @@ class CausalMultiHeadAttention(nn.Module):
         self,
         x: torch.Tensor,
         kv_cache: "LayerKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
 
         B, T, d_model = x.shape
@@ -321,6 +328,8 @@ class CausalMultiHeadAttention(nn.Module):
 
         # Compute attention bias (None if not using ALiBi/RelPosBias)
         _attn_bias, effective_backend = self._prepare_attn_context(T, q.device, q.dtype)
+        if document_ids is not None:
+            effective_backend = "standard"
         runtime_dropout = self._runtime_dropout()
 
         # Expand K/V from num_kv_heads to num_heads for backends without native GQA support.
@@ -338,7 +347,9 @@ class CausalMultiHeadAttention(nn.Module):
             attn_output = self._xformers_attention(q, k, v, _attn_bias, runtime_dropout)
 
         else:  # standard — F.scaled_dot_product_attention (PyTorch 2.0+)
-            attn_output = self._standard_attention(q, k, v, _attn_bias, runtime_dropout)
+            attn_output = self._standard_attention(
+                q, k, v, _attn_bias, runtime_dropout, document_ids=document_ids
+            )
 
         attn_output = attn_output.contiguous().view(B, T, self.d_model)
         return self.out_proj(attn_output)

@@ -118,21 +118,27 @@ class TransformerBlock(nn.Module):
         ), f"TransformerBlock input last dim {x.shape[-1]} != d_model {self.d_model}"
 
     def _apply_attention_residual(
-        self, x: torch.Tensor, kv_cache: "LayerKVCache | None" = None
+        self,
+        x: torch.Tensor,
+        kv_cache: "LayerKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        return x + self.attention(self.norm1(x), kv_cache=kv_cache)
+        return x + self.attention(self.norm1(x), kv_cache=kv_cache, document_ids=document_ids)
 
     def _apply_feedforward_residual(self, x: torch.Tensor) -> torch.Tensor:
         return x + self.feedforward(self.norm2(x))
 
     def apply_attn_only(
-        self, x: torch.Tensor, kv_cache: "LayerKVCache | None" = None
+        self,
+        x: torch.Tensor,
+        kv_cache: "LayerKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Return the attention sublayer output (no residual add).
 
         Used by AttnRes: the caller accumulates outputs externally.
         """
-        return self.attention(self.norm1(x), kv_cache=kv_cache)
+        return self.attention(self.norm1(x), kv_cache=kv_cache, document_ids=document_ids)
 
     def apply_ffn_only(self, x: torch.Tensor) -> torch.Tensor:
         """Return the FFN sublayer output (no residual add).
@@ -141,11 +147,16 @@ class TransformerBlock(nn.Module):
         """
         return self.feedforward(self.norm2(x))
 
-    def forward(self, x: torch.Tensor, kv_cache: "LayerKVCache | None" = None) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        kv_cache: "LayerKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         self._validate_input(x)
         in_shape = x.shape
 
-        x = self._apply_attention_residual(x, kv_cache=kv_cache)
+        x = self._apply_attention_residual(x, kv_cache=kv_cache, document_ids=document_ids)
         x = self._apply_feedforward_residual(x)
 
         assert (

@@ -32,12 +32,25 @@ def _unwrap_module(model: nn.Module) -> nn.Module:
     return inner
 
 
+def _unpack_batch(
+    batch: Any,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    if len(batch) == 2:
+        x, y = batch
+        return x, y, None, None
+    if len(batch) == 4:
+        x, y, document_ids, loss_mask = batch
+        return x, y, document_ids, loss_mask
+    raise ValueError(f"Expected batch of length 2 or 4, got {len(batch)}")
+
+
 def _chunk_lm_loss_fn(
     h_chunk: torch.Tensor,
     targets_chunk: torch.Tensor,
     weight: torch.Tensor,
     label_smoothing: float,
     z_loss_weight: float,
+    loss_mask_chunk: torch.Tensor | None,
 ) -> torch.Tensor:
     """Project a hidden chunk through ``weight`` and return the summed
     CE (+ z_loss * z_loss_weight) over that chunk.
@@ -49,16 +62,24 @@ def _chunk_lm_loss_fn(
     B_, t_, V_ = logits.shape
     logits_2d = logits.reshape(B_ * t_, V_)
     targets_1d = targets_chunk.reshape(B_ * t_)
+    mask_1d = (
+        loss_mask_chunk.reshape(B_ * t_).to(logits_2d.dtype)
+        if loss_mask_chunk is not None
+        else None
+    )
     if label_smoothing > 0:
         log_probs = F.log_softmax(logits_2d, dim=-1)
         nll = -log_probs.gather(1, targets_1d.unsqueeze(1)).squeeze(1)
         smooth = -log_probs.mean(dim=-1)
-        chunk_sum = ((1 - label_smoothing) * nll + label_smoothing * smooth).sum()
+        losses = (1 - label_smoothing) * nll + label_smoothing * smooth
     else:
-        chunk_sum = F.cross_entropy(logits_2d, targets_1d, reduction="sum")
+        losses = F.cross_entropy(logits_2d, targets_1d, reduction="none")
+    chunk_sum = (losses * mask_1d).sum() if mask_1d is not None else losses.sum()
     if z_loss_weight > 0.0:
         lse = torch.logsumexp(logits_2d, dim=-1)
-        chunk_sum = chunk_sum + z_loss_weight * (lse * lse).sum()
+        z_losses = lse * lse
+        z_sum = (z_losses * mask_1d).sum() if mask_1d is not None else z_losses.sum()
+        chunk_sum = chunk_sum + z_loss_weight * z_sum
     return chunk_sum
 
 
@@ -69,6 +90,7 @@ def compute_chunked_lm_loss(
     label_smoothing: float = 0.0,
     z_loss_weight: float = 0.0,
     chunk_size: int = 256,
+    loss_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Memory-efficient chunked CE (+ Z-loss) over the LM-head projection.
 
@@ -97,12 +119,22 @@ def compute_chunked_lm_loss(
     if chunk_size <= 0:
         raise ValueError(f"chunk_size must be > 0, got {chunk_size}")
     B, T, _ = hidden.shape
+    denominator = B * T
+    if loss_mask is not None:
+        if loss_mask.shape != targets.shape:
+            raise ValueError(
+                f"loss_mask shape {tuple(loss_mask.shape)} does not match targets {tuple(targets.shape)}"
+            )
+        denominator = int(loss_mask.sum().item())
+        if denominator <= 0:
+            raise ValueError("loss_mask must select at least one target token")
     chunk_size = min(chunk_size, T)
     total = hidden.new_zeros(())
     for start in range(0, T, chunk_size):
         end = min(start + chunk_size, T)
         h_c = hidden[:, start:end, :]
         y_c = targets[:, start:end]
+        mask_c = loss_mask[:, start:end] if loss_mask is not None else None
         # use_reentrant=False propagates autocast and avoids the legacy
         # reentrant-autograd path; required when inputs are leaf params.
         chunk_sum = checkpoint(
@@ -112,10 +144,11 @@ def compute_chunked_lm_loss(
             lm_head_weight,
             label_smoothing,
             z_loss_weight,
+            mask_c,
             use_reentrant=False,
         )
         total = total + chunk_sum
-    return total / (B * T)
+    return total / denominator
 
 
 def compute_perplexity(loss: float) -> float:
@@ -136,6 +169,7 @@ def compute_loss_with_smoothing(
     label_smoothing: float = 0.0,
     chunk_size: int = 4096,
     z_loss_weight: float = 0.0,
+    loss_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Compute cross-entropy loss with optional label smoothing and Z-loss.
 
@@ -161,6 +195,16 @@ def compute_loss_with_smoothing(
     B, T, V = logits.shape
     logits_2d = logits.view(B * T, V)
     targets_1d = targets.view(B * T)
+    mask_1d = loss_mask.reshape(B * T).to(logits_2d.dtype) if loss_mask is not None else None
+    denominator = B * T
+    if loss_mask is not None:
+        if loss_mask.shape != targets.shape:
+            raise ValueError(
+                f"loss_mask shape {tuple(loss_mask.shape)} does not match targets {tuple(targets.shape)}"
+            )
+        denominator = int(loss_mask.sum().item())
+        if denominator <= 0:
+            raise ValueError("loss_mask must select at least one target token")
 
     loss_sum = logits_2d.new_zeros(())
     z_loss_sum = logits_2d.new_zeros(()) if z_loss_weight > 0.0 else None
@@ -172,15 +216,23 @@ def compute_loss_with_smoothing(
             tgt = targets_1d[start:end]
             nll = -log_probs.gather(1, tgt.unsqueeze(1)).squeeze(1)
             smooth = -log_probs.mean(dim=-1)
-            loss_sum = loss_sum + ((1 - label_smoothing) * nll + label_smoothing * smooth).sum()
+            losses = (1 - label_smoothing) * nll + label_smoothing * smooth
         else:
-            loss_sum = loss_sum + F.cross_entropy(chunk, targets_1d[start:end], reduction="sum")
+            losses = F.cross_entropy(chunk, targets_1d[start:end], reduction="none")
+        if mask_1d is not None:
+            loss_sum = loss_sum + (losses * mask_1d[start:end]).sum()
+        else:
+            loss_sum = loss_sum + losses.sum()
         if z_loss_sum is not None:
             lse = torch.logsumexp(chunk, dim=-1)  # (chunk_tokens,)
-            z_loss_sum = z_loss_sum + (lse * lse).sum()
-    ce_loss = loss_sum / (B * T)
+            z_losses = lse * lse
+            if mask_1d is not None:
+                z_loss_sum = z_loss_sum + (z_losses * mask_1d[start:end]).sum()
+            else:
+                z_loss_sum = z_loss_sum + z_losses.sum()
+    ce_loss = loss_sum / denominator
     if z_loss_sum is not None:
-        return ce_loss + z_loss_weight * z_loss_sum / (B * T)
+        return ce_loss + z_loss_weight * z_loss_sum / denominator
     return ce_loss
 
 
@@ -211,20 +263,25 @@ def evaluate(
 
     with torch.no_grad():
         for batch in dataloader:
-            x, y = batch
+            x, y, document_ids, loss_mask = _unpack_batch(batch)
             x, y = x.to(device), y.to(device)
+            document_ids = document_ids.to(device) if document_ids is not None else None
+            loss_mask = loss_mask.to(device) if loss_mask is not None else None
 
             # Forward pass with optional AMP
             if use_amp and device.type == "cuda":
                 with torch.autocast(device_type="cuda"):
-                    logits = model(x)
-                    loss = compute_loss_with_smoothing(logits, y, label_smoothing)
+                    logits = model(x, document_ids=document_ids)
+                    loss = compute_loss_with_smoothing(
+                        logits, y, label_smoothing, loss_mask=loss_mask
+                    )
             else:
-                logits = model(x)
-                loss = compute_loss_with_smoothing(logits, y, label_smoothing)
+                logits = model(x, document_ids=document_ids)
+                loss = compute_loss_with_smoothing(logits, y, label_smoothing, loss_mask=loss_mask)
 
-            total_loss += loss.item() * y.numel()
-            total_tokens += y.numel()
+            batch_tokens = int(loss_mask.sum().item()) if loss_mask is not None else y.numel()
+            total_loss += loss.item() * batch_tokens
+            total_tokens += batch_tokens
             num_batches += 1
 
             if max_batches is not None and num_batches >= max_batches:
@@ -247,6 +304,8 @@ def train_step(
     z_loss_weight: float = 0.0,
     use_chunked_loss: bool = False,
     loss_chunk_size: int = 256,
+    document_ids: torch.Tensor | None = None,
+    loss_mask: torch.Tensor | None = None,
 ) -> float:
     """Single forward + backward step with optional AMP.
 
@@ -274,6 +333,8 @@ def train_step(
     model.train()
     device = next(model.parameters()).device
     x, y = x.to(device), y.to(device)
+    document_ids = document_ids.to(device) if document_ids is not None else None
+    loss_mask = loss_mask.to(device) if loss_mask is not None else None
 
     # Zero gradients unless accumulating
     if not accumulate_grad:
@@ -292,7 +353,7 @@ def train_step(
                     "use_chunked_loss=True requires the model to expose a "
                     "forward_hidden(x) method that returns pre-LM-head hidden states."
                 )
-            hidden = inner.forward_hidden(x)  # type: ignore[operator]
+            hidden = inner.forward_hidden(x, document_ids=document_ids)  # type: ignore[operator]
             lm_head = inner.lm_head
             assert (
                 isinstance(lm_head, nn.Linear) and lm_head.bias is None
@@ -304,11 +365,12 @@ def train_step(
                 label_smoothing=label_smoothing,
                 z_loss_weight=z_loss_weight,
                 chunk_size=loss_chunk_size,
+                loss_mask=loss_mask,
             )
         else:
-            logits = model(x)  # (B, T, V)
+            logits = model(x, document_ids=document_ids)  # (B, T, V)
             loss = compute_loss_with_smoothing(
-                logits, y, label_smoothing, z_loss_weight=z_loss_weight
+                logits, y, label_smoothing, z_loss_weight=z_loss_weight, loss_mask=loss_mask
             )
 
     loss_value = loss.item()
@@ -527,9 +589,11 @@ def train(  # noqa: C901
             if step >= max_steps or should_stop_early:
                 break
 
-            x, y = batch
+            x, y, document_ids, loss_mask = _unpack_batch(batch)
             if log_tokens_per_sec:
-                tokens_in_step += x.numel()
+                tokens_in_step += (
+                    int(loss_mask.sum().item()) if loss_mask is not None else x.numel()
+                )
 
             is_last_micro_step = (micro_step + 1) % gradient_accumulation_steps == 0
             is_first_micro_step = micro_step % gradient_accumulation_steps == 0
@@ -576,6 +640,8 @@ def train(  # noqa: C901
                         z_loss_weight=z_loss_weight,
                         use_chunked_loss=use_chunked_loss,
                         loss_chunk_size=loss_chunk_size,
+                        document_ids=document_ids,
+                        loss_mask=loss_mask,
                     )
             accumulated_loss += loss
             micro_step += 1

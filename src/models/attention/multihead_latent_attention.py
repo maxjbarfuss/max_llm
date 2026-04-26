@@ -22,6 +22,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.attention.masks import document_causal_bias
 from src.models.position.add_rope import AdditiveRoPE
 from src.models.position.alibi import ALiBi
 from src.models.position.rel_pos_bias import RelativePositionBias
@@ -276,11 +277,12 @@ class MultiHeadLatentAttention(nn.Module):
         v: torch.Tensor,
         attn_bias: torch.Tensor | None,
         dropout_p: float,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         q_t, k_t, v_t = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
         T_q, T_k = q_t.shape[2], k_t.shape[2]
 
-        if attn_bias is None and T_q == T_k:
+        if attn_bias is None and document_ids is None and T_q == T_k:
             out = F.scaled_dot_product_attention(
                 q_t, k_t, v_t, dropout_p=dropout_p, is_causal=True, scale=self.softmax_scale
             )
@@ -289,6 +291,10 @@ class MultiHeadLatentAttention(nn.Module):
             # PyTorch's is_causal=True uses upper-left convention and is wrong when T_q < T_k.
             causal = self._causal_bias(T_q, T_k, q_t.device, q_t.dtype)
             mask = causal if attn_bias is None else causal + attn_bias
+            if document_ids is not None:
+                if T_q != T_k:
+                    raise ValueError("document_ids attention mask requires square self-attention")
+                mask = mask + document_causal_bias(document_ids, q_t.dtype)
             out = F.scaled_dot_product_attention(
                 q_t,
                 k_t,
@@ -304,6 +310,7 @@ class MultiHeadLatentAttention(nn.Module):
         self,
         x: torch.Tensor,
         kv_cache: "LayerKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
 
         B, T, _ = x.shape
@@ -341,6 +348,8 @@ class MultiHeadLatentAttention(nn.Module):
         backend = self.attention_backend
         if isinstance(self.attn_bias, RelativePositionBias):
             backend = "standard"
+        if document_ids is not None:
+            backend = "standard"
 
         # GQA expansion: flash handles internally; others need explicit expand
         if backend != "flash" and self.groups > 1:
@@ -354,6 +363,6 @@ class MultiHeadLatentAttention(nn.Module):
         elif backend == "xformers":
             out = self._xformers_attention(q, k, v, attn_bias, dropout_p)
         else:
-            out = self._standard_attention(q, k, v, attn_bias, dropout_p)
+            out = self._standard_attention(q, k, v, attn_bias, dropout_p, document_ids=document_ids)
 
         return self.out_proj(out.contiguous().view(B, T, self.d_model))

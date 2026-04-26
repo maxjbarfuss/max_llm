@@ -58,6 +58,23 @@ class TestCausalMultiHeadAttention:
         # Position 3 itself should be different (it depends on its own input)
         assert not torch.allclose(out1[0, 3], out2[0, 3], atol=1e-6)
 
+    def test_document_mask_prevents_packed_cross_document_leakage(self) -> None:
+        torch.manual_seed(43)
+        mha = CausalMultiHeadAttention(d_model=32, num_heads=2, attention_backend="standard")
+        mha.eval()
+
+        x = torch.randn(1, 4, 32)
+        document_ids = torch.tensor([[0, 0, 1, 1]], dtype=torch.long)
+        masked = mha(x, document_ids=document_ids)
+
+        x_modified = x.clone()
+        x_modified[0, :2, :] = torch.randn(2, 32)
+        masked_modified = mha(x_modified, document_ids=document_ids)
+        unmasked_modified = mha(x_modified)
+
+        assert torch.allclose(masked[0, 2:], masked_modified[0, 2:], atol=1e-6)
+        assert not torch.allclose(masked[0, 2:], unmasked_modified[0, 2:], atol=1e-6)
+
     def test_attention_output_changes_with_different_inputs(self) -> None:
         """Different inputs should produce different outputs."""
         mha = CausalMultiHeadAttention(d_model=64, num_heads=4, attention_backend="standard")

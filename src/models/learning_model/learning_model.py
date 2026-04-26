@@ -239,6 +239,7 @@ class LearningModel(nn.Module):
         self,
         x: torch.Tensor,
         kv_caches: "ModelKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Run the trunk and return final hidden states (B, T, d_model) before lm_head.
 
@@ -263,7 +264,7 @@ class LearningModel(nn.Module):
         else:
             h = tok_emb
 
-        h = self._apply_transformer_blocks(h, kv_caches=kv_caches)
+        h = self._apply_transformer_blocks(h, kv_caches=kv_caches, document_ids=document_ids)
 
         # Final layer norm (skipped for num_layers=0 to support Phase 2 MLP-only models)
         if self.final_norm is not None:
@@ -274,10 +275,11 @@ class LearningModel(nn.Module):
         self,
         x: torch.Tensor,
         kv_caches: "ModelKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
 
         B, T = x.shape
-        h = self.forward_hidden(x, kv_caches=kv_caches)
+        h = self.forward_hidden(x, kv_caches=kv_caches, document_ids=document_ids)
 
         # LM head
         logits = self.lm_head(h)
@@ -293,29 +295,37 @@ class LearningModel(nn.Module):
         self,
         h: torch.Tensor,
         kv_caches: "ModelKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Dispatch to the appropriate residual variant."""
         if self.res_type == "full_attn":
-            return self._apply_blocks_full_attn_res(h, kv_caches=kv_caches)
+            return self._apply_blocks_full_attn_res(
+                h, kv_caches=kv_caches, document_ids=document_ids
+            )
         if self.res_type == "block_attn":
-            return self._apply_blocks_block_attn_res(h, kv_caches=kv_caches)
-        return self._apply_blocks_standard(h, kv_caches=kv_caches)
+            return self._apply_blocks_block_attn_res(
+                h, kv_caches=kv_caches, document_ids=document_ids
+            )
+        return self._apply_blocks_standard(h, kv_caches=kv_caches, document_ids=document_ids)
 
     def _apply_blocks_standard(
         self,
         h: torch.Tensor,
         kv_caches: "ModelKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Standard pre-norm residual stack (original behaviour)."""
         if self.share_layer_weights:
             shared_block = cast(TransformerBlock, self.blocks[0])
             for i in range(self.num_layers):
                 kv = kv_caches[i] if kv_caches is not None else None
-                h = self._run_block(shared_block, h, i, kv_cache=kv)
+                h = self._run_block(shared_block, h, i, kv_cache=kv, document_ids=document_ids)
             return h
         for i, block in enumerate(self.blocks):
             kv = kv_caches[i] if kv_caches is not None else None
-            h = self._run_block(cast(TransformerBlock, block), h, i, kv_cache=kv)
+            h = self._run_block(
+                cast(TransformerBlock, block), h, i, kv_cache=kv, document_ids=document_ids
+            )
         return h
 
     def _should_checkpoint(self, block_idx: int, kv_cache: LayerKVCache | None = None) -> bool:
@@ -337,13 +347,18 @@ class LearningModel(nn.Module):
         h: torch.Tensor,
         block_idx: int,
         kv_cache: LayerKVCache | None = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if not self._should_checkpoint(block_idx, kv_cache):
-            return block(h, kv_cache=kv_cache)
+            return block(h, kv_cache=kv_cache, document_ids=document_ids)
         if self.gradient_checkpointing_mode == "ffn":
-            h = block._apply_attention_residual(h, kv_cache=None)  # noqa: SLF001
+            h = block._apply_attention_residual(  # noqa: SLF001
+                h, kv_cache=None, document_ids=document_ids
+            )
             return self._checkpoint_tensor_fn(block._apply_feedforward_residual, h)  # noqa: SLF001
-        return self._checkpoint_tensor_fn(lambda tensor: block(tensor, kv_cache=None), h)
+        return self._checkpoint_tensor_fn(
+            lambda tensor: block(tensor, kv_cache=None, document_ids=document_ids), h
+        )
 
     def _run_attn_only(
         self,
@@ -351,6 +366,7 @@ class LearningModel(nn.Module):
         h: torch.Tensor,
         block_idx: int,
         kv_cache: LayerKVCache | None = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # In "ffn" mode attention always runs eagerly; only the FFN sublayer is checkpointed.
         want_ck = (
@@ -358,8 +374,10 @@ class LearningModel(nn.Module):
             and self.gradient_checkpointing_mode != "ffn"
         )
         if not want_ck:
-            return block.apply_attn_only(h, kv_cache=kv_cache)
-        return self._checkpoint_tensor_fn(lambda tensor: block.apply_attn_only(tensor), h)
+            return block.apply_attn_only(h, kv_cache=kv_cache, document_ids=document_ids)
+        return self._checkpoint_tensor_fn(
+            lambda tensor: block.apply_attn_only(tensor, document_ids=document_ids), h
+        )
 
     def _run_ffn_only(
         self, block: TransformerBlock, h: torch.Tensor, block_idx: int
@@ -372,6 +390,7 @@ class LearningModel(nn.Module):
         self,
         h: torch.Tensor,
         kv_caches: "ModelKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Full Attention Residuals: each sublayer attends over all prior outputs."""
         assert self.attn_res is not None
@@ -388,7 +407,9 @@ class LearningModel(nn.Module):
             kv = kv_caches[block_idx] if kv_caches is not None else None
             # Attention sublayer
             h_in = ar(sublayer_idx, values)
-            values.append(self._run_attn_only(block, h_in, block_idx, kv_cache=kv))
+            values.append(
+                self._run_attn_only(block, h_in, block_idx, kv_cache=kv, document_ids=document_ids)
+            )
             sublayer_idx += 1
 
             # FFN sublayer
@@ -402,6 +423,7 @@ class LearningModel(nn.Module):
         self,
         h: torch.Tensor,
         kv_caches: "ModelKVCache | None" = None,
+        document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Block Attention Residuals: attend over N block-level summaries.
 
@@ -459,12 +481,16 @@ class LearningModel(nn.Module):
                         _b: TransformerBlock = block,
                         _idx: int = sublayer_idx,
                     ) -> torch.Tensor:
-                        return pb_prev + _b.apply_attn_only(ar(_idx, list(srcs)))
+                        return pb_prev + _b.apply_attn_only(
+                            ar(_idx, list(srcs)), document_ids=document_ids
+                        )
 
                     partial_b = self._checkpoint_tensor_fn(_fused_attn, _pb_prev, *sources)
                 else:
                     h_in = ar(sublayer_idx, sources)
-                    delta_attn = self._run_attn_only(block, h_in, block_idx, kv_cache=kv)
+                    delta_attn = self._run_attn_only(
+                        block, h_in, block_idx, kv_cache=kv, document_ids=document_ids
+                    )
                     partial_b = delta_attn if partial_b is None else partial_b + delta_attn
                 sublayer_idx += 1
 

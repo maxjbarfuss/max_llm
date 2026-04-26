@@ -121,7 +121,13 @@ class SlidingWindowAttention(nn.Module):
     def _runtime_dropout(self) -> float:
         return self.dropout_p if self.training else 0.0
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        document_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if document_ids is not None:
+            raise ValueError("Packed document masks are not supported for sliding-window attention")
         B, T, d_model = x.shape
         assert (
             d_model == self.d_model

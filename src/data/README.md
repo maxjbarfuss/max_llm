@@ -130,6 +130,12 @@ Packing summary stats are emitted into `<prefix>_stats.json` under each split as
 - `output_tokens`
 - `fill_ratio`
 
+Training consumes the metadata when the matching paths are set in `[data]`:
+`packing_metadata_path`, `validation_packing_metadata_path`, and
+`test_packing_metadata_path`. The loader reconstructs per-token document ids,
+masks boundary-crossing/padded LM targets, and routes document ids to MHA/MLA so
+attention cannot cross packed document boundaries.
+
 ### Per-source repetition budgets across curriculum stages
 
 Use `curriculum.source_repetition_budget` to cap cross-stage re-exposure for each source and reduce memorization risk.

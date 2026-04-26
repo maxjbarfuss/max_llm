@@ -187,6 +187,9 @@ When enabled, benchmark snapshots are appended to `output_dir/benchmark_curve.js
 | `dataset_path` | string | ✅ required | Path to training `.npy` token file |
 | `validation_dataset_path` | string | `null` | Explicit val set; if omitted, `validation_split` carves one from train |
 | `test_dataset_path` | string | `null` | Optional held-out test set (used when `training.eval_on_test = true`) |
+| `packing_metadata_path` | string | `null` | Optional train split `*_packing_meta.npz`; enables packed document-boundary masks and boundary-crossing loss masking |
+| `validation_packing_metadata_path` | string | `null` | Optional validation split packing metadata; use with `validation_dataset_path` |
+| `test_packing_metadata_path` | string | `null` | Optional test split packing metadata; use with `test_dataset_path` |
 | `validation_split` | float | `0.1` | Fraction of train tokens used as val when no explicit val path given; ignored if `validation_dataset_path` is set |
 
 ### Tokenizer

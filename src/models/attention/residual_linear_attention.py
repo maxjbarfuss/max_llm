@@ -133,7 +133,15 @@ class ResidualLinearAttention(nn.Module):
 
         return num / (den + self._EPS)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        document_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if document_ids is not None:
+            raise ValueError(
+                "Packed document masks are not supported for residual linear attention"
+            )
         B, T, d_model = x.shape
         assert (
             d_model == self.d_model

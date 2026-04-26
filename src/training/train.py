@@ -125,6 +125,102 @@ class TokenDataset(Dataset):
         return x, y
 
 
+class PackedTokenDataset(Dataset):
+    """Dataset for fixed-length packed sequences with document-boundary metadata."""
+
+    def __init__(
+        self,
+        tokens: np.ndarray | torch.Tensor,
+        sequence_offsets: np.ndarray,
+        boundaries: np.ndarray,
+        seq_len: int,
+        start: int = 0,
+        end: int | None = None,
+    ) -> None:
+        num_sequences = len(sequence_offsets) - 1
+        if num_sequences <= 0:
+            raise ValueError("packing metadata contains no sequences")
+        if len(tokens) % num_sequences != 0:
+            raise ValueError(
+                f"Token count {len(tokens)} is not divisible by packed sequence count {num_sequences}"
+            )
+        self.tokens = tokens
+        self.sequence_offsets = sequence_offsets
+        self.boundaries = boundaries
+        self.packed_sequence_length = len(tokens) // num_sequences
+        self.input_length = min(seq_len, self.packed_sequence_length - 1)
+        if self.input_length <= 0:
+            raise ValueError("packed sequence length must be at least 2")
+        if seq_len not in {self.input_length, self.packed_sequence_length}:
+            raise ValueError(
+                "data.max_length must equal packed_sequence_length or packed_sequence_length - 1 "
+                f"(got {seq_len}, packed_sequence_length={self.packed_sequence_length})"
+            )
+        self.start = start
+        self.end = num_sequences if end is None else end
+        if not (0 <= self.start <= self.end <= num_sequences):
+            raise ValueError(
+                f"Invalid packed sequence range start={self.start}, end={self.end}, total={num_sequences}"
+            )
+
+    def set_epoch(self, epoch: int) -> None:
+        """Packed rows are already fixed examples; DistributedSampler handles shuffle."""
+
+    def __len__(self) -> int:
+        return self.end - self.start
+
+    def __getitem__(
+        self, idx: int
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        seq_idx = self.start + idx
+        token_start = seq_idx * self.packed_sequence_length
+        token_end = token_start + self.packed_sequence_length
+        sample = self.tokens[token_start:token_end]
+        if isinstance(sample, np.ndarray):
+            sample = torch.from_numpy(sample.astype(np.int64))
+        sample = sample.long()
+
+        document_ids_full = self._document_ids(seq_idx)
+        x = sample[: self.input_length]
+        y = sample[1 : self.input_length + 1]
+        document_ids = document_ids_full[: self.input_length]
+        target_document_ids = document_ids_full[1 : self.input_length + 1]
+        loss_mask = (document_ids >= 0) & (document_ids == target_document_ids)
+        return x, y, document_ids, loss_mask
+
+    def _document_ids(self, seq_idx: int) -> torch.Tensor:
+        offsets_start = int(self.sequence_offsets[seq_idx])
+        offsets_end = int(self.sequence_offsets[seq_idx + 1])
+        boundaries = [int(x) for x in self.boundaries[offsets_start:offsets_end]]
+
+        document_ids = torch.full((self.packed_sequence_length,), -1, dtype=torch.long)
+        final_padded = seq_idx == len(self.sequence_offsets) - 2 and bool(boundaries)
+        active_end = (
+            boundaries[-1]
+            if final_padded and boundaries[-1] < self.packed_sequence_length
+            else self.packed_sequence_length
+        )
+        segment_ends = [b for b in boundaries if b <= active_end]
+        if active_end == self.packed_sequence_length and (
+            not segment_ends or segment_ends[-1] < active_end
+        ):
+            segment_ends.append(active_end)
+
+        start = 0
+        for doc_id, end in enumerate(segment_ends):
+            if end > start:
+                document_ids[start:end] = doc_id
+            start = end
+        return document_ids
+
+
+def load_packing_metadata(path: str | Path | None) -> tuple[np.ndarray, np.ndarray] | None:
+    if path is None:
+        return None
+    meta = np.load(path)
+    return meta["sequence_offsets"], meta["boundaries"]
+
+
 def load_tokens(
     dataset_path: str | Path,
     tokenizer_name: str,
@@ -259,6 +355,9 @@ def create_simple_loaders(  # noqa: C901
     batch_size: int,
     val_tokens: np.ndarray | torch.Tensor | None = None,
     test_tokens: np.ndarray | torch.Tensor | None = None,
+    train_packing_metadata: tuple[np.ndarray, np.ndarray] | None = None,
+    val_packing_metadata: tuple[np.ndarray, np.ndarray] | None = None,
+    test_packing_metadata: tuple[np.ndarray, np.ndarray] | None = None,
     validation_split: float = 0.1,
     seed: int = 42,
     device: torch.device | None = None,
@@ -313,7 +412,10 @@ def create_simple_loaders(  # noqa: C901
         pin_memory if pin_memory is not None else device is not None and device.type == "cuda"
     )
 
-    total_samples = len(train_tokens) // (seq_len + 1)
+    if train_packing_metadata is not None:
+        total_samples = len(train_packing_metadata[0]) - 1
+    else:
+        total_samples = len(train_tokens) // (seq_len + 1)
     if total_samples == 0:
         raise ValueError(
             f"Not enough tokens ({len(train_tokens)}) for at least one sample (need {seq_len + 1})"
@@ -331,9 +433,15 @@ def create_simple_loaders(  # noqa: C901
         )
 
     def _make_dataset(
-        tokens: np.ndarray | torch.Tensor, start: int = 0, end: int | None = None
+        tokens: np.ndarray | torch.Tensor,
+        start: int = 0,
+        end: int | None = None,
+        packing_metadata: tuple[np.ndarray, np.ndarray] | None = None,
     ) -> Dataset:
         """Return a Dataset for sample indices [start, end)."""
+        if packing_metadata is not None:
+            sequence_offsets, boundaries = packing_metadata
+            return PackedTokenDataset(tokens, sequence_offsets, boundaries, seq_len, start, end)
         if isinstance(tokens, np.ndarray):
             tok_start = start * (seq_len + 1)
             tok_end = end * (seq_len + 1) if end is not None else None
@@ -377,20 +485,29 @@ def create_simple_loaders(  # noqa: C901
 
     # Build loaders
     if val_tokens is not None:
-        train_loader = _create_loader(_make_dataset(train_tokens), shuffle=True)
-        val_loader = _create_loader(_make_dataset(val_tokens), shuffle=False)
+        train_loader = _create_loader(
+            _make_dataset(train_tokens, packing_metadata=train_packing_metadata), shuffle=True
+        )
+        val_loader = _create_loader(
+            _make_dataset(val_tokens, packing_metadata=val_packing_metadata), shuffle=False
+        )
     else:
         # Split train_tokens into train/val by sample index
         split_idx = int(total_samples * (1 - validation_split))
-        train_loader = _create_loader(_make_dataset(train_tokens, 0, split_idx), shuffle=True)
+        train_loader = _create_loader(
+            _make_dataset(train_tokens, 0, split_idx, train_packing_metadata), shuffle=True
+        )
         val_loader = _create_loader(
-            _make_dataset(train_tokens, split_idx, total_samples), shuffle=False
+            _make_dataset(train_tokens, split_idx, total_samples, train_packing_metadata),
+            shuffle=False,
         )
 
     # Create optional test loader
     test_loader = None
     if test_tokens is not None:
-        test_loader = _create_loader(_make_dataset(test_tokens), shuffle=False)
+        test_loader = _create_loader(
+            _make_dataset(test_tokens, packing_metadata=test_packing_metadata), shuffle=False
+        )
 
     return train_loader, val_loader, test_loader
 
@@ -470,6 +587,9 @@ def main() -> None:  # noqa: C901
 
     print_once(f"Loading training data from {dataset_path}")
     train_tokens = _load_dataset(dataset_path, config.data)
+    train_packing_metadata = load_packing_metadata(config.data.packing_metadata_path)
+    if train_packing_metadata is not None:
+        print_once(f"Packing    : using metadata {config.data.packing_metadata_path}")
 
     # Load optional validation dataset
     val_tokens = None
@@ -479,6 +599,7 @@ def main() -> None:  # noqa: C901
             raise FileNotFoundError(f"Validation dataset not found: {val_path}")
         print_once(f"Loading validation data from {val_path}")
         val_tokens = _load_dataset(val_path, config.data)
+    val_packing_metadata = load_packing_metadata(config.data.validation_packing_metadata_path)
 
     # Load optional test dataset
     test_tokens = None
@@ -488,8 +609,9 @@ def main() -> None:  # noqa: C901
             raise FileNotFoundError(f"Test dataset not found: {test_path}")
         print_once(f"Loading test data from {test_path}")
         test_tokens = _load_dataset(test_path, config.data)
+    test_packing_metadata = load_packing_metadata(config.data.test_packing_metadata_path)
 
-    if len(train_tokens) < config.data.max_length + 1:
+    if train_packing_metadata is None and len(train_tokens) < config.data.max_length + 1:
         raise ValueError(
             "Not enough tokens in training set for one sample: "
             f"got {len(train_tokens)}, need at least {config.data.max_length + 1}"
@@ -500,6 +622,9 @@ def main() -> None:  # noqa: C901
         train_tokens=train_tokens,
         val_tokens=val_tokens,
         test_tokens=test_tokens,
+        train_packing_metadata=train_packing_metadata,
+        val_packing_metadata=val_packing_metadata,
+        test_packing_metadata=test_packing_metadata,
         seq_len=config.data.max_length,
         batch_size=config.training.batch_size,
         validation_split=config.data.validation_split,
