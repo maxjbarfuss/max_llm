@@ -92,6 +92,7 @@ class LearningModel(nn.Module):
         num_kv_heads: K/V heads for GQA/MQA (None = MHA, 1 = MQA, N = GQA).
         dropout: Dropout probability (default: 0.0).
         ff_expansion_ratio: Expansion ratio for FFN hidden dimension (default: 4).
+        ffn_chunk_size: Optional sequence chunk size for lower-memory FFN execution.
         max_seq_len: Maximum sequence length (default: 2048).
         attention_backend: Attention backend to use (default: "flash").
             Options: "flash", "sage", "xformers", "standard"
@@ -114,6 +115,7 @@ class LearningModel(nn.Module):
         ff_expansion_ratio: int = 4,
         intermediate_size: int | None = None,
         ffn_type: str = "gelu",
+        ffn_chunk_size: int | None = None,
         max_seq_len: int = 2048,
         attention_backend: str = "flash",
         embedding_dim: int | None = None,
@@ -192,6 +194,7 @@ class LearningModel(nn.Module):
                 ff_expansion_ratio=ff_expansion_ratio,
                 intermediate_size=intermediate_size,
                 ffn_type=ffn_type,
+                ffn_chunk_size=ffn_chunk_size,
                 attention_backend=attention_backend,
                 num_layers=num_layers,
                 norm_type=norm_type,
@@ -349,7 +352,12 @@ class LearningModel(nn.Module):
         block_idx: int,
         kv_cache: LayerKVCache | None = None,
     ) -> torch.Tensor:
-        if not self._should_checkpoint(block_idx, kv_cache):
+        # In "ffn" mode attention always runs eagerly; only the FFN sublayer is checkpointed.
+        want_ck = (
+            self._should_checkpoint(block_idx, kv_cache)
+            and self.gradient_checkpointing_mode != "ffn"
+        )
+        if not want_ck:
             return block.apply_attn_only(h, kv_cache=kv_cache)
         return self._checkpoint_tensor_fn(lambda tensor: block.apply_attn_only(tensor), h)
 
@@ -542,6 +550,7 @@ class LearningModel(nn.Module):
             dropout=config.dropout,
             intermediate_size=config.intermediate_size,
             ffn_type=config.ffn_type,
+            ffn_chunk_size=config.ffn_chunk_size,
             max_seq_len=config.max_seq_length,
             attention_backend=attention_backend,
             embedding_dim=config.embedding_dim,

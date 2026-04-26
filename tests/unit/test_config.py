@@ -152,6 +152,13 @@ class TestModelConfig:
         config = make_model_config(hidden_size=768)
         assert config.intermediate_size == 4 * 768
 
+    def test_ffn_chunk_size_default_and_validation(self):
+        """FFN chunking should be disabled by default and positive when set."""
+        assert make_model_config().ffn_chunk_size is None
+        assert make_model_config(ffn_chunk_size=256).ffn_chunk_size == 256
+        with pytest.raises(ValueError, match="ffn_chunk_size"):
+            make_model_config(ffn_chunk_size=0)
+
     def test_gru_hidden_size_default(self):
         """GRU hidden size should default to hidden size."""
         config = make_model_config(hidden_size=768)
@@ -279,6 +286,32 @@ class TestTrainingConfig:
     def test_muon_ns_steps_must_be_positive(self):
         with pytest.raises(ValueError, match="muon_ns_steps"):
             make_training_config(muon_ns_steps=0)
+
+    def test_selective_checkpointing_defaults(self):
+        config = make_training_config()
+        assert config.selective_checkpointing_mode == "full"
+        assert config.selective_checkpointing_interval == 1
+
+    def test_selective_checkpointing_mode_valid(self):
+        for mode in ("full", "ffn"):
+            cfg = make_training_config(selective_checkpointing_mode=mode)
+            assert cfg.selective_checkpointing_mode == mode
+
+    def test_selective_checkpointing_mode_invalid_raises(self):
+        with pytest.raises(ValueError, match="selective_checkpointing_mode"):
+            make_training_config(selective_checkpointing_mode="attention")
+
+    def test_selective_checkpointing_interval_valid(self):
+        cfg = make_training_config(selective_checkpointing_interval=2)
+        assert cfg.selective_checkpointing_interval == 2
+
+    def test_selective_checkpointing_interval_zero_raises(self):
+        with pytest.raises(ValueError, match="selective_checkpointing_interval"):
+            make_training_config(selective_checkpointing_interval=0)
+
+    def test_selective_checkpointing_interval_negative_raises(self):
+        with pytest.raises(ValueError, match="selective_checkpointing_interval"):
+            make_training_config(selective_checkpointing_interval=-1)
 
 
 class TestInferenceConfig:
@@ -436,6 +469,7 @@ max_seq_length = 2048
 mla_latent_dim = 768
 rope_base = 10000
 intermediate_size = 3072
+ffn_chunk_size = 256
 num_experts = 16
 experts_per_token = 2
 moe_frequency = 2
@@ -497,6 +531,7 @@ seed = 42
         assert config.name == "toml-test"
         assert config.output_dir == "./tmp-outputs"
         assert config.training.batch_size == 8
+        assert config.model.ffn_chunk_size == 256
         assert config.inference.device == "cpu"
         assert config.data.tokenizer_backend == "unigram"
 

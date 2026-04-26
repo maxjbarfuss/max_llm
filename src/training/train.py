@@ -552,8 +552,15 @@ def main() -> None:  # noqa: C901
     # Apply gradient checkpointing before distributed wrapping so wrapper
     # modules do not hide the LearningModel checkpointing API.
     if config.training.selective_checkpointing:
-        model.gradient_checkpointing_enable()
-        print_once("Gradient checkpointing: Enabled")
+        model.gradient_checkpointing_enable(
+            mode=config.training.selective_checkpointing_mode,
+            interval=config.training.selective_checkpointing_interval,
+        )
+        print_once(
+            f"Gradient checkpointing: Enabled "
+            f"(mode={config.training.selective_checkpointing_mode}, "
+            f"interval={config.training.selective_checkpointing_interval})"
+        )
 
     want_fsdp = want_distributed and config.training.distributed_backend == "fsdp"
 

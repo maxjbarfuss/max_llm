@@ -50,6 +50,8 @@ class TrainingConfig:
     torch_compile_dynamic: bool = False
     attention_backend: str = "standard"
     selective_checkpointing: bool = False  # Disabled by default
+    selective_checkpointing_mode: Literal["full", "ffn"] = "full"
+    selective_checkpointing_interval: int = 1  # checkpoint every N blocks; 2 = skip every other
     resume_from_checkpoint: str | None = None
     resume_optimizer_state: bool = True
     resume_scheduler_state: bool = True
@@ -72,6 +74,7 @@ class TrainingConfig:
         """Validate training configuration."""
         self._coerce_toml_types()
         self._validate_basics()
+        self._validate_checkpointing()
         self._validate_optimizer()
         self._validate_regularization()
         self._validate_benchmark()
@@ -103,6 +106,16 @@ class TrainingConfig:
             raise ValueError("resume_lr_hold_steps + warmup_steps must be < max_steps")
         if not (0 <= self.min_lr_ratio <= 1):
             raise ValueError("min_lr_ratio must be in [0, 1]")
+
+    def _validate_checkpointing(self) -> None:
+        """Validate activation checkpointing configuration."""
+        if self.selective_checkpointing_mode not in {"full", "ffn"}:
+            raise ValueError(
+                f"selective_checkpointing_mode must be 'full' or 'ffn', "
+                f"got '{self.selective_checkpointing_mode}'"
+            )
+        if self.selective_checkpointing_interval < 1:
+            raise ValueError("selective_checkpointing_interval must be >= 1")
 
     def _validate_optimizer(self) -> None:
         """Validate optimizer-specific hyperparameters."""

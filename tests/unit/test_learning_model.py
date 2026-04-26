@@ -172,3 +172,47 @@ class TestLearningModelGradientCheckpointing:
         assert model.gradient_checkpointing is True
         model.gradient_checkpointing_disable()
         assert model.gradient_checkpointing is False
+
+    @pytest.mark.parametrize("mode", ["full", "ffn"])
+    def test_interval_skips_odd_blocks(self, mode: str):
+        """interval=2 should checkpoint only even-indexed blocks but produce identical output."""
+        torch.manual_seed(7)
+        config = make_model_config(hidden_size=64, num_layers=4, max_seq_length=32)
+        baseline = LearningModel.from_config(config, attention_backend="standard")
+        every2 = deepcopy(baseline)
+        every2.gradient_checkpointing_enable(mode=mode, interval=2)
+        baseline.train()
+        every2.train()
+
+        x = torch.randint(0, config.vocab_size, (2, 16))
+        torch.testing.assert_close(every2(x), baseline(x))
+
+    @pytest.mark.parametrize("res_type", ["full_attn", "block_attn"])
+    def test_ffn_mode_attn_residual_paths(self, res_type: str):
+        """'ffn' mode on attn-residual paths should produce numerically identical output."""
+        torch.manual_seed(42)
+        config = make_model_config(
+            hidden_size=64,
+            num_layers=8,
+            num_heads=4,
+            max_seq_length=32,
+            res_type=res_type,
+            attn_res_num_blocks=4,
+        )
+        baseline = LearningModel.from_config(config, attention_backend="standard")
+        ffn_ck = deepcopy(baseline)
+        ffn_ck.gradient_checkpointing_enable(mode="ffn")
+        baseline.train()
+        ffn_ck.train()
+
+        x = torch.randint(0, config.vocab_size, (2, 16))
+        baseline_loss = baseline(x).sum()
+        ffn_ck_loss = ffn_ck(x).sum()
+        torch.testing.assert_close(ffn_ck_loss, baseline_loss)
+
+        baseline_loss.backward()
+        ffn_ck_loss.backward()
+        torch.testing.assert_close(
+            ffn_ck.token_embedding.embedding.weight.grad,
+            baseline.token_embedding.embedding.weight.grad,
+        )
