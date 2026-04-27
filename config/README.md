@@ -50,7 +50,7 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `res_type` | `"standard"` \| `"full_attn"` \| `"block_attn"` | `"standard"` | Residual connection variant: `"standard"` = fixed additive residual (default); `"full_attn"` = Full Attention Residuals — each sublayer input is softmax attention over all prior sublayer outputs (O(L²), practical for small models); `"block_attn"` = Block Attention Residuals — layers grouped into `attn_res_num_blocks` blocks, attention over N block-level summaries (O(N²), recommended for scale; paper shows 1.25× compute advantage at N≈8). Queries zero-initialized so initial weights are uniform. Ref: Kimi Team 2025 |
 | `attn_res_num_blocks` | int | `8` | Block count N for `res_type = "block_attn"`; `num_layers` must be divisible by N; N=1 collapses to standard residuals, N=num_layers ≈ full_attn; ignored for `"standard"` and `"full_attn"` |
 | `embedding_dim` | int | `null` | Factorized embedding dimension; `null` = no factorization |
-| `share_layer_weights` | bool | `false` | Share a single physical block across all `num_layers` — drastically cuts capacity; avoid for real training |
+| `share_layer_weights` | bool | `false` | Share a single physical block across all `num_layers` — drastically cuts capacity; avoid for real training. Generalized looped block execution is planned in [docs/LOOPED_ATTENTION_PLAN.md](../docs/LOOPED_ATTENTION_PLAN.md) |
 | `mla_latent_dim` | int | `hidden_size` | MLA latent KV dimension; set < `hidden_size` to compress KV size; only meaningful when `attn_type = "mla"` |
 | `num_experts` | int | `1` | Total MoE experts (Phase 6+); `1` = dense |
 | `experts_per_token` | int | `1` | Top-k experts per token (Phase 6+) |
