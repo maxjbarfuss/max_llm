@@ -155,7 +155,17 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `generalization_filter_damping` | float | `0.25` | Multiplier for anti-aligned train-gradient components; `0.25` preserves a quarter-strength learning signal, `0.0` hard-drops, and `1.0` only measures alignment |
 | `generalization_filter_preserve_norm` | bool | `true` | Rescale filtered gradients back to the original train-gradient norm before clipping, focusing update direction without shrinking the overall step budget |
 
-Recommended first setting from the 2026-04-27 P4-mixed probe: enable the filter with `generalization_filter_interval = 4`, `generalization_filter_damping = 0.5`, and `generalization_filter_preserve_norm = true`. This preserved the baseline loss curve while damping about 36% of probed anti-aligned update elements. The no-renorm variant is useful as an ablation, but it slowed both train and validation loss by shrinking the effective step.
+Recommended P4 parameterization from the 2026-04-27 mixed-corpus probes:
+
+```toml
+generalization_filter_enabled = true
+generalization_filter_interval = 4
+generalization_filter_val_batches = 1
+generalization_filter_damping = 0.5
+generalization_filter_preserve_norm = true
+```
+
+On the 4L/256H P4 probe, this preserved the baseline loss curve while damping about 36% of probed anti-aligned update elements. On the tuned 12L/1024H looped-4 interleaved P4 comparison, it slightly improved every no-MoD validation checkpoint and finished at val loss `4.887799` vs control `4.890851` (`-0.003052`, about `0.31%` lower perplexity) with matched train loss and throughput. The no-renorm variant is useful as an ablation, but it slowed both train and validation loss by shrinking the effective step. MoD should be tuned separately before combining it with this default; the filter recovered part of MoD's validation penalty but did not make MoD competitive with the no-MoD arms on the 600-step slice.
 
 ### External Benchmarks (MCQ Harness)
 
