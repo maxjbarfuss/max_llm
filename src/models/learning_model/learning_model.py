@@ -132,6 +132,7 @@ class LearningModel(nn.Module):
         mla_latent_dim: int | None = None,
         attn_type: str = "mha",
         swa_window_size: int = 256,
+        interleaved_attn_pattern: tuple[str, ...] | list[str] | None = None,
         res_type: str = "standard",
         attn_res_num_blocks: int = 8,
         looped_num_blocks: int | None = None,
@@ -155,6 +156,8 @@ class LearningModel(nn.Module):
         self.max_seq_len = max_seq_len
         self.share_layer_weights = share_layer_weights
         self.looped_num_blocks = looped_num_blocks
+        self.attn_type = attn_type
+        self.interleaved_attn_pattern = tuple(interleaved_attn_pattern or ("swa", "mla"))
         self.mod_router_enabled = mod_router_enabled
         self.mod_router_start_layer = mod_router_start_layer
         self.mod_router_frequency = mod_router_frequency
@@ -196,9 +199,17 @@ class LearningModel(nn.Module):
         else:
             self.embedding_projection = None
 
-        # Transformer blocks
-        # Optional cross-layer parameter sharing: reuse one block N times.
-        def _make_block() -> TransformerBlock:
+        # Physical block count: share_layer_weights=1, looped_num_blocks=K, else num_layers.
+        if share_layer_weights:
+            _num_physical = 1
+        elif looped_num_blocks is not None:
+            _num_physical = looped_num_blocks
+        else:
+            _num_physical = num_layers
+
+        # Transformer blocks. Interleaved attention is assigned over physical blocks,
+        # so looped_num_blocks repeats the same SWA/full pattern across logical depth.
+        def _make_block(physical_idx: int) -> TransformerBlock:
             return TransformerBlock(
                 d_model=d_model,
                 num_heads=num_heads,
@@ -214,18 +225,11 @@ class LearningModel(nn.Module):
                 rope=rope,
                 attn_bias=attn_bias,
                 mla_latent_dim=mla_latent_dim,
-                attn_type=attn_type,
+                attn_type=self._attention_type_for_physical_block(physical_idx),
                 window_size=swa_window_size,
             )
 
-        # Physical block count: share_layer_weights=1, looped_num_blocks=K, else num_layers.
-        if share_layer_weights:
-            _num_physical = 1
-        elif looped_num_blocks is not None:
-            _num_physical = looped_num_blocks
-        else:
-            _num_physical = num_layers
-        self.blocks = nn.ModuleList([_make_block() for _ in range(_num_physical)])
+        self.blocks = nn.ModuleList([_make_block(i) for i in range(_num_physical)])
 
         self.depth_routers = nn.ModuleDict()
         if mod_router_enabled:
@@ -321,6 +325,14 @@ class LearningModel(nn.Module):
         - share_layer_weights=True: always returns blocks[0]
         """
         return cast(TransformerBlock, self.blocks[layer_idx % len(self.blocks)])
+
+    def _attention_type_for_physical_block(self, physical_idx: int) -> str:
+        """Return the attention variant assigned to a physical transformer block."""
+        if self.attn_type != "interleaved":
+            return self.attn_type
+        if not self.interleaved_attn_pattern:
+            raise ValueError("interleaved_attn_pattern must contain at least one attention type")
+        return self.interleaved_attn_pattern[physical_idx % len(self.interleaved_attn_pattern)]
 
     def _apply_transformer_blocks(
         self,
@@ -706,6 +718,7 @@ class LearningModel(nn.Module):
             mla_latent_dim=config.mla_latent_dim,
             attn_type=config.attn_type,
             swa_window_size=config.swa_window_size,
+            interleaved_attn_pattern=config.interleaved_attn_pattern,
             res_type=config.res_type,
             attn_res_num_blocks=config.attn_res_num_blocks,
             looped_num_blocks=config.looped_num_blocks,

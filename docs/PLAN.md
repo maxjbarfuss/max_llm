@@ -201,7 +201,9 @@ Wave 6 — evaluation and release gate:
 
 Architecture extensions (defer until core Phase 5 stack is stable):
 - ✅ **Mixture of Depths (MoD)** token router for variable-compute inference
-- ☐ Interleaved SWA + full attention ablation against pure MLA baseline
+- ✅ Interleaved SWA + full attention ablation against pure MLA baseline: `attn_type = "interleaved"` repeats `interleaved_attn_pattern` across physical blocks, including `looped_num_blocks`, so looped-attention shapes can ablate SWA/full-MLA mixes against pure MLA without changing logical depth. SWA now supports packed document masks on the standard fallback path for packed-corpus training.
+
+Interleaved attention validation note (2026-04-27): aggressive-dropout (`dropout=0.2`) 600-step smoke on the Wave 1 all-corpus smoke slice using the best recent 12L/1024H looped-4 compiled shape favored interleaving. Pure MLA: final_loss=`2.9252`, final_val=`4.2775`, best_val=`4.1939@300`, median throughput=`25.9k tok/s`, max memory=`9055MB`. Interleaved `["swa", "mla", "swa", "mla"]`: final_loss=`2.7028`, final_val=`4.2595`, best_val=`4.1615@400`, median throughput=`26.0k tok/s`, max memory=`9067MB`. Prior no-dropout MLA reference best_val=`4.3112@300`, final_val=`5.1336`. Conclusion: interleaving is a small validation-loss improvement at effectively equal speed/memory and is worth carrying forward.
 
 **Exit Criteria**:
 - ☐ Corpus hygiene: WikiText-103 removed; FineWeb/FineWeb-Edu dedup resolved; OWT quality filters + min_length + language filter active

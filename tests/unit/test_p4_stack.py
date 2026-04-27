@@ -9,15 +9,20 @@ Uses a small hidden_size=64 proxy to stay fast on CPU.
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 from src.config.model import ModelConfig
+from src.models.attention.causal_mha import CausalMultiHeadAttention
+from src.models.attention.multihead_latent_attention import MultiHeadLatentAttention
+from src.models.attention.sliding_window_attention import SlidingWindowAttention
 from src.models.learning_model import LearningModel
 
 
 def _p4_config(**overrides: object) -> ModelConfig:
     """Minimal model with the same architectural choices as the P4 milestone."""
-    base: dict[str, object] = {
+    base: dict[str, Any] = {
         # Architecture mirrors p4_final_anneal_20260422.toml, scaled down for speed
         "hidden_size": 64,
         "num_layers": 4,
@@ -171,6 +176,45 @@ class TestP4StackGQA:
         assert torch.isfinite(model(x)).all()
 
 
+class TestInterleavedAttentionStack:
+    def test_interleaved_looped_blocks_assign_attention_by_physical_block(self) -> None:
+        cfg = _p4_config(
+            attn_type="interleaved",
+            interleaved_attn_pattern=("swa", "mha", "mla", "swa"),
+            res_type="standard",
+            num_layers=12,
+            looped_num_blocks=4,
+        )
+        model = LearningModel.from_config(cfg, attention_backend="standard")
+
+        assert len(model.blocks) == 4
+        assert isinstance(model.blocks[0].attention, SlidingWindowAttention)
+        assert isinstance(model.blocks[1].attention, CausalMultiHeadAttention)
+        assert isinstance(model.blocks[2].attention, MultiHeadLatentAttention)
+        assert isinstance(model.blocks[3].attention, SlidingWindowAttention)
+        assert model.blocks[0] is model.blocks[4 % len(model.blocks)]
+
+    def test_interleaved_looped_stack_forward_and_backward(self) -> None:
+        torch.manual_seed(3)
+        cfg = _p4_config(
+            attn_type="interleaved",
+            interleaved_attn_pattern=("swa", "mla"),
+            res_type="standard",
+            num_layers=6,
+            looped_num_blocks=2,
+        )
+        model = LearningModel.from_config(cfg, attention_backend="standard")
+        x = torch.randint(0, 256, (2, 8))
+
+        logits = model(x)
+        assert logits.shape == (2, 8, 256)
+        loss = logits.mean()
+        loss.backward()
+        grads = [p.grad for p in model.parameters() if p.grad is not None]
+        assert grads
+        assert all(torch.isfinite(g).all() for g in grads)
+
+
 class TestWeightSoup:
     """P4-DEC-2: weight averaging (model soup) produces a valid model.
 
@@ -192,7 +236,7 @@ class TestWeightSoup:
         }
 
         model_soup = LearningModel.from_config(cfg, attention_backend="standard")
-        model_soup.load_state_dict(soup_sd)  # type: ignore[arg-type]
+        model_soup.load_state_dict(soup_sd)
 
         x = torch.randint(0, 256, (1, 8))
         out = model_soup(x)
@@ -210,7 +254,7 @@ class TestWeightSoup:
             for k in model_a.state_dict()
         }
         model_soup = LearningModel.from_config(cfg, attention_backend="standard")
-        model_soup.load_state_dict(soup_sd)  # type: ignore[arg-type]
+        model_soup.load_state_dict(soup_sd)
 
         x = torch.randint(0, 256, (1, 8))
         with torch.no_grad():

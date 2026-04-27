@@ -45,8 +45,9 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `rope_high_freq_factor` | float | `4.0` | YaRN β — high-frequency wavelength threshold; dims below β × `rope_original_max_seq_len` are left unchanged; dims between α and β are blended |
 | `rope_original_max_seq_len` | int | `null` | YaRN training context length used to compute wavelength thresholds; required when `rope_scaling_factor > 1.0` |
 | `rel_pos_num_buckets` | int | `32` | Distance buckets for `pos_type = "rel_pos"`; ignored for other variants |
-| `attn_type` | `"mha"` \| `"swa"` \| `"rla"` \| `"mla"` | `"mha"` | Attention variant: `"mha"` = standard causal MHA; `"swa"` = Sliding Window — each token attends to the last `swa_window_size` tokens (Flash Attention 2 native; otherwise band mask); `"rla"` = Residual Linear Attention — O(T·D²) ELU+1 kernel + learned input residual; incompatible with RoPE; `"mla"` = Multi-head Latent Attention — low-rank KV compression via `mla_latent_dim`; requires `pos_type = "rope"` or `"add_rope"` |
-| `swa_window_size` | int | `256` | Window width for `attn_type = "swa"`; must be ≥ 1; ignored for other variants |
+| `attn_type` | `"mha"` \| `"swa"` \| `"rla"` \| `"mla"` \| `"interleaved"` | `"mha"` | Attention variant: `"mha"` = standard causal MHA; `"swa"` = Sliding Window — each token attends to the last `swa_window_size` tokens (Flash Attention 2 native; otherwise band mask); `"rla"` = Residual Linear Attention — O(T·D²) ELU+1 kernel + learned input residual; incompatible with RoPE; `"mla"` = Multi-head Latent Attention — low-rank KV compression via `mla_latent_dim`; requires `pos_type = "rope"` or `"add_rope"`; `"interleaved"` = repeat `interleaved_attn_pattern` across physical blocks, including looped blocks |
+| `swa_window_size` | int | `256` | Window width for active SWA layers; must be ≥ 1 |
+| `interleaved_attn_pattern` | list[`"mha"` \| `"swa"` \| `"mla"`] | `["swa", "mla"]` | Physical-block attention pattern used when `attn_type = "interleaved"`. With `looped_num_blocks = K`, K physical blocks are assigned by this pattern and then reused by logical layer `i % K`, so a looped model repeats the same SWA/full-attention mix across depth. Use `"mla"` entries for full-attention MLA layers when comparing against a pure MLA baseline |
 | `res_type` | `"standard"` \| `"full_attn"` \| `"block_attn"` | `"standard"` | Residual connection variant: `"standard"` = fixed additive residual (default); `"full_attn"` = Full Attention Residuals — each sublayer input is softmax attention over all prior sublayer outputs (O(L²), practical for small models); `"block_attn"` = Block Attention Residuals — layers grouped into `attn_res_num_blocks` blocks, attention over N block-level summaries (O(N²), recommended for scale; paper shows 1.25× compute advantage at N≈8). Queries zero-initialized so initial weights are uniform. Ref: Kimi Team 2025 |
 | `attn_res_num_blocks` | int | `8` | Block count N for `res_type = "block_attn"`; `num_layers` must be divisible by N; N=1 collapses to standard residuals, N=num_layers ≈ full_attn; ignored for `"standard"` and `"full_attn"` |
 | `embedding_dim` | int | `null` | Factorized embedding dimension; `null` = no factorization |
@@ -369,6 +370,33 @@ swa_window_size = 512           # each token attends to at most 512 preceding to
 
 Flash Attention 2 (`attention_backend = "flash"`) handles `swa_window_size` natively and is
 strongly recommended; the fallback constructs an explicit band-diagonal mask in O(T²) memory.
+
+### Phase 5 — Interleaved SWA + Full Attention
+
+```toml
+[model]
+hidden_size = 1024
+num_heads = 16
+num_kv_heads = 4
+vocab_size = 32768
+max_seq_length = 4096
+num_layers = 12
+looped_num_blocks = 4
+norm_type = "flash"
+ffn_type = "xielu"
+intermediate_size = 2048
+pos_type = "rope"
+rope_base = 500000
+attn_type = "interleaved"
+interleaved_attn_pattern = ["swa", "mla", "swa", "mla"]
+swa_window_size = 512
+mla_latent_dim = 512
+```
+
+The pattern is assigned to physical transformer blocks. In the example above, logical layers
+0, 4, and 8 reuse physical block 0 (SWA), while logical layers 1, 5, and 9 reuse physical block 1
+(full MLA), preserving looped-attention parameter sharing while keeping the interleaving strategy
+explicit.
 
 ### Phase 4 — Residual Linear Attention
 

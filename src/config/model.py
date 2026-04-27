@@ -9,7 +9,8 @@ from .toml_utils import load_toml, section_or_root
 _VALID_NORM_TYPES = {"layer", "rms", "flash", "dyt", "crms"}
 _VALID_FFN_TYPES = {"gelu", "swiglu", "relu2", "xielu"}
 _VALID_POS_TYPES = {"learned", "rope", "add_rope", "alibi", "rel_pos"}
-_VALID_ATTN_TYPES = {"mha", "swa", "rla", "mla"}
+_VALID_ATTN_TYPES = {"mha", "swa", "rla", "mla", "interleaved"}
+_VALID_INTERLEAVED_ATTN_TYPES = {"mha", "swa", "mla"}
 _VALID_RES_TYPES = {"standard", "full_attn", "block_attn"}
 
 
@@ -63,8 +64,12 @@ class ModelConfig:
     ffn_type: str = "gelu"  # "gelu" | "swiglu" | "relu2" | "xielu"
     pos_type: str = "learned"  # "learned" | "rope" | "add_rope" | "alibi" | "rel_pos"
     rel_pos_num_buckets: int = 32  # used when pos_type == "rel_pos"
-    attn_type: str = "mha"  # "mha" | "swa" | "rla" | "mla"
+    attn_type: str = "mha"  # "mha" | "swa" | "rla" | "mla" | "interleaved"
     swa_window_size: int = 256  # window width used when attn_type == "swa"
+    interleaved_attn_pattern: tuple[str, ...] | list[str] = (
+        "swa",
+        "mla",
+    )  # repeated when attn_type == "interleaved"
     res_type: str = "standard"  # "standard" | "full_attn" | "block_attn" (Attention Residuals)
     attn_res_num_blocks: int = (
         8  # block count N for res_type="block_attn"; num_layers % N must == 0
@@ -83,6 +88,10 @@ class ModelConfig:
         # rope_base set but pos_type still "learned" → promote to "rope"
         if self.rope_base is not None and self.pos_type == "learned":
             object.__setattr__(self, "pos_type", "rope")
+        if isinstance(self.interleaved_attn_pattern, list):
+            object.__setattr__(
+                self, "interleaved_attn_pattern", tuple(self.interleaved_attn_pattern)
+            )
 
     def _validate_basic(self) -> None:
         """Validate basic scalar constraints."""
@@ -142,19 +151,36 @@ class ModelConfig:
             raise ValueError(
                 f"attn_type must be one of {_VALID_ATTN_TYPES}, got '{self.attn_type}'"
             )
-        if self.attn_type == "swa" and self.swa_window_size < 1:
+        active_attn_types = self._active_attn_types()
+        if "swa" in active_attn_types and self.swa_window_size < 1:
             raise ValueError(
-                f"swa_window_size must be >= 1 when attn_type='swa', got {self.swa_window_size}"
+                "swa_window_size must be >= 1 when sliding-window attention is active, "
+                f"got {self.swa_window_size}"
             )
-        if self.attn_type == "rla" and self.pos_type in {"rope", "add_rope"}:
+        if "rla" in active_attn_types and self.pos_type in {"rope", "add_rope"}:
             raise ValueError(
                 "attn_type='rla' is incompatible with RoPE — the ELU+1 kernel breaks "
                 "rotation equivariance. Use pos_type='learned' or 'alibi' instead."
             )
-        if self.attn_type == "mla" and self.pos_type not in {"rope", "add_rope"}:
+        if "mla" in active_attn_types and self.pos_type not in {"rope", "add_rope"}:
             raise ValueError(
-                "attn_type='mla' requires decoupled RoPE; use pos_type='rope' or 'add_rope'."
+                "MLA attention requires decoupled RoPE; use pos_type='rope' or 'add_rope'."
             )
+
+    def _active_attn_types(self) -> set[str]:
+        """Return attention variants used by the configured model."""
+        if self.attn_type != "interleaved":
+            return {self.attn_type}
+        pattern = self.interleaved_attn_pattern
+        if not isinstance(pattern, tuple) or len(pattern) == 0:
+            raise ValueError("interleaved_attn_pattern must contain at least one attention type")
+        invalid = sorted(set(pattern) - _VALID_INTERLEAVED_ATTN_TYPES)
+        if invalid:
+            raise ValueError(
+                "interleaved_attn_pattern entries must be one of "
+                f"{_VALID_INTERLEAVED_ATTN_TYPES}, got {invalid}"
+            )
+        return set(pattern)
 
     def _validate_res_type(self) -> None:
         """Validate residual connection type and block count."""

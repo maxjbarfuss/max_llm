@@ -137,6 +137,47 @@ class TestModelConfig:
         with pytest.raises(ValueError, match="requires decoupled RoPE"):
             make_model_config(attn_type="mla", pos_type="learned", rope_base=None)
 
+    def test_interleaved_attn_default_pattern_valid(self):
+        """Interleaved attention defaults to an SWA/MLA pattern."""
+        config = make_model_config(attn_type="interleaved")
+        assert config.interleaved_attn_pattern == ("swa", "mla")
+
+    def test_interleaved_attn_accepts_toml_list_pattern(self):
+        """TOML arrays are normalized to tuples for immutable configs."""
+        config = make_model_config(
+            attn_type="interleaved",
+            interleaved_attn_pattern=["swa", "mha", "mla"],
+        )
+        assert config.interleaved_attn_pattern == ("swa", "mha", "mla")
+
+    def test_interleaved_attn_rejects_empty_pattern(self):
+        with pytest.raises(ValueError, match="interleaved_attn_pattern"):
+            make_model_config(attn_type="interleaved", interleaved_attn_pattern=[])
+
+    def test_interleaved_attn_rejects_invalid_pattern_entry(self):
+        with pytest.raises(ValueError, match="interleaved_attn_pattern entries"):
+            make_model_config(
+                attn_type="interleaved",
+                interleaved_attn_pattern=["swa", "rla"],
+            )
+
+    def test_interleaved_mla_requires_rope_pos_type(self):
+        with pytest.raises(ValueError, match="MLA attention requires"):
+            make_model_config(
+                attn_type="interleaved",
+                interleaved_attn_pattern=["swa", "mla"],
+                pos_type="learned",
+                rope_base=None,
+            )
+
+    def test_interleaved_swa_validates_window_size(self):
+        with pytest.raises(ValueError, match="swa_window_size"):
+            make_model_config(
+                attn_type="interleaved",
+                interleaved_attn_pattern=["swa", "mla"],
+                swa_window_size=0,
+            )
+
     def test_moe_validation(self):
         """MoE configuration should be validated."""
         # Valid MoE config

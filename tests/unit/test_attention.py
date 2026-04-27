@@ -328,6 +328,25 @@ class TestSlidingWindowAttention:
             out1[0, 4], out2[0, 4], atol=1e-5
         ), "Position 4 should not depend on position 0 when window_size=3"
 
+    def test_document_mask_prevents_packed_cross_document_leakage(self) -> None:
+        torch.manual_seed(2)
+        swa = SlidingWindowAttention(
+            d_model=32, num_heads=2, window_size=8, attention_backend="standard"
+        )
+        swa.eval()
+
+        x = torch.randn(1, 4, 32)
+        document_ids = torch.tensor([[0, 0, 1, 1]], dtype=torch.long)
+        masked = swa(x, document_ids=document_ids)
+
+        x_modified = x.clone()
+        x_modified[0, :2, :] = torch.randn(2, 32)
+        masked_modified = swa(x_modified, document_ids=document_ids)
+        unmasked_modified = swa(x_modified)
+
+        assert torch.allclose(masked[0, 2:], masked_modified[0, 2:], atol=1e-6)
+        assert not torch.allclose(masked[0, 2:], unmasked_modified[0, 2:], atol=1e-6)
+
     def test_gradient_flows(self) -> None:
         swa = SlidingWindowAttention(
             d_model=32, num_heads=2, window_size=4, attention_backend="standard"

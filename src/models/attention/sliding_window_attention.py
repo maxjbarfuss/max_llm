@@ -1,15 +1,20 @@
 """Sliding window causal attention — each token attends only to the most recent `window_size` tokens."""
 
 import math
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.models.attention.masks import document_causal_bias
 from src.models.position.add_rope import AdditiveRoPE
 from src.models.position.alibi import ALiBi
 from src.models.position.rel_pos_bias import RelativePositionBias
 from src.models.position.rope import RotaryEmbedding
+
+if TYPE_CHECKING:
+    from src.models.kv_cache import LayerKVCache
 
 try:
     from flash_attn import flash_attn_func
@@ -124,10 +129,11 @@ class SlidingWindowAttention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        kv_cache: "LayerKVCache | None" = None,
         document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        if document_ids is not None:
-            raise ValueError("Packed document masks are not supported for sliding-window attention")
+        if kv_cache is not None:
+            raise ValueError("KV-cache generation is not supported for sliding-window attention")
         B, T, d_model = x.shape
         assert (
             d_model == self.d_model
@@ -147,8 +153,9 @@ class SlidingWindowAttention(nn.Module):
             self.attn_bias.get_bias(T, q.device, q.dtype) if self.attn_bias is not None else None
         )
         dropout_p = self._runtime_dropout()
+        effective_backend = "standard" if document_ids is not None else self.attention_backend
 
-        if self.attention_backend == "flash":
+        if effective_backend == "flash":
             assert flash_attn_func is not None
             alibi_slopes: torch.Tensor | None = None
             if isinstance(self.attn_bias, ALiBi):
@@ -166,9 +173,13 @@ class SlidingWindowAttention(nn.Module):
             assert out is not None
         else:
             k, v = self._maybe_expand_kv(k, v)
-            window_mask = self._sliding_window_causal_mask(T, q.device, q.dtype)
+            window_mask: torch.Tensor = self._sliding_window_causal_mask(T, q.device, q.dtype)
             if attn_bias_tensor is not None:
                 window_mask = window_mask + attn_bias_tensor
+            if document_ids is not None:
+                window_mask = window_mask.unsqueeze(0).unsqueeze(0) + document_causal_bias(
+                    document_ids, q.dtype
+                )
             q_std = q.transpose(1, 2)
             k_std = k.transpose(1, 2)
             v_std = v.transpose(1, 2)
