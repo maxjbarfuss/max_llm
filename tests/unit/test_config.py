@@ -172,6 +172,41 @@ class TestModelConfig:
         with pytest.raises(FrozenInstanceError):
             config.hidden_size = 1024
 
+    def test_looped_num_blocks_default_is_none(self):
+        """looped_num_blocks defaults to None (one block per logical layer)."""
+        config = make_model_config()
+        assert config.looped_num_blocks is None
+
+    def test_looped_num_blocks_valid(self):
+        """looped_num_blocks accepts any positive value <= num_layers."""
+        config = make_model_config(num_layers=12, looped_num_blocks=4)
+        assert config.looped_num_blocks == 4
+
+    def test_looped_num_blocks_equals_num_layers_valid(self):
+        """looped_num_blocks == num_layers is valid (identity mapping)."""
+        config = make_model_config(num_layers=12, looped_num_blocks=12)
+        assert config.looped_num_blocks == 12
+
+    def test_looped_num_blocks_one_valid(self):
+        """looped_num_blocks=1 is valid (equivalent to share_layer_weights)."""
+        config = make_model_config(num_layers=12, looped_num_blocks=1)
+        assert config.looped_num_blocks == 1
+
+    def test_looped_num_blocks_zero_invalid(self):
+        """looped_num_blocks=0 must raise ValueError."""
+        with pytest.raises(ValueError, match="looped_num_blocks must be positive"):
+            make_model_config(num_layers=12, looped_num_blocks=0)
+
+    def test_looped_num_blocks_negative_invalid(self):
+        """looped_num_blocks < 0 must raise ValueError."""
+        with pytest.raises(ValueError, match="looped_num_blocks must be positive"):
+            make_model_config(num_layers=12, looped_num_blocks=-1)
+
+    def test_looped_num_blocks_exceeds_num_layers_invalid(self):
+        """looped_num_blocks > num_layers must raise ValueError."""
+        with pytest.raises(ValueError, match="looped_num_blocks.*must be <=.*num_layers"):
+            make_model_config(num_layers=6, looped_num_blocks=7)
+
 
 class TestTrainingConfig:
     """Tests for TrainingConfig validation."""

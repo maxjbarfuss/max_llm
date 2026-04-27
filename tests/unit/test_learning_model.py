@@ -272,3 +272,105 @@ class TestLearningModelGradientCheckpointing:
             ffn_ck.token_embedding.embedding.weight.grad,
             baseline.token_embedding.embedding.weight.grad,
         )
+
+
+class TestLoopedAttention:
+    """Looped block execution (looped_num_blocks)."""
+
+    def test_default_creates_one_block_per_layer(self):
+        """Without looped_num_blocks, model has num_layers physical blocks."""
+        config = make_model_config(num_layers=4)
+        model = LearningModel.from_config(config, attention_backend="standard")
+        assert len(model.blocks) == 4
+
+    def test_looped_creates_k_physical_blocks(self):
+        """looped_num_blocks=K creates exactly K physical blocks."""
+        config = make_model_config(num_layers=6, looped_num_blocks=2)
+        model = LearningModel.from_config(config, attention_backend="standard")
+        assert len(model.blocks) == 2
+        assert model.num_layers == 6
+
+    def test_looped_num_blocks_stored(self):
+        """looped_num_blocks is stored on the model."""
+        config = make_model_config(num_layers=6, looped_num_blocks=3)
+        model = LearningModel.from_config(config, attention_backend="standard")
+        assert model.looped_num_blocks == 3
+
+    def test_block_for_layer_cyclic_mapping(self):
+        """_block_for_layer returns blocks cyclically for looped models."""
+        config = make_model_config(num_layers=6, looped_num_blocks=2)
+        model = LearningModel.from_config(config, attention_backend="standard")
+        # Even logical layers → physical block 0; odd → physical block 1
+        assert model._block_for_layer(0) is model.blocks[0]
+        assert model._block_for_layer(1) is model.blocks[1]
+        assert model._block_for_layer(2) is model.blocks[0]
+        assert model._block_for_layer(3) is model.blocks[1]
+        assert model._block_for_layer(4) is model.blocks[0]
+        assert model._block_for_layer(5) is model.blocks[1]
+
+    def test_share_layer_weights_is_looped_num_blocks_1(self):
+        """share_layer_weights=True behaves identically to looped_num_blocks=1."""
+        torch.manual_seed(0)
+        config_shared = make_model_config(num_layers=4, share_layer_weights=True)
+        config_looped = make_model_config(num_layers=4, looped_num_blocks=1)
+        shared = LearningModel.from_config(config_shared, attention_backend="standard")
+        looped = LearningModel.from_config(config_looped, attention_backend="standard")
+
+        # Both have a single physical block
+        assert len(shared.blocks) == 1
+        assert len(looped.blocks) == 1
+
+        # Copy shared weights into looped so we can compare forward passes
+        looped.load_state_dict(shared.state_dict())
+        x = torch.randint(0, config_shared.vocab_size, (2, 16))
+        torch.testing.assert_close(shared(x), looped(x))
+
+    def test_looped_forward_output_shape(self):
+        """Looped model forward produces correct (B, T, vocab_size) shape."""
+        config = make_model_config(num_layers=6, looped_num_blocks=2)
+        model = LearningModel.from_config(config, attention_backend="standard")
+        x = torch.randint(0, config.vocab_size, (2, 16))
+        assert model(x).shape == (2, 16, config.vocab_size)
+
+    def test_looped_kv_cache_has_num_layers_slots(self):
+        """make_kv_cache returns num_layers logical slots, not K physical blocks."""
+        config = make_model_config(
+            num_layers=6, looped_num_blocks=2, rope_base=10000, pos_type="rope"
+        )
+        model = LearningModel.from_config(config, attention_backend="standard")
+        cache = model.make_kv_cache(batch_size=1)
+        assert len(cache) == 6
+
+    @pytest.mark.parametrize(
+        "res_type,attn_res_num_blocks",
+        [("standard", 1), ("full_attn", 1), ("block_attn", 4)],
+    )
+    def test_looped_all_residual_paths(self, res_type: str, attn_res_num_blocks: int):
+        """All residual variants produce valid output with looped blocks."""
+        config = make_model_config(
+            hidden_size=64,
+            num_layers=8,
+            num_heads=4,
+            max_seq_length=32,
+            res_type=res_type,
+            attn_res_num_blocks=attn_res_num_blocks,
+            looped_num_blocks=4,
+        )
+        model = LearningModel.from_config(config, attention_backend="standard")
+        x = torch.randint(0, config.vocab_size, (2, 16))
+        out = model(x)
+        assert out.shape == (2, 16, config.vocab_size)
+        assert torch.isfinite(out).all()
+
+    def test_looped_gradients_flow(self):
+        """Looped model gradients flow to physical block parameters."""
+        torch.manual_seed(7)
+        config = make_model_config(num_layers=6, looped_num_blocks=2)
+        model = LearningModel.from_config(config, attention_backend="standard")
+        model.train()
+        x = torch.randint(0, config.vocab_size, (2, 16))
+        loss = model(x).sum()
+        loss.backward()
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                assert param.grad is not None, f"No gradient for {name}"

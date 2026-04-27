@@ -133,6 +133,7 @@ class LearningModel(nn.Module):
         swa_window_size: int = 256,
         res_type: str = "standard",
         attn_res_num_blocks: int = 8,
+        looped_num_blocks: int | None = None,
     ) -> None:
         super().__init__()
         assert (
@@ -145,6 +146,7 @@ class LearningModel(nn.Module):
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len
         self.share_layer_weights = share_layer_weights
+        self.looped_num_blocks = looped_num_blocks
         self.gradient_checkpointing = False
         self.gradient_checkpointing_mode = "full"
         self.gradient_checkpointing_interval = 1
@@ -205,17 +207,14 @@ class LearningModel(nn.Module):
                 window_size=swa_window_size,
             )
 
-        if self.share_layer_weights:
-            self.blocks = nn.ModuleList([_make_block()])
+        # Physical block count: share_layer_weights=1, looped_num_blocks=K, else num_layers.
+        if share_layer_weights:
+            _num_physical = 1
+        elif looped_num_blocks is not None:
+            _num_physical = looped_num_blocks
         else:
-            self.blocks = nn.ModuleList([_make_block() for _ in range(num_layers)])
-
-        if self.share_layer_weights:
-            assert len(self.blocks) == 1, "share_layer_weights=True must create exactly one block"
-        else:
-            assert (
-                len(self.blocks) == num_layers
-            ), "share_layer_weights=False must create one block per layer"
+            _num_physical = num_layers
+        self.blocks = nn.ModuleList([_make_block() for _ in range(_num_physical)])
 
         # Attention Residuals (optional depth-wise attention over layer outputs)
         self.res_type = res_type
@@ -291,6 +290,16 @@ class LearningModel(nn.Module):
         ), f"LearningModel output shape mismatch: expected {(B, T, self.vocab_size)}, got {logits.shape}"
         return logits
 
+    def _block_for_layer(self, layer_idx: int) -> TransformerBlock:
+        """Return the physical TransformerBlock for logical layer `layer_idx`.
+
+        Cyclic mapping: layer_idx % len(blocks).  Works for all three modes:
+        - default (one block per layer): identity mapping
+        - looped_num_blocks=K: cycles through K physical blocks
+        - share_layer_weights=True: always returns blocks[0]
+        """
+        return cast(TransformerBlock, self.blocks[layer_idx % len(self.blocks)])
+
     def _apply_transformer_blocks(
         self,
         h: torch.Tensor,
@@ -315,16 +324,10 @@ class LearningModel(nn.Module):
         document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Standard pre-norm residual stack (original behaviour)."""
-        if self.share_layer_weights:
-            shared_block = cast(TransformerBlock, self.blocks[0])
-            for i in range(self.num_layers):
-                kv = kv_caches[i] if kv_caches is not None else None
-                h = self._run_block(shared_block, h, i, kv_cache=kv, document_ids=document_ids)
-            return h
-        for i, block in enumerate(self.blocks):
+        for i in range(self.num_layers):
             kv = kv_caches[i] if kv_caches is not None else None
             h = self._run_block(
-                cast(TransformerBlock, block), h, i, kv_cache=kv, document_ids=document_ids
+                self._block_for_layer(i), h, i, kv_cache=kv, document_ids=document_ids
             )
         return h
 
@@ -400,10 +403,7 @@ class LearningModel(nn.Module):
         sublayer_idx = 0
 
         for block_idx in range(self.num_layers):
-            block = cast(
-                TransformerBlock,
-                self.blocks[0] if self.share_layer_weights else self.blocks[block_idx],
-            )
+            block = self._block_for_layer(block_idx)
             kv = kv_caches[block_idx] if kv_caches is not None else None
             # Attention sublayer
             h_in = ar(sublayer_idx, values)
@@ -451,10 +451,7 @@ class LearningModel(nn.Module):
 
             for rel_i in range(S):
                 block_idx = group_n * S + rel_i
-                block = cast(
-                    TransformerBlock,
-                    self.blocks[0] if self.share_layer_weights else self.blocks[block_idx],
-                )
+                block = self._block_for_layer(block_idx)
                 kv = kv_caches[block_idx] if kv_caches is not None else None
 
                 # --- Attention sublayer ---
@@ -599,12 +596,9 @@ class LearningModel(nn.Module):
                 )
             return None
 
-        if self.share_layer_weights:
-            attn: nn.Module = self.blocks[0].attention  # type: ignore[assignment]
-            layers: list[LayerKVCache | None] = [_layer_cache(attn) for _ in range(self.num_layers)]
-        else:
-            layers = [_layer_cache(cast(TransformerBlock, b).attention) for b in self.blocks]
-
+        layers: list[LayerKVCache | None] = [
+            _layer_cache(self._block_for_layer(i).attention) for i in range(self.num_layers)
+        ]
         return ModelKVCache(layers)
 
     def load_state_dict(
@@ -648,4 +642,5 @@ class LearningModel(nn.Module):
             swa_window_size=config.swa_window_size,
             res_type=config.res_type,
             attn_res_num_blocks=config.attn_res_num_blocks,
+            looped_num_blocks=config.looped_num_blocks,
         )

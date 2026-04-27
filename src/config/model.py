@@ -51,6 +51,7 @@ class ModelConfig:
     # Optional: advanced features
     embedding_dim: int | None = None
     share_layer_weights: bool = False
+    looped_num_blocks: int | None = None  # None = one block per logical layer (default)
     norm_type: str = "layer"  # "layer" = LayerNorm (Phase 3); "rms" = RMSNorm (Phase 4+ Llama)
     ffn_type: str = "gelu"  # "gelu" | "swiglu" | "relu2" | "xielu"
     pos_type: str = "learned"  # "learned" | "rope" | "add_rope" | "alibi" | "rel_pos"
@@ -98,6 +99,7 @@ class ModelConfig:
         self._validate_pos_type()
         self._validate_attn_type()
         self._validate_res_type()
+        self._validate_looped()
 
     @staticmethod
     def _validate_positive(name: str, value: int) -> None:
@@ -160,6 +162,19 @@ class ModelConfig:
                     f"num_layers ({self.num_layers}) must be divisible by "
                     f"attn_res_num_blocks ({self.attn_res_num_blocks}) "
                     f"when res_type='block_attn'"
+                )
+
+    def _validate_looped(self) -> None:
+        """Validate looped block execution field."""
+        if self.looped_num_blocks is not None:
+            if self.looped_num_blocks <= 0:
+                raise ValueError(
+                    f"looped_num_blocks must be positive when set, got {self.looped_num_blocks}"
+                )
+            if self.looped_num_blocks > self.num_layers:
+                raise ValueError(
+                    f"looped_num_blocks ({self.looped_num_blocks}) must be <= "
+                    f"num_layers ({self.num_layers})"
                 )
 
     def _validate_dims(self) -> None:
