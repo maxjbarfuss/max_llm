@@ -207,6 +207,51 @@ class TestModelConfig:
         with pytest.raises(ValueError, match="looped_num_blocks.*must be <=.*num_layers"):
             make_model_config(num_layers=6, looped_num_blocks=7)
 
+    def test_mod_router_defaults(self):
+        """MoD router defaults are disabled and conservative."""
+        config = make_model_config()
+        assert config.mod_router_enabled is False
+        assert config.mod_router_capacity_fraction == 0.5
+        assert config.mod_router_min_tokens == 1
+        assert config.mod_router_start_layer == 0
+        assert config.mod_router_frequency == 1
+        assert config.mod_router_use_soft_gate is True
+        assert config.mod_router_inference_threshold is None
+
+    def test_mod_router_valid(self):
+        """MoD router accepts a sparse every-other-layer configuration."""
+        config = make_model_config(
+            mod_router_enabled=True,
+            mod_router_capacity_fraction=0.25,
+            mod_router_min_tokens=0,
+            mod_router_start_layer=2,
+            mod_router_frequency=2,
+            mod_router_inference_threshold=0.6,
+        )
+        assert config.mod_router_enabled is True
+        assert config.mod_router_frequency == 2
+
+    @pytest.mark.parametrize("fraction", [0.0, -0.1, 1.1])
+    def test_mod_router_capacity_fraction_invalid(self, fraction: float):
+        with pytest.raises(ValueError, match="mod_router_capacity_fraction"):
+            make_model_config(mod_router_capacity_fraction=fraction)
+
+    def test_mod_router_min_tokens_invalid(self):
+        with pytest.raises(ValueError, match="mod_router_min_tokens"):
+            make_model_config(mod_router_min_tokens=-1)
+
+    def test_mod_router_start_layer_invalid_when_enabled(self):
+        with pytest.raises(ValueError, match="mod_router_start_layer"):
+            make_model_config(num_layers=4, mod_router_enabled=True, mod_router_start_layer=4)
+
+    def test_mod_router_frequency_invalid(self):
+        with pytest.raises(ValueError, match="mod_router_frequency"):
+            make_model_config(mod_router_frequency=0)
+
+    def test_mod_router_inference_threshold_invalid(self):
+        with pytest.raises(ValueError, match="mod_router_inference_threshold"):
+            make_model_config(mod_router_inference_threshold=1.1)
+
 
 class TestTrainingConfig:
     """Tests for TrainingConfig validation."""

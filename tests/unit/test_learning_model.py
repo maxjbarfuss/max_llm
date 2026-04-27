@@ -2,16 +2,19 @@
 
 import io
 from copy import deepcopy
+from typing import Any, cast
 
 import pytest
 import torch
+import torch.nn as nn
 
 from src.config.model import ModelConfig
+from src.models.depth_router import TokenDepthRouter
 from src.models.learning_model import LearningModel
 
 
 def make_model_config(**overrides: object) -> ModelConfig:
-    values: dict[str, object] = {
+    values: dict[str, Any] = {
         "hidden_size": 128,
         "num_layers": 1,
         "num_heads": 4,
@@ -27,7 +30,7 @@ def make_model_config(**overrides: object) -> ModelConfig:
         "dropout": 0.0,
     }
     values.update(overrides)
-    return ModelConfig(**values)
+    return ModelConfig(**cast(Any, values))
 
 
 class TestLearningModelConstruction:
@@ -374,3 +377,125 @@ class TestLoopedAttention:
         for name, param in model.named_parameters():
             if param.requires_grad:
                 assert param.grad is not None, f"No gradient for {name}"
+
+
+class TestMixtureOfDepthsRouter:
+    """Mixture-of-Depths token router behaviour."""
+
+    def test_router_selects_capacity_fraction_for_ffn_delta(self):
+        """Router computes FFN deltas for exactly the selected token budget."""
+        router = TokenDepthRouter(d_model=4, capacity_fraction=0.5, min_tokens=0)
+        with torch.no_grad():
+            router.score.weight.zero_()
+            router.score.bias.zero_()
+
+        x = torch.zeros(2, 4, 4)
+        delta = router.apply_ffn_delta(x, nn.Identity(), lambda tensor: torch.ones_like(tensor))
+
+        assert delta.shape == x.shape
+        assert torch.count_nonzero(delta).item() == 2 * 2 * 4
+        assert router.last_selected_fraction == 0.5
+
+    def test_eval_threshold_can_skip_all_tokens(self):
+        """Inference threshold permits true layer skipping when min_tokens=0."""
+        router = TokenDepthRouter(
+            d_model=4,
+            capacity_fraction=1.0,
+            min_tokens=0,
+            inference_threshold=0.75,
+        )
+        with torch.no_grad():
+            router.score.weight.zero_()
+            router.score.bias.zero_()
+        router.eval()
+
+        x = torch.ones(1, 3, 4)
+        out = router.apply_ffn_residual(x, nn.Identity(), lambda t: t * 2)
+
+        torch.testing.assert_close(out, x)
+        assert router.last_selected_fraction == 0.0
+
+    def test_router_casts_float32_ffn_delta_to_input_dtype(self):
+        """Routed scatter supports mixed precision FFNs that return fp32 deltas."""
+        router = TokenDepthRouter(d_model=4, capacity_fraction=1.0)
+        with torch.no_grad():
+            router.score.weight.zero_()
+            router.score.bias.zero_()
+
+        x = torch.ones(2, 3, 4, dtype=torch.bfloat16)
+
+        def fp32_feedforward(tensor: torch.Tensor) -> torch.Tensor:
+            return tensor.float() * 2.0
+
+        delta = router.apply_ffn_delta(x, nn.Identity(), fp32_feedforward)
+
+        assert delta.dtype == torch.bfloat16
+        torch.testing.assert_close(delta, torch.full_like(x, 2.0))
+
+    def test_router_selection_fraction_is_diagnostic_only(self):
+        """Selection fraction updates in eager mode without affecting routed output."""
+        router = TokenDepthRouter(d_model=4, capacity_fraction=0.25, min_tokens=0)
+        with torch.no_grad():
+            router.score.weight.zero_()
+            router.score.bias.zero_()
+
+        x = torch.zeros(2, 4, 4)
+        delta = router.apply_ffn_delta(x, nn.Identity(), lambda tensor: torch.ones_like(tensor))
+
+        assert router.last_selected_fraction == 0.25
+        assert torch.count_nonzero(delta).item() == 2 * 1 * 4
+
+    def test_model_builds_configured_router_layers(self):
+        """LearningModel creates routers only for configured logical layers."""
+        config = make_model_config(
+            num_layers=6,
+            mod_router_enabled=True,
+            mod_router_start_layer=1,
+            mod_router_frequency=2,
+        )
+        model = LearningModel.from_config(config, attention_backend="standard")
+        assert set(model.depth_routers.keys()) == {"1", "3", "5"}
+
+    def test_model_router_receives_gradients(self):
+        """Soft-gated routing keeps router scores trainable on selected tokens."""
+        torch.manual_seed(9)
+        config = make_model_config(
+            hidden_size=64,
+            num_layers=2,
+            num_heads=4,
+            max_seq_length=32,
+            mod_router_enabled=True,
+            mod_router_capacity_fraction=0.5,
+        )
+        model = LearningModel.from_config(config, attention_backend="standard")
+        x = torch.randint(0, config.vocab_size, (2, 16))
+        loss = model(x).sum()
+        loss.backward()
+
+        first_router = model.depth_routers["0"]
+        assert isinstance(first_router, TokenDepthRouter)
+        assert first_router.score.weight.grad is not None
+        assert torch.count_nonzero(first_router.score.weight.grad).item() > 0
+
+    def test_mod_router_all_residual_paths_produce_finite_outputs(self):
+        """MoD FFN routing composes with the standard attn-residual variants."""
+        for res_type, attn_res_num_blocks in [
+            ("standard", 1),
+            ("full_attn", 1),
+            ("block_attn", 4),
+        ]:
+            config = make_model_config(
+                hidden_size=64,
+                num_layers=4,
+                num_heads=4,
+                max_seq_length=32,
+                res_type=res_type,
+                attn_res_num_blocks=attn_res_num_blocks,
+                mod_router_enabled=True,
+                mod_router_capacity_fraction=0.5,
+            )
+            model = LearningModel.from_config(config, attention_backend="standard")
+            x = torch.randint(0, config.vocab_size, (2, 16))
+            out = model(x)
+            assert out.shape == (2, 16, config.vocab_size)
+            assert torch.isfinite(out).all()

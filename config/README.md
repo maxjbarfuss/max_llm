@@ -52,6 +52,13 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `embedding_dim` | int | `null` | Factorized embedding dimension; `null` = no factorization |
 | `share_layer_weights` | bool | `false` | Backward-compatible alias for `looped_num_blocks = 1` — one physical block shared across all logical layers. Drastically cuts capacity; prefer `looped_num_blocks` for new configs |
 | `looped_num_blocks` | int \| `null` | `null` | Number of physical transformer blocks. `null` = one block per logical layer (default). When set to `K` (1 ≤ K ≤ `num_layers`), constructs K physical blocks and maps logical layer `i` to physical block `i % K`. Reduces parameter count by `num_layers / K`× while preserving logical depth. Per-logical-layer KV caches are always allocated regardless of sharing. Use with caution in training; watch for loss degradation vs the full-depth baseline |
+| `mod_router_enabled` | bool | `false` | Enable Mixture-of-Depths token routing. Current implementation routes the FFN sublayer per logical block while keeping attention full-context, preserving RoPE, packed document masks, and KV-cache semantics while reducing high-cost FFN compute for skipped tokens |
+| `mod_router_capacity_fraction` | float | `0.5` | Fraction of tokens selected per routed layer during training/top-k routing. Must be in `(0, 1]`; lower values reduce FFN activation memory and compute but may slow loss decrease if too aggressive |
+| `mod_router_min_tokens` | int | `1` | Minimum selected tokens per sequence row. Set to `0` with `mod_router_inference_threshold` to permit complete FFN skipping on low-priority decode steps |
+| `mod_router_start_layer` | int | `0` | First logical layer eligible for MoD routing. Use a value >0 to keep early lexical/context-building layers dense |
+| `mod_router_frequency` | int | `1` | Route every N-th logical layer starting at `mod_router_start_layer`; `1` routes all eligible layers, `2` routes every other eligible layer |
+| `mod_router_use_soft_gate` | bool | `true` | Apply a straight-through soft score multiplier to selected FFN deltas so router scores receive gradients while preserving the selected-token forward value |
+| `mod_router_inference_threshold` | float \| `null` | `null` | Optional eval/inference score threshold. When set, tokens below the threshold skip routed FFN compute; selected tokens are still capped by `mod_router_capacity_fraction` |
 | `mla_latent_dim` | int | `hidden_size` | MLA latent KV dimension; set < `hidden_size` to compress KV size; only meaningful when `attn_type = "mla"` |
 | `num_experts` | int | `1` | Total MoE experts (Phase 6+); `1` = dense |
 | `experts_per_token` | int | `1` | Top-k experts per token (Phase 6+) |

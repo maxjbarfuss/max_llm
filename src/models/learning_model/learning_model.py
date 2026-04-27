@@ -12,6 +12,7 @@ from torch.utils.checkpoint import checkpoint
 from typing_extensions import Self
 
 from src.config.model import ModelConfig
+from src.models.depth_router import TokenDepthRouter
 from src.models.embeddings.token_embedding import TokenEmbedding
 from src.models.kv_cache import LayerKVCache, ModelKVCache
 from src.models.norm import make_norm
@@ -134,6 +135,13 @@ class LearningModel(nn.Module):
         res_type: str = "standard",
         attn_res_num_blocks: int = 8,
         looped_num_blocks: int | None = None,
+        mod_router_enabled: bool = False,
+        mod_router_capacity_fraction: float = 0.5,
+        mod_router_min_tokens: int = 1,
+        mod_router_start_layer: int = 0,
+        mod_router_frequency: int = 1,
+        mod_router_use_soft_gate: bool = True,
+        mod_router_inference_threshold: float | None = None,
     ) -> None:
         super().__init__()
         assert (
@@ -147,6 +155,9 @@ class LearningModel(nn.Module):
         self.max_seq_len = max_seq_len
         self.share_layer_weights = share_layer_weights
         self.looped_num_blocks = looped_num_blocks
+        self.mod_router_enabled = mod_router_enabled
+        self.mod_router_start_layer = mod_router_start_layer
+        self.mod_router_frequency = mod_router_frequency
         self.gradient_checkpointing = False
         self.gradient_checkpointing_mode = "full"
         self.gradient_checkpointing_interval = 1
@@ -215,6 +226,17 @@ class LearningModel(nn.Module):
         else:
             _num_physical = num_layers
         self.blocks = nn.ModuleList([_make_block() for _ in range(_num_physical)])
+
+        self.depth_routers = nn.ModuleDict()
+        if mod_router_enabled:
+            for layer_idx in range(mod_router_start_layer, num_layers, mod_router_frequency):
+                self.depth_routers[str(layer_idx)] = TokenDepthRouter(
+                    d_model=d_model,
+                    capacity_fraction=mod_router_capacity_fraction,
+                    min_tokens=mod_router_min_tokens,
+                    use_soft_gate=mod_router_use_soft_gate,
+                    inference_threshold=mod_router_inference_threshold,
+                )
 
         # Attention Residuals (optional depth-wise attention over layer outputs)
         self.res_type = res_type
@@ -344,6 +366,41 @@ class LearningModel(nn.Module):
     def _checkpoint_tensor_fn(fn: Any, *args: torch.Tensor) -> torch.Tensor:
         return checkpoint(fn, *args, use_reentrant=False)
 
+    def _depth_router_for_layer(self, block_idx: int) -> TokenDepthRouter | None:
+        key = str(block_idx)
+        if key not in self.depth_routers:
+            return None
+        return cast(TokenDepthRouter, self.depth_routers[key])
+
+    def _apply_ffn_residual(
+        self, block: TransformerBlock, h: torch.Tensor, block_idx: int
+    ) -> torch.Tensor:
+        router = self._depth_router_for_layer(block_idx)
+        if router is None:
+            return block._apply_feedforward_residual(h)  # noqa: SLF001
+        return router.apply_ffn_residual(h, block.norm2, block.feedforward)
+
+    def _apply_ffn_delta(
+        self, block: TransformerBlock, h: torch.Tensor, block_idx: int
+    ) -> torch.Tensor:
+        router = self._depth_router_for_layer(block_idx)
+        if router is None:
+            return block.apply_ffn_only(h)
+        return router.apply_ffn_delta(h, block.norm2, block.feedforward)
+
+    def _run_block_eager(
+        self,
+        block: TransformerBlock,
+        h: torch.Tensor,
+        block_idx: int,
+        kv_cache: LayerKVCache | None = None,
+        document_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        h = block._apply_attention_residual(  # noqa: SLF001
+            h, kv_cache=kv_cache, document_ids=document_ids
+        )
+        return self._apply_ffn_residual(block, h, block_idx)
+
     def _run_block(
         self,
         block: TransformerBlock,
@@ -353,14 +410,21 @@ class LearningModel(nn.Module):
         document_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if not self._should_checkpoint(block_idx, kv_cache):
-            return block(h, kv_cache=kv_cache, document_ids=document_ids)
+            return self._run_block_eager(
+                block, h, block_idx, kv_cache=kv_cache, document_ids=document_ids
+            )
         if self.gradient_checkpointing_mode == "ffn":
             h = block._apply_attention_residual(  # noqa: SLF001
                 h, kv_cache=None, document_ids=document_ids
             )
-            return self._checkpoint_tensor_fn(block._apply_feedforward_residual, h)  # noqa: SLF001
+            return self._checkpoint_tensor_fn(
+                lambda tensor: self._apply_ffn_residual(block, tensor, block_idx), h
+            )
         return self._checkpoint_tensor_fn(
-            lambda tensor: block(tensor, kv_cache=None, document_ids=document_ids), h
+            lambda tensor: self._run_block_eager(
+                block, tensor, block_idx, kv_cache=None, document_ids=document_ids
+            ),
+            h,
         )
 
     def _run_attn_only(
@@ -386,8 +450,10 @@ class LearningModel(nn.Module):
         self, block: TransformerBlock, h: torch.Tensor, block_idx: int
     ) -> torch.Tensor:
         if not self._should_checkpoint(block_idx):
-            return block.apply_ffn_only(h)
-        return self._checkpoint_tensor_fn(block.apply_ffn_only, h)
+            return self._apply_ffn_delta(block, h, block_idx)
+        return self._checkpoint_tensor_fn(
+            lambda tensor: self._apply_ffn_delta(block, tensor, block_idx), h
+        )
 
     def _apply_blocks_full_attn_res(
         self,
@@ -643,4 +709,11 @@ class LearningModel(nn.Module):
             res_type=config.res_type,
             attn_res_num_blocks=config.attn_res_num_blocks,
             looped_num_blocks=config.looped_num_blocks,
+            mod_router_enabled=config.mod_router_enabled,
+            mod_router_capacity_fraction=config.mod_router_capacity_fraction,
+            mod_router_min_tokens=config.mod_router_min_tokens,
+            mod_router_start_layer=config.mod_router_start_layer,
+            mod_router_frequency=config.mod_router_frequency,
+            mod_router_use_soft_gate=config.mod_router_use_soft_gate,
+            mod_router_inference_threshold=config.mod_router_inference_threshold,
         )

@@ -52,6 +52,13 @@ class ModelConfig:
     embedding_dim: int | None = None
     share_layer_weights: bool = False
     looped_num_blocks: int | None = None  # None = one block per logical layer (default)
+    mod_router_enabled: bool = False
+    mod_router_capacity_fraction: float = 0.5
+    mod_router_min_tokens: int = 1
+    mod_router_start_layer: int = 0
+    mod_router_frequency: int = 1
+    mod_router_use_soft_gate: bool = True
+    mod_router_inference_threshold: float | None = None
     norm_type: str = "layer"  # "layer" = LayerNorm (Phase 3); "rms" = RMSNorm (Phase 4+ Llama)
     ffn_type: str = "gelu"  # "gelu" | "swiglu" | "relu2" | "xielu"
     pos_type: str = "learned"  # "learned" | "rope" | "add_rope" | "alibi" | "rel_pos"
@@ -100,6 +107,7 @@ class ModelConfig:
         self._validate_attn_type()
         self._validate_res_type()
         self._validate_looped()
+        self._validate_mod_router()
 
     @staticmethod
     def _validate_positive(name: str, value: int) -> None:
@@ -175,6 +183,29 @@ class ModelConfig:
                 raise ValueError(
                     f"looped_num_blocks ({self.looped_num_blocks}) must be <= "
                     f"num_layers ({self.num_layers})"
+                )
+
+    def _validate_mod_router(self) -> None:
+        """Validate Mixture-of-Depths token router fields."""
+        if not (0.0 < self.mod_router_capacity_fraction <= 1.0):
+            raise ValueError(
+                "mod_router_capacity_fraction must be in (0, 1], got "
+                f"{self.mod_router_capacity_fraction}"
+            )
+        if self.mod_router_min_tokens < 0:
+            raise ValueError("mod_router_min_tokens must be non-negative")
+        if self.mod_router_start_layer < 0:
+            raise ValueError("mod_router_start_layer must be non-negative")
+        if self.mod_router_frequency < 1:
+            raise ValueError("mod_router_frequency must be >= 1")
+        if self.mod_router_inference_threshold is not None and not (
+            0.0 <= self.mod_router_inference_threshold <= 1.0
+        ):
+            raise ValueError("mod_router_inference_threshold must be in [0, 1]")
+        if self.mod_router_enabled and self.num_layers > 0:
+            if self.mod_router_start_layer >= self.num_layers:
+                raise ValueError(
+                    "mod_router_start_layer must be < num_layers when MoD routing is enabled"
                 )
 
     def _validate_dims(self) -> None:
