@@ -467,3 +467,126 @@ class TestMultiHeadLatentAttention:
                 attention_backend="standard",
                 rope=None,
             )
+
+
+class TestVarlenFlashPacked:
+    """Varlen Flash path matches SDPA-with-document-bias on packed inputs."""
+
+    def test_cu_seqlens_from_document_ids_basic(self) -> None:
+        from src.models.attention.masks import cu_seqlens_from_document_ids
+
+        document_ids = torch.tensor(
+            [
+                [0, 0, 0, 1, 1, -1, -1, -1],
+                [0, 0, 1, 1, 1, 2, 2, 2],
+            ],
+            dtype=torch.long,
+        )
+        cu, max_seqlen = cu_seqlens_from_document_ids(document_ids)
+        # Row 0: segments [0..3), [3..5), [5..8)  → starts at 0, 3, 5 within row
+        # Row 1: segments [0..2), [2..5), [5..8)  → starts at 8, 10, 13 globally
+        assert cu.dtype == torch.int32
+        assert cu.tolist() == [0, 3, 5, 8, 10, 13, 16]
+        assert max_seqlen == 8
+
+    def test_cu_seqlens_id_only_changes(self) -> None:
+        from src.models.attention.masks import cu_seqlens_from_document_ids
+
+        document_ids = torch.tensor([[0, 0, 0, 0]], dtype=torch.long)
+        cu, max_seqlen = cu_seqlens_from_document_ids(document_ids)
+        assert cu.tolist() == [0, 4]
+        assert max_seqlen == 4
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="Flash Attention requires CUDA")
+    def test_varlen_flash_matches_standard_packed_mha(self) -> None:
+        from src.models.attention.causal_mha import FLASH_ATTN_AVAILABLE
+
+        if not FLASH_ATTN_AVAILABLE:
+            pytest.skip("flash_attn not installed")
+
+        torch.manual_seed(0)
+        device = torch.device("cuda")
+        d_model, num_heads = 64, 4
+        rope = RotaryEmbedding(head_dim=16, max_seq_len=64, base=10000).to(device)
+        mha_flash = (
+            CausalMultiHeadAttention(
+                d_model=d_model, num_heads=num_heads, attention_backend="flash", rope=rope
+            )
+            .to(device)
+            .to(torch.bfloat16)
+        )
+        mha_flash.eval()
+
+        x = torch.randn(2, 8, d_model, device=device, dtype=torch.bfloat16)
+        document_ids = torch.tensor(
+            [
+                [0, 0, 0, 1, 1, 1, -1, -1],
+                [0, 0, 1, 1, 1, 2, 2, 2],
+            ],
+            dtype=torch.long,
+            device=device,
+        )
+
+        with torch.no_grad():
+            out_flash = mha_flash(x, document_ids=document_ids)
+
+            # Force standard backend by toggling attribute (same weights/inputs)
+            saved = mha_flash.attention_backend
+            mha_flash.attention_backend = "standard"
+            try:
+                out_std = mha_flash(x, document_ids=document_ids)
+            finally:
+                mha_flash.attention_backend = saved
+
+        # Compare only at valid (non-padded) positions; padded outputs differ
+        # between paths by design and are dropped by the training loss mask.
+        valid = (document_ids >= 0).unsqueeze(-1)
+        diff = (out_flash.float() - out_std.float()).masked_fill(~valid, 0.0)
+        assert diff.abs().max().item() < 5e-2
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="Flash Attention requires CUDA")
+    def test_varlen_flash_matches_standard_packed_mla(self) -> None:
+        from src.models.attention.multihead_latent_attention import FLASH_ATTN_AVAILABLE
+
+        if not FLASH_ATTN_AVAILABLE:
+            pytest.skip("flash_attn not installed")
+
+        torch.manual_seed(1)
+        device = torch.device("cuda")
+        rope = RotaryEmbedding(head_dim=16, max_seq_len=64, base=10000).to(device)
+        mla = (
+            MultiHeadLatentAttention(
+                d_model=64,
+                num_heads=4,
+                num_kv_heads=2,
+                latent_dim=32,
+                attention_backend="flash",
+                rope=rope,
+            )
+            .to(device)
+            .to(torch.bfloat16)
+        )
+        mla.eval()
+
+        x = torch.randn(2, 8, 64, device=device, dtype=torch.bfloat16)
+        document_ids = torch.tensor(
+            [
+                [0, 0, 1, 1, 1, -1, -1, -1],
+                [0, 0, 0, 1, 1, 2, 2, 2],
+            ],
+            dtype=torch.long,
+            device=device,
+        )
+
+        with torch.no_grad():
+            out_flash = mla(x, document_ids=document_ids)
+            saved = mla.attention_backend
+            mla.attention_backend = "standard"
+            try:
+                out_std = mla(x, document_ids=document_ids)
+            finally:
+                mla.attention_backend = saved
+
+        valid = (document_ids >= 0).unsqueeze(-1)
+        diff = (out_flash.float() - out_std.float()).masked_fill(~valid, 0.0)
+        assert diff.abs().max().item() < 5e-2

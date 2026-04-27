@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.models.attention.masks import document_causal_bias
+from src.models.attention.masks import cu_seqlens_from_document_ids, document_causal_bias
 from src.models.position.add_rope import AdditiveRoPE
 from src.models.position.alibi import ALiBi
 from src.models.position.rel_pos_bias import RelativePositionBias
@@ -33,11 +33,12 @@ if TYPE_CHECKING:
 
 # Try to import Flash Attention 2
 try:
-    from flash_attn import flash_attn_func
+    from flash_attn import flash_attn_func, flash_attn_varlen_func
 
     FLASH_ATTN_AVAILABLE = True
 except ImportError:
     flash_attn_func = None  # type: ignore[assignment, unused-ignore]
+    flash_attn_varlen_func = None  # type: ignore[assignment, unused-ignore]
     FLASH_ATTN_AVAILABLE = False
 
 # Try to import xformers attention
@@ -224,6 +225,40 @@ class MultiHeadLatentAttention(nn.Module):
         assert out is not None
         return out
 
+    def _flash_varlen_attention(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        document_ids: torch.Tensor,
+        dropout_p: float,
+    ) -> torch.Tensor:
+        """Flash varlen path for packed sequences with document boundaries."""
+        assert flash_attn_varlen_func is not None
+        B, T = q.shape[0], q.shape[1]
+        cu_seqlens, max_seqlen = cu_seqlens_from_document_ids(document_ids)
+        q_packed = q.reshape(B * T, q.shape[2], q.shape[3])
+        k_packed = k.reshape(B * T, k.shape[2], k.shape[3])
+        v_packed = v.reshape(B * T, v.shape[2], v.shape[3])
+        alibi_slopes: torch.Tensor | None = None
+        if isinstance(self.attn_bias, ALiBi):
+            alibi_slopes = self.attn_bias.slopes.to(torch.float32)
+        out = flash_attn_varlen_func(
+            q_packed,
+            k_packed,
+            v_packed,
+            cu_seqlens_q=cu_seqlens,
+            cu_seqlens_k=cu_seqlens,
+            max_seqlen_q=max_seqlen,
+            max_seqlen_k=max_seqlen,
+            dropout_p=dropout_p,
+            softmax_scale=self.softmax_scale,
+            causal=True,
+            alibi_slopes=alibi_slopes,
+        )
+        assert out is not None
+        return out.view(B, T, q.shape[2], q.shape[3])
+
     def _sage_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         assert sage_attn_func is not None
         return sage_attn_func(
@@ -348,7 +383,13 @@ class MultiHeadLatentAttention(nn.Module):
         backend = self.attention_backend
         if isinstance(self.attn_bias, RelativePositionBias):
             backend = "standard"
-        if document_ids is not None:
+        use_varlen_flash = (
+            document_ids is not None
+            and backend == "flash"
+            and not isinstance(self.attn_bias, ALiBi | RelativePositionBias)
+            and kv_cache is None
+        )
+        if document_ids is not None and not use_varlen_flash:
             backend = "standard"
 
         # GQA expansion: flash handles internally; others need explicit expand
@@ -357,7 +398,11 @@ class MultiHeadLatentAttention(nn.Module):
             v = v.repeat_interleave(self.groups, dim=2)
 
         if backend == "flash":
-            out = self._flash_attention(q, k, v, dropout_p)
+            if use_varlen_flash:
+                assert document_ids is not None
+                out = self._flash_varlen_attention(q, k, v, document_ids, dropout_p)
+            else:
+                out = self._flash_attention(q, k, v, dropout_p)
         elif backend == "sage":
             out = self._sage_attention(q, k, v)
         elif backend == "xformers":

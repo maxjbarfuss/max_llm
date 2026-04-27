@@ -3,6 +3,45 @@
 import torch
 
 
+def cu_seqlens_from_document_ids(
+    document_ids: torch.Tensor,
+) -> tuple[torch.Tensor, int]:
+    """Compute cumulative sequence lengths for Flash varlen attention.
+
+    Each batch row is split into segments at every change in ``document_ids``
+    (including transitions to/from invalid ids ``< 0``). Padded positions form
+    their own segments so they only attend to themselves; the training-side
+    loss mask discards their predictions.
+
+    Args:
+        document_ids: ``(B, T)`` integer ids per packed token.
+
+    Returns:
+        Tuple ``(cu_seqlens, max_seqlen)`` where ``cu_seqlens`` is an
+        ``int32`` tensor of shape ``(num_segments + 1,)`` and ``max_seqlen``
+        is a Python int safe upper bound (the row sequence length ``T``).
+    """
+    if document_ids.ndim != 2:
+        raise ValueError(f"document_ids must be (B, T), got {tuple(document_ids.shape)}")
+
+    B, T = document_ids.shape
+    device = document_ids.device
+    if T == 0:
+        return torch.zeros(1, dtype=torch.int32, device=device), 0
+
+    # Mark segment starts: position 0 of every row, and any in-row id change.
+    starts = torch.zeros(B, T, dtype=torch.bool, device=device)
+    starts[:, 0] = True
+    if T > 1:
+        starts[:, 1:] = document_ids[:, 1:] != document_ids[:, :-1]
+
+    flat_starts = starts.flatten()
+    start_idx = flat_starts.nonzero(as_tuple=True)[0].to(torch.int32)
+    total = torch.tensor([B * T], device=device, dtype=torch.int32)
+    cu_seqlens = torch.cat([start_idx, total])
+    return cu_seqlens, T
+
+
 def document_causal_bias(
     document_ids: torch.Tensor,
     dtype: torch.dtype,
