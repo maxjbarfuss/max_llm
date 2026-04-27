@@ -82,6 +82,11 @@ def build_training_config(**overrides: Any) -> TrainingConfig:
         "use_torch_compile": False,  # Disabled for faster tests
         "attention_backend": "torch",  # Most compatible
         "selective_checkpointing": False,
+        "generalization_filter_enabled": False,
+        "generalization_filter_interval": 1,
+        "generalization_filter_val_batches": 1,
+        "generalization_filter_damping": 0.25,
+        "generalization_filter_preserve_norm": True,
     }
 
     defaults.update(overrides)

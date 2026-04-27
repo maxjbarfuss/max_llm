@@ -11,6 +11,8 @@ import src.training.loop as loop
 from src.config.model import ModelConfig
 from src.models.learning_model import LearningModel
 from src.training.loop import (
+    _restore_filtered_gradients,
+    apply_generalization_gradient_filter,
     compute_chunked_lm_loss,
     compute_loss_with_smoothing,
     optimizer_step,
@@ -553,6 +555,127 @@ class TestEnhancedTrainingFeatures:
         assert all(float(row["forward_backward_ms"]) > 0 for row in rows)
         assert all(float(row["optimizer_ms"]) > 0 for row in rows)
         assert all(float(row["step_ms"]) >= float(row["forward_backward_ms"]) for row in rows)
+
+    def test_generalization_filter_damps_antialigned_gradients(self):
+        """Anti-aligned train gradients can be damped without norm preservation."""
+        model = torch.nn.Linear(2, 1, bias=False)
+        train_grads = [torch.tensor([[2.0, -3.0]])]
+        val_grads = [torch.tensor([[4.0, 5.0]])]
+
+        keep_fraction = _restore_filtered_gradients(
+            model,
+            train_grads=train_grads,
+            val_grads=val_grads,
+            damping=0.25,
+            preserve_norm=False,
+        )
+
+        assert keep_fraction == 0.5
+        assert model.weight.grad is not None
+        assert torch.allclose(model.weight.grad, torch.tensor([[2.0, -0.75]]))
+
+    def test_generalization_filter_rejects_invalid_damping(self):
+        model = torch.nn.Linear(2, 1, bias=False)
+
+        with pytest.raises(ValueError, match="damping"):
+            _restore_filtered_gradients(
+                model,
+                train_grads=[torch.ones(1, 2)],
+                val_grads=[torch.ones(1, 2)],
+                damping=1.1,
+            )
+
+    def test_generalization_filter_preserves_gradient_norm_by_default(self):
+        """Default filtering should focus direction without shrinking step norm."""
+        model = torch.nn.Linear(2, 1, bias=False)
+        train_grad = torch.tensor([[2.0, -3.0]])
+        train_grads = [train_grad]
+        val_grads = [torch.tensor([[4.0, 5.0]])]
+
+        _restore_filtered_gradients(
+            model,
+            train_grads=train_grads,
+            val_grads=val_grads,
+            damping=0.25,
+        )
+
+        assert model.weight.grad is not None
+        assert torch.allclose(model.weight.grad.norm(), train_grad.norm(), atol=1e-6)
+        assert model.weight.grad[0, 1].abs() < train_grad[0, 1].abs()
+
+    def test_generalization_filter_restores_train_gradients_after_probe(self):
+        """Validation probe gradients should only filter the train update, not replace it."""
+        torch.manual_seed(123)
+        model = _make_model()
+        optimizer = _make_optimizer(model)
+        x_train, y_train = _make_batch(batch_size=2, seq_len=4)
+        x_val, y_val = _make_batch(batch_size=2, seq_len=4)
+
+        train_step(model, x_train, y_train, optimizer)
+        keep_fraction, probe_loss, gradients_unscaled = apply_generalization_gradient_filter(
+            model=model,
+            optimizer=optimizer,
+            probe_batches=[(x_val, y_val)],
+            damping=0.25,
+        )
+
+        assert 0.0 <= keep_fraction <= 1.0
+        assert math.isfinite(probe_loss)
+        assert gradients_unscaled is False
+        assert any(
+            param.grad is not None and param.grad.abs().sum() > 0 for param in model.parameters()
+        )
+
+    def test_train_with_generalization_filter_logs_alignment_metrics(self, tmp_path):
+        """When enabled, the train loop records gradient-alignment filter diagnostics."""
+        from torch.utils.data import DataLoader, TensorDataset
+
+        model = _make_model()
+        x_train = torch.randint(0, 128, (12, 8))
+        y_train = torch.randint(0, 128, (12, 8))
+        x_val = torch.randint(0, 128, (8, 8))
+        y_val = torch.randint(0, 128, (8, 8))
+        train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=4)
+        val_loader = DataLoader(TensorDataset(x_val, y_val), batch_size=4)
+        csv_path = tmp_path / "loss_curve.csv"
+
+        metrics = train(
+            model=model,
+            train_loader=train_loader,
+            optimizer=_make_optimizer(model),
+            max_steps=2,
+            log_interval=0,
+            csv_log_path=csv_path,
+            val_loader=val_loader,
+            generalization_filter_enabled=True,
+            generalization_filter_val_batches=1,
+            generalization_filter_damping=0.25,
+        )
+
+        assert len(metrics["losses"]) == 2
+        with csv_path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        assert all(row["generalization_keep_fraction"] for row in rows)
+        assert all(row["generalization_probe_loss"] for row in rows)
+        assert all(0.0 <= float(row["generalization_keep_fraction"]) <= 1.0 for row in rows)
+
+    def test_train_generalization_filter_requires_validation_loader(self):
+        from torch.utils.data import DataLoader, TensorDataset
+
+        model = _make_model()
+        x_train = torch.randint(0, 128, (4, 8))
+        y_train = torch.randint(0, 128, (4, 8))
+        train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=2)
+
+        with pytest.raises(ValueError, match="requires val_loader"):
+            train(
+                model=model,
+                train_loader=train_loader,
+                optimizer=_make_optimizer(model),
+                max_steps=1,
+                log_interval=0,
+                generalization_filter_enabled=True,
+            )
 
 
 class TestZLoss:

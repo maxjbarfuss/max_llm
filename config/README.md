@@ -149,6 +149,13 @@ For the Python config module (adding fields, versioning, test fixtures) see [src
 | `use_chunked_loss` | bool | `false` | Chunked LM-head + CE: projects hidden states per time-chunk inside `torch.utils.checkpoint` so peak logit memory is `O(B·chunk_size·V)` instead of `O(B·T·V)`; numerically equivalent to the standard path |
 | `loss_chunk_size` | int | `256` | Time-axis chunk size for `use_chunked_loss`; smaller = lower peak memory, more checkpoint recompute |
 | `z_loss_weight` | float | `0.0` | PaLM-style logit-scale regularizer: adds `z_loss_weight × mean(logsumexp(logits)²)` to training loss to prevent logit explosion; `1e-4` is a good starting value; excluded from validation loss |
+| `generalization_filter_enabled` | bool | `false` | Experimental train-vs-validation gradient filter: before optimizer step, compares train gradients with a small validation-gradient probe and damps update components whose directions are anti-aligned |
+| `generalization_filter_interval` | int | `1` | Apply the generalization filter every N optimizer steps when enabled |
+| `generalization_filter_val_batches` | int | `1` | Number of validation batches used for each gradient-alignment probe; higher is less noisy but slower |
+| `generalization_filter_damping` | float | `0.25` | Multiplier for anti-aligned train-gradient components; `0.25` preserves a quarter-strength learning signal, `0.0` hard-drops, and `1.0` only measures alignment |
+| `generalization_filter_preserve_norm` | bool | `true` | Rescale filtered gradients back to the original train-gradient norm before clipping, focusing update direction without shrinking the overall step budget |
+
+Recommended first setting from the 2026-04-27 P4-mixed probe: enable the filter with `generalization_filter_interval = 4`, `generalization_filter_damping = 0.5`, and `generalization_filter_preserve_norm = true`. This preserved the baseline loss curve while damping about 36% of probed anti-aligned update elements. The no-renorm variant is useful as an ablation, but it slowed both train and validation loss by shrinking the effective step.
 
 ### External Benchmarks (MCQ Harness)
 

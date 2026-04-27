@@ -236,6 +236,168 @@ def compute_loss_with_smoothing(
     return ce_loss
 
 
+def _compute_language_model_loss(
+    model: nn.Module,
+    x: torch.Tensor,
+    y: torch.Tensor,
+    use_amp: bool = False,
+    label_smoothing: float = 0.0,
+    z_loss_weight: float = 0.0,
+    use_chunked_loss: bool = False,
+    loss_chunk_size: int = 256,
+    document_ids: torch.Tensor | None = None,
+    loss_mask: torch.Tensor | None = None,
+) -> torch.Tensor:
+    device = next(model.parameters()).device
+    autocast_ctx = (
+        torch.autocast(device_type="cuda")
+        if (use_amp and device.type == "cuda")
+        else contextlib.nullcontext()
+    )
+    with autocast_ctx:
+        if use_chunked_loss:
+            inner = _unwrap_module(model)
+            if not hasattr(inner, "forward_hidden"):
+                raise AttributeError(
+                    "use_chunked_loss=True requires the model to expose a "
+                    "forward_hidden(x) method that returns pre-LM-head hidden states."
+                )
+            hidden = inner.forward_hidden(x, document_ids=document_ids)  # type: ignore[operator]
+            lm_head = inner.lm_head
+            assert (
+                isinstance(lm_head, nn.Linear) and lm_head.bias is None
+            ), "Chunked LM-head loss requires lm_head to be nn.Linear(bias=False)."
+            return compute_chunked_lm_loss(
+                hidden,
+                lm_head.weight,
+                y,
+                label_smoothing=label_smoothing,
+                z_loss_weight=z_loss_weight,
+                chunk_size=loss_chunk_size,
+                loss_mask=loss_mask,
+            )
+        logits = model(x, document_ids=document_ids)  # (B, T, V)
+        return compute_loss_with_smoothing(
+            logits, y, label_smoothing, z_loss_weight=z_loss_weight, loss_mask=loss_mask
+        )
+
+
+def _clone_gradients(model: nn.Module) -> list[torch.Tensor | None]:
+    return [p.grad.detach().clone() if p.grad is not None else None for p in model.parameters()]
+
+
+def _restore_filtered_gradients(
+    model: nn.Module,
+    train_grads: list[torch.Tensor | None],
+    val_grads: list[torch.Tensor | None],
+    damping: float,
+    preserve_norm: bool = True,
+) -> float:
+    if not (0 <= damping <= 1):
+        raise ValueError("damping must be in [0, 1]")
+    aligned_count = 0
+    compared_count = 0
+    train_norm_sq = 0.0
+    filtered_norm_sq = 0.0
+    filtered_grads: list[tuple[nn.Parameter, torch.Tensor | None]] = []
+    for param, train_grad, val_grad in zip(model.parameters(), train_grads, val_grads, strict=True):
+        if train_grad is None:
+            filtered_grads.append((param, None))
+            continue
+        if val_grad is None:
+            filtered = train_grad
+            filtered_grads.append((param, filtered))
+            train_norm_sq += float(train_grad.detach().pow(2).sum().item())
+            filtered_norm_sq += float(filtered.detach().pow(2).sum().item())
+            continue
+        aligned = train_grad * val_grad >= 0
+        filtered = torch.where(aligned, train_grad, train_grad * damping)
+        filtered_grads.append((param, filtered))
+        train_norm_sq += float(train_grad.detach().pow(2).sum().item())
+        filtered_norm_sq += float(filtered.detach().pow(2).sum().item())
+        aligned_count += int(aligned.sum().item())
+        compared_count += aligned.numel()
+    scale = 1.0
+    if preserve_norm and train_norm_sq > 0.0 and filtered_norm_sq > 0.0:
+        scale = math.sqrt(train_norm_sq / filtered_norm_sq)
+    for param, maybe_filtered in filtered_grads:
+        param_any: Any = param
+        if maybe_filtered is None:
+            param_any.grad = None
+        else:
+            param_any.grad = maybe_filtered * scale
+    return aligned_count / compared_count if compared_count else 1.0
+
+
+def apply_generalization_gradient_filter(
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    probe_batches: list[Any],
+    scaler: torch.GradScaler | None = None,
+    use_amp: bool = False,
+    label_smoothing: float = 0.0,
+    use_chunked_loss: bool = False,
+    loss_chunk_size: int = 256,
+    damping: float = 0.25,
+    preserve_norm: bool = True,
+) -> tuple[float, float, bool]:
+    """Damp train-gradient components that disagree with validation gradients.
+
+    This is update filtering, not parameter deletion. A component that improves
+    the train batch but points opposite to a validation-probe gradient is treated
+    as specialization pressure and multiplied by ``damping`` before clipping and
+    optimizer state updates.
+    """
+    if not probe_batches:
+        raise ValueError("probe_batches must contain at least one validation batch")
+    if not (0 <= damping <= 1):
+        raise ValueError("damping must be in [0, 1]")
+
+    gradients_unscaled = False
+    if use_amp and scaler is not None:
+        scaler.unscale_(optimizer)
+        gradients_unscaled = True
+
+    train_grads = _clone_gradients(model)
+    optimizer.zero_grad(set_to_none=True)
+
+    was_training = model.training
+    model.eval()
+    device = next(model.parameters()).device
+    total_probe_loss = 0.0
+    total_probe_tokens = 0
+    for batch in probe_batches:
+        x, y, document_ids, loss_mask = _unpack_batch(batch)
+        x, y = x.to(device), y.to(device)
+        document_ids = document_ids.to(device) if document_ids is not None else None
+        loss_mask = loss_mask.to(device) if loss_mask is not None else None
+        loss = _compute_language_model_loss(
+            model=model,
+            x=x,
+            y=y,
+            use_amp=use_amp,
+            label_smoothing=label_smoothing,
+            z_loss_weight=0.0,
+            use_chunked_loss=use_chunked_loss,
+            loss_chunk_size=loss_chunk_size,
+            document_ids=document_ids,
+            loss_mask=loss_mask,
+        ) / len(probe_batches)
+        loss.backward()
+        batch_tokens = int(loss_mask.sum().item()) if loss_mask is not None else y.numel()
+        total_probe_loss += loss.item() * len(probe_batches) * batch_tokens
+        total_probe_tokens += batch_tokens
+    if was_training:
+        model.train()
+
+    val_grads = _clone_gradients(model)
+    keep_fraction = _restore_filtered_gradients(
+        model, train_grads, val_grads, damping, preserve_norm=preserve_norm
+    )
+    probe_loss = total_probe_loss / total_probe_tokens if total_probe_tokens > 0 else float("inf")
+    return keep_fraction, probe_loss, gradients_unscaled
+
+
 def evaluate(
     model: nn.Module,
     dataloader: DataLoader,
@@ -268,16 +430,16 @@ def evaluate(
             document_ids = document_ids.to(device) if document_ids is not None else None
             loss_mask = loss_mask.to(device) if loss_mask is not None else None
 
-            # Forward pass with optional AMP
-            if use_amp and device.type == "cuda":
-                with torch.autocast(device_type="cuda"):
-                    logits = model(x, document_ids=document_ids)
-                    loss = compute_loss_with_smoothing(
-                        logits, y, label_smoothing, loss_mask=loss_mask
-                    )
-            else:
-                logits = model(x, document_ids=document_ids)
-                loss = compute_loss_with_smoothing(logits, y, label_smoothing, loss_mask=loss_mask)
+            loss = _compute_language_model_loss(
+                model=model,
+                x=x,
+                y=y,
+                use_amp=use_amp,
+                label_smoothing=label_smoothing,
+                z_loss_weight=0.0,
+                document_ids=document_ids,
+                loss_mask=loss_mask,
+            )
 
             batch_tokens = int(loss_mask.sum().item()) if loss_mask is not None else y.numel()
             total_loss += loss.item() * batch_tokens
@@ -340,38 +502,18 @@ def train_step(
     if not accumulate_grad:
         optimizer.zero_grad()
 
-    autocast_ctx = (
-        torch.autocast(device_type="cuda")
-        if (use_amp and device.type == "cuda")
-        else contextlib.nullcontext()
+    loss = _compute_language_model_loss(
+        model=model,
+        x=x,
+        y=y,
+        use_amp=use_amp,
+        label_smoothing=label_smoothing,
+        z_loss_weight=z_loss_weight,
+        use_chunked_loss=use_chunked_loss,
+        loss_chunk_size=loss_chunk_size,
+        document_ids=document_ids,
+        loss_mask=loss_mask,
     )
-    with autocast_ctx:
-        if use_chunked_loss:
-            inner = _unwrap_module(model)
-            if not hasattr(inner, "forward_hidden"):
-                raise AttributeError(
-                    "use_chunked_loss=True requires the model to expose a "
-                    "forward_hidden(x) method that returns pre-LM-head hidden states."
-                )
-            hidden = inner.forward_hidden(x, document_ids=document_ids)  # type: ignore[operator]
-            lm_head = inner.lm_head
-            assert (
-                isinstance(lm_head, nn.Linear) and lm_head.bias is None
-            ), "Chunked LM-head loss requires lm_head to be nn.Linear(bias=False)."
-            loss = compute_chunked_lm_loss(
-                hidden,
-                lm_head.weight,
-                y,
-                label_smoothing=label_smoothing,
-                z_loss_weight=z_loss_weight,
-                chunk_size=loss_chunk_size,
-                loss_mask=loss_mask,
-            )
-        else:
-            logits = model(x, document_ids=document_ids)  # (B, T, V)
-            loss = compute_loss_with_smoothing(
-                logits, y, label_smoothing, z_loss_weight=z_loss_weight, loss_mask=loss_mask
-            )
 
     loss_value = loss.item()
     if not math.isfinite(loss_value):
@@ -402,6 +544,7 @@ def optimizer_step(
     use_amp: bool = False,
     gradient_clip_norm: float | None = None,
     model: nn.Module | None = None,
+    gradients_unscaled: bool = False,
 ) -> float:
     """Perform optimizer step with optional gradient clipping and AMP unscaling.
 
@@ -418,7 +561,7 @@ def optimizer_step(
     grad_norm = 0.0
 
     # Unscale gradients if using AMP
-    if use_amp and scaler is not None:
+    if use_amp and scaler is not None and not gradients_unscaled:
         scaler.unscale_(optimizer)
 
     # Compute grad norm (and optionally clip)
@@ -463,6 +606,11 @@ def train(  # noqa: C901
     z_loss_weight: float = 0.0,
     use_chunked_loss: bool = False,
     loss_chunk_size: int = 256,
+    generalization_filter_enabled: bool = False,
+    generalization_filter_interval: int = 1,
+    generalization_filter_val_batches: int = 1,
+    generalization_filter_damping: float = 0.25,
+    generalization_filter_preserve_norm: bool = True,
     tb_writer: Any | None = None,
     use_torch_compile: bool = False,
     checkpoint_interval: int = 0,
@@ -519,6 +667,16 @@ def train(  # noqa: C901
     model.train()
     device = next(model.parameters()).device
 
+    if generalization_filter_enabled:
+        if val_loader is None:
+            raise ValueError("generalization_filter_enabled requires val_loader")
+        if generalization_filter_interval < 1:
+            raise ValueError("generalization_filter_interval must be >= 1")
+        if generalization_filter_val_batches < 1:
+            raise ValueError("generalization_filter_val_batches must be >= 1")
+        if not (0 <= generalization_filter_damping <= 1):
+            raise ValueError("generalization_filter_damping must be in [0, 1]")
+
     # Initialize GradScaler for AMP if needed
     scaler: torch.GradScaler | None = None
     if use_amp:
@@ -557,11 +715,14 @@ def train(  # noqa: C901
             "gpu_memory_mb",
             "val_loss",
             "test_loss",
+            "generalization_keep_fraction",
+            "generalization_probe_loss",
         ]
         csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         csv_writer.writeheader()
 
     eval_max_batches_opt: int | None = eval_max_batches if eval_max_batches > 0 else None
+    generalization_probe_iter = iter(val_loader) if val_loader is not None else None
 
     step = 0
     micro_step = 0
@@ -657,13 +818,46 @@ def train(  # noqa: C901
                     if component_profiler is not None
                     else contextlib.nullcontext()
                 )
+                generalization_keep_fraction = None
+                generalization_probe_loss = None
+                gradients_unscaled = False
                 with profile_ctx:
+                    if (
+                        generalization_filter_enabled
+                        and val_loader is not None
+                        and generalization_probe_iter is not None
+                        and (step + 1) % generalization_filter_interval == 0
+                    ):
+                        probe_batches = []
+                        for _ in range(generalization_filter_val_batches):
+                            try:
+                                probe_batches.append(next(generalization_probe_iter))
+                            except StopIteration:
+                                generalization_probe_iter = iter(val_loader)
+                                probe_batches.append(next(generalization_probe_iter))
+                        (
+                            generalization_keep_fraction,
+                            generalization_probe_loss,
+                            gradients_unscaled,
+                        ) = apply_generalization_gradient_filter(
+                            model=model,
+                            optimizer=optimizer,
+                            probe_batches=probe_batches,
+                            scaler=scaler,
+                            use_amp=use_amp,
+                            label_smoothing=label_smoothing,
+                            use_chunked_loss=use_chunked_loss,
+                            loss_chunk_size=loss_chunk_size,
+                            damping=generalization_filter_damping,
+                            preserve_norm=generalization_filter_preserve_norm,
+                        )
                     grad_norm = optimizer_step(
                         optimizer=optimizer,
                         scaler=scaler,
                         use_amp=use_amp,
                         gradient_clip_norm=gradient_clip_norm,
                         model=model,
+                        gradients_unscaled=gradients_unscaled,
                     )
 
                     # LR scheduler always steps to keep schedule aligned with step count.
@@ -774,6 +968,16 @@ def train(  # noqa: C901
                         ),
                         "val_loss": f"{val_loss:.6f}" if val_loss is not None else "",
                         "test_loss": f"{test_loss:.6f}" if test_loss is not None else "",
+                        "generalization_keep_fraction": (
+                            f"{generalization_keep_fraction:.6f}"
+                            if generalization_keep_fraction is not None
+                            else ""
+                        ),
+                        "generalization_probe_loss": (
+                            f"{generalization_probe_loss:.6f}"
+                            if generalization_probe_loss is not None
+                            else ""
+                        ),
                     }
                     csv_writer.writerow(row)
                     csv_file.flush()  # type: ignore[union-attr]
@@ -796,6 +1000,18 @@ def train(  # noqa: C901
                         tb_writer.add_scalar("eval/val_perplexity", math.exp(val_loss), step + 1)
                     if test_loss is not None:
                         tb_writer.add_scalar("eval/test_loss", test_loss, step + 1)
+                    if generalization_keep_fraction is not None:
+                        tb_writer.add_scalar(
+                            "train/generalization_keep_fraction",
+                            generalization_keep_fraction,
+                            step + 1,
+                        )
+                    if generalization_probe_loss is not None:
+                        tb_writer.add_scalar(
+                            "train/generalization_probe_loss",
+                            generalization_probe_loss,
+                            step + 1,
+                        )
 
                 # Logging
                 if log_interval > 0 and (step + 1) % log_interval == 0:
@@ -825,6 +1041,8 @@ def train(  # noqa: C901
                         log_msg += f"  val={val_loss:.4f}"
                     if test_loss is not None:
                         log_msg += f"  test={test_loss:.4f}"
+                    if generalization_keep_fraction is not None:
+                        log_msg += f"  gen_keep={generalization_keep_fraction:.2f}"
                     print(log_msg)
 
                 # Periodic checkpoint

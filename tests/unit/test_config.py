@@ -51,6 +51,7 @@ def make_training_config(**overrides):
         "use_torch_compile": True,
         "attention_backend": "flash",
         "selective_checkpointing": True,
+        "generalization_filter_damping": 0.25,
     }
     defaults.update(overrides)
     return build_training_config(**defaults)
@@ -382,6 +383,22 @@ class TestTrainingConfig:
     def test_z_loss_weight_negative_raises(self):
         with pytest.raises(ValueError, match="z_loss_weight"):
             make_training_config(z_loss_weight=-1e-4)
+
+    def test_generalization_filter_defaults(self):
+        config = make_training_config()
+        assert config.generalization_filter_enabled is False
+        assert config.generalization_filter_interval == 1
+        assert config.generalization_filter_val_batches == 1
+        assert config.generalization_filter_damping == 0.25
+        assert config.generalization_filter_preserve_norm is True
+
+    def test_generalization_filter_validation(self):
+        with pytest.raises(ValueError, match="generalization_filter_interval"):
+            make_training_config(generalization_filter_interval=0)
+        with pytest.raises(ValueError, match="generalization_filter_val_batches"):
+            make_training_config(generalization_filter_val_batches=0)
+        with pytest.raises(ValueError, match="generalization_filter_damping"):
+            make_training_config(generalization_filter_damping=1.1)
 
     def test_muon_optimizer_defaults(self):
         config = make_training_config()

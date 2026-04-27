@@ -62,6 +62,11 @@ class TrainingConfig:
     z_loss_weight: float = 0.0  # PaLM-style logit-scale regularizer; 1e-4 is a good default
     use_chunked_loss: bool = False  # Training-only chunked LM-head + CE path
     loss_chunk_size: int = 256  # Time-axis chunk size for chunked LM-head loss
+    generalization_filter_enabled: bool = False
+    generalization_filter_interval: int = 1
+    generalization_filter_val_batches: int = 1
+    generalization_filter_damping: float = 0.25
+    generalization_filter_preserve_norm: bool = True
     eval_on_test: bool = False
     eval_max_batches: int = 0  # 0 = no limit; set to cap expensive eval on large val sets
     benchmark_tasks: list[str] = field(default_factory=list)
@@ -134,6 +139,12 @@ class TrainingConfig:
             raise ValueError("z_loss_weight must be >= 0")
         if self.loss_chunk_size <= 0:
             raise ValueError("loss_chunk_size must be > 0")
+        if self.generalization_filter_interval < 1:
+            raise ValueError("generalization_filter_interval must be >= 1")
+        if self.generalization_filter_val_batches < 1:
+            raise ValueError("generalization_filter_val_batches must be >= 1")
+        if not (0 <= self.generalization_filter_damping <= 1):
+            raise ValueError("generalization_filter_damping must be in [0, 1]")
 
     def _validate_benchmark(self) -> None:
         """Validate benchmark harness configuration."""
