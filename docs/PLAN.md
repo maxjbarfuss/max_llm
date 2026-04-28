@@ -1,266 +1,185 @@
 # Max LLM Execution Plan
 
-Purpose: phased execution roadmap for human contributors and AI agents.
+Purpose: phased execution roadmap for human contributors and AI agents. Keep experiment evidence in closeout docs; keep this file focused on goals, status, and next work.
 
 **How to use:**
-1. Read [MEMORY.md](../.github/MEMORY.md) first — current focus and agent working state; read [SESSION_LOG.md](../.github/SESSION_LOG.md) for recent completed-session history and [SESSION_LOG_ARCHIVE.md](../.github/SESSION_LOG_ARCHIVE.md) for older history when needed
-2. Check Phase Progress table and the current phase's task list for execution detail
-3. For architecture and design decisions: [DESIGN.md](DESIGN.md)
-4. For completed phases (full history): [PHASE_1_CLOSEOUT.md](PHASE_1_CLOSEOUT.md) | [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md) | [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md) | [PHASE_4_CLOSEOUT.md](PHASE_4_CLOSEOUT.md)
+1. Read [MEMORY.md](../.github/MEMORY.md) first for current active work.
+2. Use this file for phase boundaries, execution order, and unfinished work.
+3. Use closeouts for evidence and learning notes: [Phase 1](PHASE_1_CLOSEOUT.md), [Phase 2](PHASE_2_CLOSEOUT.md), [Phase 3](PHASE_3_CLOSEOUT.md), [Phase 4](PHASE_4_CLOSEOUT.md), [Phase 5](PHASE_5_CLOSEOUT.md).
+4. For architecture details, see [DESIGN.md](DESIGN.md); for optimization notes, see [OPTIMIZATION.md](OPTIMIZATION.md).
 
 ---
 
 ## Phase Progress
 
-| Phase | Status | Focus | Effort | Risk | Data Strategy | Key Artifacts |
-|-------|--------|-------|--------|------|---------------|---------------|
-| **1** | ✅ Done | Foundation | M | Low (stabilized) | Setup; no training data | CI workflow, test scaffold, env notes. [Phase 1 Closeout](PHASE_1_CLOSEOUT.md) |
-| **2** | ✅ Done | Skeleton & Reproducibility | M | Low (scope clarity) | TinyStories + WikiText-103 (1–10M tokens) | Tokenizer, data pipeline, training loop, checkpointing, seed control, overfit test. [Phase 2 Closeout](PHASE_2_CLOSEOUT.md) |
-| **3** | ✅ Done | Capable GPT-2-like model (~60M params, coherent output) | L | Medium | Mixed corpus: TinyStories (~10%), WikiText-103 (full), OpenWebText (~12%), FineWeb-Edu (partial); Unigram 8K tokenizer | Architecture + optimization stack complete. Two milestone runs: p3_final_unigram (ppl 24.0, 12K steps) and p3_final_27b_merge50 (ppl 28.9, 10,836 steps on 27B-token corpus). Coherent output gate passed. [Phase 3 Closeout](PHASE_3_CLOSEOUT.md) |
-| **4** | ✅ Done | Llama Architecture + Scale-Up Training | L | Medium | Wikipedia → Cosmopedia-v2 → mixed curriculum; existing 27B corpus for P3 comparison | P3 vs P4 ppl comparison, 5-stage curriculum loss curves, simplicity anneal; final checkpoint (`p4_final_anneal_20260422`, val_loss 2.323, ppl ~9.2). [Phase 4 Closeout](PHASE_4_CLOSEOUT.md) |
-| **5** | — | Post-Training | XL | High (forgetting + alignment) | SFT, grounding, preference data | LoRA adapters, grounding benchmark, reward-model card, safety evaluation |
-| **6** | — | MoE + MLA | XL | High (routing imbalance) | Partitioned SFT + preference with curriculum | MoE routing diagnostics, MLA memory report, dense-vs-sparse comparison |
-| **7** | — | Dual-Stream Reasoning | XL | High (training-inference mismatch) | Reasoning trace triples + STaR | Dual-stream comparison, reasoning accuracy delta, GRU overhead benchmark |
+| Phase | Status | Focus | Data Strategy | Key Artifacts |
+|-------|--------|-------|---------------|---------------|
+| **1** | Done | Foundation | Setup; no training data | CI workflow, test scaffold, env notes. [Phase 1 Closeout](PHASE_1_CLOSEOUT.md) |
+| **2** | Done | Skeleton & Reproducibility | TinyStories + WikiText-103 | Tokenizer, data pipeline, training loop, checkpoints, deterministic replay. [Phase 2 Closeout](PHASE_2_CLOSEOUT.md) |
+| **3** | Done | Capable GPT-2-like model | Mixed corpus + Unigram 8K tokenizer | Coherent decoder baseline; p3_final_unigram and p3_final_27b_merge50. [Phase 3 Closeout](PHASE_3_CLOSEOUT.md) |
+| **4** | Done | Llama Architecture + Scale-Up | Wikipedia -> Cosmopedia-v2 -> mixed curriculum | Final checkpoint `p4_final_anneal_20260422`, val_loss `2.323`, ppl ~`9.2`. [Phase 4 Closeout](PHASE_4_CLOSEOUT.md) |
+| **5** | In progress | Post-Training | SFT, grounding, preference data; 32K-tokenizer stack comparison | P4 32K baseline, LoRA adapters, grounding benchmark, reward-model card, safety eval. [Phase 5 Notes](PHASE_5_CLOSEOUT.md) |
+| **6** | Not started | MoE + MLA | Partitioned SFT + preference curriculum | MoE routing diagnostics, dense-vs-sparse comparison |
+| **7** | Not started | Dual-Stream Reasoning | Reasoning trace triples + STaR | Dual-stream comparison, reasoning accuracy delta, GRU overhead benchmark |
 
-**Artifact naming convention**:
-- Use `p<phase>_<artifact>_<yyyymmdd>_<commit>_<seed>` for all outputs (reports, checkpoints, benchmark CSVs).
-- Examples: `p4_throughput_report_20260220_5aced98_s42`, `p5_reward_model_card_20260220_5aced98_s42`.
-- Note: Phase numbering updated Feb 2026 (8→7 phases); legacy p6/p7/p8 artifacts may exist in outputs/.
-
-For detailed execution: read below. For architectural context: see [DESIGN.md](DESIGN.md#architecture-overview).
+Artifact naming: use `p<phase>_<artifact>_<yyyymmdd>_<commit>_<seed>` for reports, checkpoints, benchmark CSVs, and promoted configs.
 
 ---
+
+## Completed Phases
 
 ### Phase 1: Foundation
 
-**Status**: ✅ Complete
 **Goal**: Reproducible environment, CI, testing baseline, and dependency/tooling foundation.
-**Historical detail**: see [PHASE_1_CLOSEOUT.md](PHASE_1_CLOSEOUT.md).
+**Historical detail**: [PHASE_1_CLOSEOUT.md](PHASE_1_CLOSEOUT.md)
 
-**Exit Criteria**:
-- ✅ CI baseline stable and green.
-- ✅ Build/test/lint targets operational (`make` workflow established).
-- ✅ Python + C++ test discovery/reporting validated.
-- ✅ Acceleration stack dependency checks completed.
+**Exit Criteria Met**:
+- CI baseline stable and green.
+- Build/test/lint targets operational through `make`.
+- Python + C++ test discovery/reporting validated.
+- Acceleration stack dependency checks completed.
 
 ### Phase 2: Skeleton & Reproducibility
 
-**Status**: ✅ Complete
 **Goal**: Runnable small-scale training with deterministic replay and checkpoint integrity.
-**Historical detail**: see [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md).
+**Historical detail**: [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md)
 
-**Exit Criteria**:
-- ✅ End-to-end training run converged on milestone config.
-- ✅ Seeded replay and checkpoint restore behavior verified.
-- ✅ Overfit/inference sanity gates passed.
-- ✅ Phase 2 milestone artifacts promoted and documented.
+**Exit Criteria Met**:
+- End-to-end training converged on milestone config.
+- Seeded replay and checkpoint restore behavior verified.
+- Overfit/inference sanity gates passed.
+- Phase 2 milestone artifacts promoted and documented.
 
 ### Phase 3: Capable GPT-2-like Model
 
-**Status**: ✅ Complete
 **Goal**: Coherent-output decoder model with stable long-run training stack.
-**Historical detail**: see [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md).
+**Historical detail**: [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md)
 
-**Exit Criteria**:
-- ✅ Coherent output gate passed on milestone checkpoint.
-- ✅ Optimization stack stability validated (Flash/bf16/AdamW-fused/WSD/DDP).
-- ✅ Phase 3 milestone runs completed and promoted.
-- ✅ Phase 3 closeout captures tokenizer/model/data arc and evidence.
+**Exit Criteria Met**:
+- Coherent output gate passed on milestone checkpoint.
+- Optimization stack stability validated: Flash, bf16, fused AdamW, WSD, DDP.
+- Phase 3 milestone runs completed and promoted.
+- Phase 3 closeout captures tokenizer/model/data arc and evidence.
 
 ### Phase 4: Llama Architecture + Scale-Up Training
 
-**Status**: ✅ Complete
-**Goal**: Llama-class architecture + curriculum training + final anneal, outperforming Phase 3 baseline.
-**Historical detail**: see [PHASE_4_CLOSEOUT.md](PHASE_4_CLOSEOUT.md).
+**Goal**: Llama-class architecture, curriculum training, and final anneal outperforming Phase 3.
+**Historical detail**: [PHASE_4_CLOSEOUT.md](PHASE_4_CLOSEOUT.md)
 
-**Exit Criteria**:
-- ✅ 5-stage curriculum completed and consolidated.
-- ✅ P3 baseline surpassed (ppl improvement documented).
-- ✅ Final anneal checkpoint promoted with validated metrics.
-- ✅ Methodology findings (plateau escape, curriculum ordering) documented in closeout and optimization learnings.
+**Exit Criteria Met**:
+- 5-stage curriculum completed and consolidated.
+- P3 baseline surpassed.
+- Final anneal checkpoint promoted with validated metrics.
+- Methodology findings documented in closeout and optimization learnings.
 
 ---
 
-### Phase 5: Post-Training
+## Phase 5: Post-Training
 
-**Goal**: KV-cache, SFT with LoRA, grounding (math/logic/world-model/games), DPO or PPO/GRPO, continual learning. Also: training-stack upgrade (Muon optimizer, Z-loss, μP), data-pipeline efficiency (sequence packing), and architecture extensions (YaRN context extension, MoD routing).
+**Goal**: Prepare for SFT, grounding, preference optimization, and continual-learning evaluation without destabilizing the Phase 4 base model. Also includes Phase 5 training-stack upgrades: Muon, Z-loss, packed training, YaRN/KV-cache, looped blocks, interleaved attention, MoD, and the norm-preserving generalization filter.
 
 **Dependencies**: Phase 4 architecture frozen with reproducible checkpoints and selected eval baselines.
-**Artifacts**: SFT dataset manifest, LoRA adapter bundle, grounding benchmark report, preference dataset card, reward-model calibration report, alignment training logs, safety evaluation summary, continual-learning evaluation report; Muon vs AdamW comparison; μP proxy sweep result.
-**Kill Criteria**: Stop if forgetting metric Δ worsens for 3 consecutive evaluations OR if alignment causes >20% degradation on base capabilities.
-**Out of Scope**: Forward architecture changes (Phase 6: MoE), reasoning pipeline architecture (Phase 7).
-**Decision Log**: Record decisions as `P5-DEC-<n>` in Running Session Log.
+**Artifacts**: SFT dataset manifest, LoRA adapter bundle, grounding benchmark report, preference dataset card, reward-model calibration report, alignment logs, safety evaluation summary, continual-learning report, Muon/AdamW comparison, μP proxy sweep, P4 32K-tokenizer baseline comparison.
+**Evidence**: [PHASE_5_CLOSEOUT.md](PHASE_5_CLOSEOUT.md) holds compact result tables and current learnings.
+**Kill Criteria**: Stop if forgetting metric Δ worsens for 3 consecutive evaluations, or if alignment causes >20% degradation on base capabilities.
+**Out of Scope**: MoE promotion belongs to Phase 6; dual-stream reasoning belongs to Phase 7.
 
-**Tasks**:
+### Current Baseline
 
-Execution order (locked for Phase 5):
+Carry forward the no-MoD P4 mixed-corpus recipe for the next 32K-tokenizer comparison:
 
-Wave 0 — data gates (must complete before new pretraining or stack tuning):
-- ✅ **Remove WikiText-103** from future data configs (covered by full Wikipedia; overlapping fragments add noise)
-- ✅ **Deduplicate FineWeb ↔ FineWeb-Edu** and choose one primary policy (quality-first Edu subset vs full FineWeb without Edu overlap)
-:  Policy decision: use **full OpenWebText + full FineWeb-Edu** as Wave 0 core web sources, then apply hygiene + dedup gates before training.
-- ✅ **OWT hygiene pass** in `TextFormatReader`: punctuation-ended line threshold, duplicate-line threshold, symbol/word threshold
-- ✅ **Raise OWT min_length** from 50 to 100-150 tokens
-:  Wave 0 ephemeral config now uses `min_length = 120` for OpenWebText.
-- ✅ **Language filter** for OWT/FineWeb during tokenization (fastText lid.176)
-- ✅ **MinHash LSH near-dedup** across OWT + FineWeb (Jaccard threshold 0.8); record dedup rate
-- ✅ **Sequence packing** for short documents with block-diagonal causal masking metadata and training-side consumption
-- ✅ **Per-source repetition budget tracking** across stages (source-specific exposure caps enforced during curriculum stage processing with diagnostics)
-- ✅ **Document Cosmopedia provenance** as synthetic LLM-generated data in corpus docs
+- 12L/1024H, `looped_num_blocks = 4`
+- Interleaved `swa/mla/swa/mla`
+- `attn_res_fused`, bf16, fused AdamW, torch compile
+- Generalization filter: interval `4`, validation batches `1`, damping `0.5`, preserve norm
 
-Wave 0 quick-start (simple):
-1. Activate env/auth and create one ephemeral prep config (`config/ephemeral/p5_wave0_data_gates_20260423.toml`).
-2. Apply corpus hygiene in prep pipeline: remove WikiText-103, include full OpenWebText + full FineWeb-Edu (+ selected companion datasets), add OWT quality filters + min_length + language filter.
-3. Add sequence packing; record drop/dedup/packing metrics in stats output.
-4. Run a small-slice prep first, then targeted prep tests (`test_preparation_config`, `test_preparation_strategies`, `test_preparation_pipeline`, `test_preparation_e2e`).
-5. If metrics are good, run full prep and document final policy + provenance note in `src/data/README.md`.
+MoD is implemented but not promoted; tune router/capacity separately because validation lagged the no-MoD baseline.
 
-Wave 0 validation note (2026-04-23): OWT smoke-slice (`max_docs=5000`) completed with language filter + MinHash enabled; source docs=5000, kept=4963, dropped=37, dedup_rate=0.0074.
-Wave 0 validation note (2026-04-23): OWT packing smoke-slice (`max_docs=5000`, `sequence_length=2048`) completed after token-accounting fix; train_tokens_file=966656, packed_sequences=472, fill_ratio=0.9980.
-Wave 0 validation note (2026-04-23): OWT+FineWeb-Edu fresh smoke (`500 + 500 docs`) with curriculum repetition budgets (`1.0` each) completed; dedup_rate=0.0000 on slice, repetition drops: OWT=500/FW-Edu=500 second-stage exposures, packed train fill_ratio=0.9990.
+### Phase 5 Work Plan
 
-Wave 1 — tokenizer + corpus shape decision (depends on Wave 0):
-- ✅ **Tokenizer decision checkpoint**: **P5-DEC-4**: 32K Unigram tokenizer trained on 215K docs (~287M tokens) from all 8 Wave 0+1 sources (OWT, FineWeb-Edu, Wikipedia, Cosmopedia, Gutenberg, ir_python, owm, NuminaMath). Model: `/mnt/d/Dev/data/prepared/p5_wave1_tokenizer_32k_20260424/p5_wave1_tokenizer_32k_20260424_tokenizer.model`. Fertility: NL 0.25 tok/char, code 0.33, math 0.46 (8→10% improvement vs 8K tokenizer on NL; code/math coverage substantially better).
-- ⏳ **Optional new sources** — production prep configs written, tokenizer training prerequisite pending:
-	- **Project Gutenberg** (61K English books, 3B token cap): `config/ephemeral/p5_wave1_gutenberg_prod_20260424.toml` → `/mnt/d/Dev/data/prepared/p5_wave1_gutenberg_20260424/`
-	- **StarCoder2 ir_python** (154K Python files): `config/ephemeral/p5_wave1_code_python_prod_20260424.toml` → `/mnt/d/Dev/data/prepared/p5_wave1_code_python_20260424/`
-	- **OpenWebMath / owm** (6.3M math web pages, 3B token cap): `config/ephemeral/p5_wave1_owm_prod_20260424.toml` → `/mnt/d/Dev/data/prepared/p5_wave1_owm_20260424/`
-	- **NuminaMath-CoT** (859K CoT examples, preprocessed → `/mnt/d/Dev/data/numina_math_cot/train/`): `config/ephemeral/p5_wave1_numina_math_prod_20260424.toml` → `/mnt/d/Dev/data/prepared/p5_wave1_numina_math_20260424/`
+| Wave | Status | Work | Useful Detail |
+|------|--------|------|---------------|
+| 0 | Done | Data gates | WikiText-103 removed; OWT/FineWeb-Edu policy set; OWT hygiene, `min_length=120`, language filter, MinHash near-dedup, sequence packing, repetition budgets, and Cosmopedia provenance are in place. |
+| 1 | Done | 32K tokenizer | 32K Unigram tokenizer trained on 215K docs / ~287M tokens from OWT, FineWeb-Edu, Wikipedia, Cosmopedia, Gutenberg, `ir_python`, `owm`, and NuminaMath. |
+| 1 | Next | 32K-tokenizer baseline | Run current no-MoD + norm-preserving gen-filter P4 recipe on `/mnt/d/Dev/data/prepared/p5_wave1_tokenizer_32k_20260424/`; compare against the 8K-tokenized P4 mixed-corpus curve. |
+| 1 | Not done | Production source preps | Generate and validate 32K-tokenized Gutenberg, `ir_python`, `owm`, and NuminaMath-CoT outputs. Check prose/code/math quality, dedup/overlap, repetition budgets, formatting, and split hygiene before adding them to training mixes. |
+| 2 | Done | Low-risk inference/architecture | RoPE base standardized, YaRN implemented, KV-cache implemented and hardened across MHA/MLA/residual paths. |
+| 2 | Not done | Prompt templates / `ChatFormatter` | Add shared formatting for training, inference, and eval. Support ChatML-style roles plus an Alpaca-style fallback; produce assistant-token loss masks and preserve system/user/assistant boundaries. |
+| 3 | Done | Training stack upgrades | Z-loss, Muon, chunked LM loss, memory-efficient xIELU, FFN chunking, checkpointing modes, packed masks, varlen Flash, looped blocks, interleaved SWA/MLA, MoD implementation, and generalization filter are implemented. |
+| 3 | Not done | Throughput tuning | Profile dataloader/forward/backward/optimizer/eval cadence; tune sequence length, microbatch, grad accumulation, backend, compile mode, checkpointing, precision, and optimizer before long Phase 5 runs. |
+| 3 | Not done | FSDP / larger-param memory path | Revisit full-shard or per-block wrapping after the dense 32K baseline; current model-level `shard_grad_op` lowers memory slightly but does not raise activation-limited microbatch ceiling. |
+| 3 | Not done | μP | Add width-transfer init/LR scaling, sweep a 6L/256H proxy, transfer LR to 12L/1024H, and promote only if it reduces sweep cost without hurting the baseline curve. |
+| 4 | Not done | SFT data | Curate 1-5M instruction-response pairs with domain subsets, held-out instruction eval, and source/provenance tracking. |
+| 4 | Not done | Grounding data + loader | Curate 50K-500K math/logic/world-model/game/causal examples; implement structured input -> explanation -> answer loading with answer-token masks and held-out grounding eval. |
+| 4 | Not done | Alignment data | Assemble 10K-100K preference pairs, including 5-10% harmful/adversarial; label 5K-10K reward targets and validate any synthetic preferences against a reviewed subset. |
+| 5 | Not done | Fine-tuning loop | LoRA on Q/K/V/O with base frozen; compare adapter vs merged inference quality/speed; verify SFT loss masks exclude system/user tokens. |
+| 5 | Not done | Alignment stack | Reward model, calibration, DPO or PPO/GRPO, β/LR knobs, reward-margin and KL guardrails before alignment training. |
+| 5 | Not done | Continual learning | Replay buffer (~10%), online adaptation loop, forgetting metric, and rollback criteria for degradation. |
+| 6 | Not done | Evaluation/release gate | Held-out eval set, side-by-side generations, benchmark harness, forgetting metric, alignment diagnostics, safety checks, win rate, false-refusal tracking. |
 
-Wave 1 validation note (2026-04-23): Gutenberg + accessible StarCoder2-family code slice + local reasoning smoke (`200 + 200 + 200 max_docs`) completed; kept docs after dedup: books=121, code=66 or 44 depending on code source, reasoning=191; packing train fill ratio reached `0.9942+` on both Wave 1 smoke variants.
-Wave 1 validation note (2026-04-23): combined all-corpus smoke (OWT + FineWeb-Edu + Wikipedia + Cosmopedia-v2 + Gutenberg + StarCoder2 Python IR + reasoning) completed with `1400` input docs, `1178` kept docs, dedup_rate=`0.1586`, and packed train fill ratio=`0.9987`.
-Wave 1 source selection note (2026-04-24): Final Wave 1 source set: Gutenberg (books) + StarCoder2 ir_python (code) + StarCoder2 owm/OpenWebMath (math web) + NuminaMath-CoT (chain-of-thought reasoning). Excluded: StarCoder2 stackoverflow (messy `<issue_start>` formatting), documentation (60K examples, trivial size), arxiv (overlaps OWT/FineWeb). Tokenizer: upgrade to 32K Unigram before running source preps; character_coverage=0.9999 for math+code symbol coverage.
-Wave 1 access note (2026-04-23): `bigcode/the-stack-v2` is now accessible for this account, but the currently usable split exposes metadata rows (`blob_id`, `src_encoding`, `path`, license/provenance fields) rather than direct `content`; `the-stack-v2-dedup` and `the-stack-v2-train-*-ids` remained separately gated at end of day. Adopting The Stack v2 in prep will require a content-materialization step against Software Heritage blobs.
+### Phase 5 Exit Gates
 
-Wave 2 — low-risk architecture and inference wins (easy wins first):
-- ✅ **rope_base standardization**: set milestone configs from 13892 to 500000 (Llama-3 style); original training values preserved in comment for p4 checkpoint SFT
-- ✅ **YaRN RoPE scaling**: NTK-by-parts frequency scaling + attn_scale=sqrt(1+0.1·log(s)) wired into all attention modules (MLA, MHA, SWA). Config params: rope_scaling_factor, rope_low_freq_factor, rope_high_freq_factor, rope_original_max_seq_len.
-- ✅ **KV-cache path**: LayerKVCache/ModelKVCache with pre-allocated buffers; threaded through MHA, MLA, standard/full_attn/block_attn residual paths. Bug: PyTorch SDPA is_causal=True uses upper-left convention → explicit bottom-right mask for T_q < T_k. Follow-up hardening complete: learned-pos cache offset fix, shared-layer full_attn/block_attn cache threading fix, explicit RuntimeError overflow checks (no assert dependency), and cross-layer cache-length consistency guard. 26/26 KV-cache tests pass.
-- ☐ Prompt templates (ChatML or Alpaca-style) and `ChatFormatter` for multi-turn inference
-
-Wave 3 — training stack upgrades (high impact):
-- ✅ **Z-loss** in `compute_loss_with_smoothing()` for logit-scale stabilization (`1e-4 * log(sum(exp(logits)))^2`); review hardening complete: `z_loss_weight >= 0` config validation, analytically correct gradient test, and full quality gate pass.
-- ✅ **Muon optimizer implementation** for 2-D weight matrices; AdamW retained for embeddings/head/bias/1-D params; composite Muon+AdamW checkpoint resume path wired into training
-- ✅ **Muon vs AdamW comparison**: matched 5K-step tiny-MHA runs completed on the p4 mixed unigram corpus. AdamW: best/final val_loss=`4.3605`, median throughput=`280k tok/s`, filtered mean throughput=`274k tok/s`, wall time ≈ `4m56s`. Original Muon: best/final val_loss=`4.1062`, median throughput=`214k tok/s`, filtered mean throughput=`212k tok/s`, wall time ≈ `6m23s`. Batched Muon optimization: best/final val_loss=`4.1070`, median throughput=`258k tok/s`, filtered mean throughput=`254k tok/s`, wall time ≈ `5m22s`. Batched Muon preserved the quality gain (`-0.2535` val loss vs AdamW, ~`5.8%` lower) while reducing the wall-time penalty from ~`29%` to ~`9%`.
-- ☐ **Aggressive training-throughput tuning before large-dataset runs**:
-	- Profile end-to-end tokens/sec by component: dataloader, forward, backward, optimizer, scheduler/checkpoint, eval cadence
-	- Tune model/training shape for hardware efficiency: sequence length, microbatch size, grad accumulation, attention backend, compile mode, activation checkpointing, precision, and optimizer settings
-	- Compare throughput-quality tradeoffs across AdamW, batched Muon, and reduced-NS-step Muon; choose default for large Phase 5 corpus runs
-	- Document target tokens/sec, memory headroom, and recommended config template before launching larger datasets
-- ☐ **Architecture/code memory optimizations before the next shape sweep**:
-	- ✅ Implemented a training-only chunked LM-head / cross-entropy path so long-context and 32K-vocab runs do not materialize full `(B,T,V)` logits for the whole sequence. `compute_chunked_lm_loss` projects `forward_hidden(x)` per time-chunk inside `torch.utils.checkpoint`, so logit memory drops from `(B,T,V)` to `(B,chunk_size,V)`; gated by `training.use_chunked_loss` + `training.loss_chunk_size` (default 256). Numerically equivalent to the existing CE+Z-loss formula; verified by 7 unit tests including hidden+weight gradient parity.
-	- Add a memory-efficient xIELU backward path, likely via a custom autograd function that recomputes branches, because the current ceiling fails in xIELU/FFN activation memory. ✅ Implemented `_XIELUFunction(torch.autograd.Function)` that saves only the input tensor and the two raw α scalars; `pos`/`neg`/`expm1`/`clamp_max`/`where` intermediates over `(B,T,intermediate_size)` are recomputed in backward. Forward + backward (input and both α params) match the eager reference to 1e-10 in f64; covered by `torch.autograd.gradcheck` and an explicit equivalence test in `tests/unit/test_ffn_variants.py`.
-	- ✅ Add optional FFN sequence chunking for long-context probes, trading throughput for lower peak `(B,T,intermediate_size)` activation memory. `model.ffn_chunk_size` is disabled by default (`None`) and, when positive, chunks the sequence dimension through each FFN variant's projection/activation/down-projection path before concatenating. Covered by forward+backward parity tests across GELU, SwiGLU, ReLU², and xIELU plus config propagation/validation tests.
-	- ✅ Extend checkpointing controls beyond the current blunt full-block mode: `selective_checkpointing_mode` ("full"|"ffn"|"attn_res_fused") and `selective_checkpointing_interval` (≥1) wired into `TrainingConfig` and `gradient_checkpointing_enable()`; "ffn" mode skips checkpointing on the attention sublayer across all three residual paths, trading less memory saving for less compute overhead; "attn_res_fused" fuses ar() + sublayer + residual add into one checkpoint unit per sublayer on the block_attn path, saving ~2×(B,T,D) per sublayer beyond "full".
-	- Revisit FSDP for larger parameter sweeps: current model-level `shard_grad_op` lowers memory slightly but does not raise the activation-dominated microbatch ceiling; full-shard/per-block wrapping needs either non-block_attn variants or a block_attn-compatible sharded execution path.
-	- ✅ Add generalized looped attention / looped block execution. `ModelConfig.looped_num_blocks` (int | None) decouples logical depth from physical block count: K physical blocks are constructed and logical layer `i` maps to `blocks[i % K]`; per-logical-layer KV caches are always preserved. `share_layer_weights=True` is retained as a backward-compatible alias for `looped_num_blocks=1`. `_block_for_layer(i)` is the single unified mapping used by all residual paths (standard, full_attn, block_attn) and `make_kv_cache`. Covered by 8 tests (construction, cyclic mapping, share_layer_weights equivalence, KV-cache slot count, all residual paths, gradient flow). Smoke completed (2026-04-27): 12L/1024H MLA+block_attn(6)+xIELU, 8 physical-block variants across rms/flash norm and uncompiled/compiled arms, 600 steps each. No quality collapse in any variant. Best val at step 300 — baseline 12-physical: 4.48; looped-6: 4.46; looped-4: 4.32 (all within noise). Throughput/memory at looped-4 (uncompiled/rms): 20.5k tok/s, 8793 MB (baseline: 19.6k, 9660 MB); looped-4 (flash+compiled): 26.1k tok/s, 9057 MB vs P4-style non-looped full-FFN baseline: 21.8k tok/s, 14881 MB. Conclusion: looped-4 with intermediate_size=2048 and 1/3 the transformer params is 20% faster than the full-depth P4 config at identical early-steps convergence. Recommend looped-4 or looped-6 as the default shape for Phase 5 large-context sweeps. `config/README.md` and `docs/LOOPED_ATTENTION_PLAN.md` (transitory) removed.
-	- ✅ Add Mixture-of-Depths token routing for variable FFN compute. `ModelConfig.mod_router_*` fields enable per-logical-layer token routing with compact gather/scatter through each selected FFN; attention remains full-context to preserve RoPE positions, packed document masks, and KV-cache semantics. Training uses top-k capacity routing plus straight-through soft score gradients; eval/inference can add a score threshold and `mod_router_min_tokens=0` for full FFN skips on low-priority tokens. Router scoring and routed scatter are mixed-precision hardened for bf16/compiled runs. Covered by focused config/router/model tests across standard, full_attn, and block_attn residual paths plus mixed-precision routed-scatter regression coverage. Smoke completed (2026-04-27) on the best looped-attention shape (`12L`, `looped_num_blocks=4`, `norm_type="flash"`, `use_torch_compile=true`, MLA + block_attn): 20/20 steps, rank0 final loss `7.1000`, val `6.7004`, ~`24.7k tok/s`, reported memory `11264MB`.
-	- ✅ Integrate training-side sequence-packing masks so packed corpora increase useful tokens per memory footprint instead of only improving prep artifacts. `DataConfig` now accepts per-split `*_packing_meta.npz` paths; `PackedTokenDataset` reconstructs per-token document ids and masks boundary-crossing/padded LM targets; MHA/MLA route packed batches through `flash_attn_varlen_func` with `cu_seqlens` derived from `document_ids` (each in-row id transition opens a new segment; padded `id < 0` positions become their own segments and are dropped by the loss mask). Backends without a varlen kernel (xformers/sage) and incompatible bias modes (ALiBi/RelPosBias) or KV-cache decode fall back to the SDPA + additive document bias path. Smoke comparison (4L/256H MLA, p5_wave1_all_corpus smoke): packed varlen Flash reaches ~460k tok/s vs ~267k tok/s on the SDPA fallback (~93% of the unpacked Flash baseline at 495k tok/s) at identical memory and identical val_loss (5.5286).
-- ☐ **μP (Maximal Update Parameterization)**:
-	- Update init + per-layer LR scaling for width transfer
-	- Run LR sweep on 6L/256H proxy (~5M params)
-	- Transfer LR directly to 12L/1024H and validate transfer error vs direct sweep
-
-Wave 3 validation note (2026-04-27): Added a train-vs-validation gradient-alignment filter for algorithmic specialization control. The filter compares train gradients with a small validation-gradient probe before optimizer step, dampens anti-aligned update components, and by default rescales filtered gradients to preserve the original train-gradient norm so learning speed is not simply reduced. Larger-corpus 4L/256H MLA probe on full P4 mixed 27B corpus: baseline final train/val `6.0838/6.0635`; naive no-renorm damping (`0.25`, every step) slowed both curves to `6.1225/6.1012` with keep mean `0.609`; norm-preserving soft filter (`damping=0.5`, interval=4) preserved descent (`6.0874/6.0672`, val/train descent ratio `0.214` vs baseline `0.215`) while damping ~`35.6%` of probed update elements. Guardrails: direct `train()` calls now reject enabled filtering without `val_loader` and validate filter interval/batch/damping knobs. Next useful test: longer run and/or validation-probe EMA/layerwise aggregation to seek validation lift rather than only curve preservation.
-
-Wave 3 validation note (2026-04-27): Four-arm P4 mixed-corpus comparison completed on the tuned 12L/1024H looped-4 interleaved SWA/MLA shape (`attn_res_fused`, bf16, fused AdamW, compile enabled, 600 steps). Parameterization for the winning filter arm: `generalization_filter_enabled=true`, `generalization_filter_interval=4`, `generalization_filter_val_batches=1`, `generalization_filter_damping=0.5`, `generalization_filter_preserve_norm=true`. No-MoD/no-filter control final train/val `4.862330/4.890851`, median throughput `22.5k` tok/s. No-MoD + generalization filter final train/val `4.861737/4.887799`, median `22.4k` tok/s, mean keep fraction `0.6000`; it improved every validation checkpoint vs control without reducing train descent. Final no-MoD improvement: `-0.003052` val loss (`0.062%` relative loss), `-0.41` perplexity (`0.305%` relative ppl), throughput effectively tied. MoD/no-filter final train/val `4.861491/4.978868`, median `22.6k` tok/s, showing matched train loss but worse validation on this slice (`+0.088017` val loss, `+12.24` ppl vs control). MoD + generalization filter final train/val `4.869130/4.951251`, median `22.6k` tok/s, mean keep fraction `0.5982`; the filter recovered `0.027617` val loss / `3.96` ppl, or `31.4%` of MoD's validation penalty, but MoD remained behind the no-MoD arms. Current recommendation: carry forward no-MoD + generalization filter for a 1200-2000 step extension before the 32K-tokenizer stack; treat MoD as needing router/capacity tuning before promotion.
-
-Wave 3 validation note (2026-04-25): Muon optimizer implementation completed with Newton-Schulz orthogonalization, Muon+AdamW composite optimizer state serialization, `TrainingConfig` fields (`optimizer_type`, `muon_lr`, `muon_momentum`, `muon_ns_steps`), and training-entrypoint optimizer/resume wiring. Focused tests: `tests/unit/test_optimizer.py` and `tests/unit/test_config.py` passing (62 tests).
-Wave 3 validation note (2026-04-25): Muon comparison configs `config/ephemeral/p5_wave3_muon_cmp_adamw_20260425.toml` and `config/ephemeral/p5_wave3_muon_cmp_muon_20260425.toml` finished successfully. On this tiny MHA benchmark, Muon was less hardware-efficient than AdamW but more sample-efficient; by roughly AdamW's full wall-clock budget, Muon had already surpassed AdamW's final validation loss.
-Wave 3 validation note (2026-04-25): Aggressive Muon efficiency pass batched same-shape Newton-Schulz updates across Muon-managed matrices. Tiny MHA shape distribution was favorable (`12x 256x256`, `4x 256x512`, `4x 512x256`), reducing 20 per-parameter orthogonalization chains to 3 batched chains per step. Optimized config `config/ephemeral/p5_wave3_muon_cmp_muon_batched_20260425.toml` completed successfully with final val_loss=`4.1070`, median throughput=`258k tok/s`, and wall time ≈ `5m22s`.
-Wave 3 validation note (2026-04-26): Memory-efficiency first slice completed. Real LearningModel activation checkpointing now activates before DDP/FSDP wrapping; `--profile` writes per-rank component-profile CSVs; eager block_attn residual mixing no longer allocates padded `(B,T,n_src,d)` source tensors. On dual 24 GB-class GPUs with 12L/1024H/2048 tokens, MLA + Flash + xIELU + block_attn: DDP checkpointed batch_size=18 succeeds at ~21.9 GiB/rank and batch_size=19 OOMs during backward; FSDP model-level `shard_grad_op` checkpointed batch_size=18 succeeds at ~21.6 GiB/rank and batch_size=19 also OOMs. Next shape expansion should prioritize chunked logits/loss, memory-efficient xIELU, FFN sequence chunking, and more selective checkpointing before more manual config probing.
-
-Wave 3 validation note (2026-04-26): Memory-efficient xIELU landed. `xIELU.forward` now dispatches through a custom `torch.autograd.Function` that saves only the input plus the two raw α scalars and recomputes the pos/neg/expm1/clamp/mask intermediates in backward, removing the dominant FFN activation buffers from the forward→backward live set. Numerical equivalence to the eager reference is verified to 1e-10 in f64 (forward + grads w.r.t. input and both α params), plus `torch.autograd.gradcheck`. Full test gate (`make test-quick`, `ruff`, `mypy`, `black --check`) is clean.
-
-Wave 3 validation note (2026-04-26): Config-wired checkpointing modes landed. `selective_checkpointing_mode` ("full"|"ffn") and `selective_checkpointing_interval` (≥1) added to `TrainingConfig`; "ffn" mode runs attention eagerly and checkpoints only the FFN sublayer across all residual paths (standard, full_attn, block_attn); interval=N checkpoints every N-th block. Numeric equivalence verified for all modes/intervals. Full test gate clean.
-
-Wave 3 validation note (2026-04-26): block_attn residual checkpoint fusion landed. New `"attn_res_fused"` mode fuses ar() + sublayer + residual add into a single checkpoint unit per sublayer on the block_attn path: `pb_prev + apply_{attn,ffn}_only(ar(idx, sources))`. Saves ~2×(B,T,D) per sublayer beyond `"full"` (the ar() output h_in and the sublayer delta are both recomputed instead of retained). `pb_prev` is passed as an explicit checkpoint input so gradients through the residual mixer queries flow correctly. Verified: forward + gradient equivalence to baseline for all modes + interval; attn_res.queries gradient parity confirmed. `config/README.md` comprehensively synced: Muon optimizer fields, SGDR schedule fields, YaRN RoPE fields, ffn_chunk_size, mla attn_type, torch_compile_* fields, attn_res_fused mode, resume_* fields, and memory optimization section (use_chunked_loss, loss_chunk_size, z_loss_weight). Full test gate clean.
-
-Wave 3 validation note (2026-04-26): Training-side packed sequence consumption landed. Packed prep metadata (`sequence_offsets` + `boundaries`) can now be supplied via `data.packing_metadata_path` and per-split validation/test equivalents. Training reconstructs document ids per packed row, masks LM targets that cross document boundaries or enter final padding, and sends document ids through `LearningModel` to MHA/MLA. When document ids are present, MHA/MLA use PyTorch SDPA with causal + block-diagonal document additive bias, preventing cross-document context leakage while retaining normal backend behavior for unpacked batches. Focused validation: packed loader masks, masked CE/chunked-LM loss parity, document-mask no-leak attention regression, and `DataConfig` metadata fields all pass; ruff, mypy, and black are clean.
-
-Wave 3 validation note (2026-04-26): Packed-data smoke train (4L/256H MLA + xIELU + RoPE-500K, single-GPU, bf16, p5_wave1_all_corpus smoke .npy, seed 42, 300 steps, identical config across arms): unpacked val_loss 5.6296 at ~495k tok/s; packed (SDPA fallback) val_loss 5.5286 at ~267k tok/s and +312 MB; packed (varlen Flash, post-implementation) val_loss 5.5286 at ~460k tok/s and 1,785 MB. Block-diagonal masking yields ~9.7% better final perplexity by preventing cross-document context leakage; varlen Flash reaches ~93% of the unpacked Flash baseline at identical memory.
-
-Wave 3 validation note (2026-04-26): Varlen Flash kernel for packed sequences landed. New `cu_seqlens_from_document_ids()` helper (`src/models/attention/masks.py`) emits `int32` cumulative segment offsets — every in-row id transition opens a new segment, padded `id < 0` positions form their own segments. `CausalMultiHeadAttention` and `MultiHeadLatentAttention` now route to `flash_attn_varlen_func` whenever `attention_backend == "flash"`, `document_ids` are present, no KV cache is supplied, and the attention bias is not ALiBi/RelativePositionBias; otherwise they fall back to the existing SDPA + block-diagonal additive bias path. Tests in `tests/unit/test_attention.py::TestVarlenFlashPacked` cover `cu_seqlens` correctness and bf16 numerical equivalence between varlen Flash and the SDPA path on packed MHA and MLA at all valid (non-padded) positions. Throughput on the smoke train improved from ~267k tok/s to ~460k tok/s with no quality change.
-
-Wave 3 validation note (2026-04-27): Looped-attention smoke completed across 6 training arms. **Small (4L/256H MLA, standard residual, 2000 steps, p5_wave1_all_corpus smoke):** baseline-4 val 4.82 @ step 600, ~300k tok/s, 1800 MB; looped-2 val 4.78 @ step 600, ~315k tok/s, 1785 MB; looped-1 val 4.98 @ step 600, ~320k tok/s, 1787 MB — looped-2 matches baseline quality with +5% throughput and −15 MB. **Large (12L/1024H MLA+block_attn(6), xIELU, 600 steps):** baseline-12 val 4.48 @ step 300, 19.6k tok/s, 9660 MB; looped-6 val 4.46 @ step 300, 20.2k tok/s, 9008 MB (−652 MB); looped-4 val 4.32 @ step 300, 20.5k tok/s, 8793 MB (−867 MB) — no quality collapse, looped-4 shaves 9% memory with +5% throughput. **Compiled + flash-norm variants (best looped arms):** 4L looped-2 → 485k tok/s, 1744 MB (+54% throughput vs uncompiled); 12L looped-4 → 26.1k tok/s, 9057 MB (+27% vs uncompiled). The compiled 12L looped-4 at `intermediate_size=2048` and 1/3 the transformer params beats the non-looped P4-style full-FFN baseline (21.8k tok/s, 14881 MB) by 20% throughput at −39% memory. **Recommendation: `looped_num_blocks=4` with `norm_type="flash"` and `use_torch_compile=true` as default shape for Phase 5 large-context sweeps.** Transitory `docs/LOOPED_ATTENTION_PLAN.md` deleted.
-
-Wave 4 — data products for post-training (depends on Waves 0-1):
-- ☐ **SFT data**: curate 1-5M instruction-response pairs; produce domain subsets for continual learning
-- ☐ **Grounding data**: curate 50K-500K examples (math/logic/world-models/games/causal chains)
-- ☐ Grounding loader with structured input -> explanation -> answer format
-- ☐ **Alignment data**: assemble 10K-100K preference pairs (+5-10% harmful), label 5K-10K reward targets, optionally test synthetic preferences
-
-Wave 5 — post-training components and training loops:
-- ☐ **Fine-tuning**: LoRA on Q/K/V/O projections, base frozen, merge adapters for deployment
-- ☐ Loss masking for assistant tokens (SFT) and answer tokens (grounding)
-- ☐ **Alignment stack**: reward model, calibration, DPO or PPO/GRPO, β and LR knobs
-- ☐ Continual-learning loop: replay buffer (10%), online adaptation, forgetting measurement
-
-Wave 6 — evaluation and release gate:
-- ☐ Held-out eval set + side-by-side generation comparisons
-- ☐ Benchmark harness integration (`lm-eval-harness` or equivalent) with 2-3 standard benchmarks (for example HellaSwag and MMLU subset)
-- ☐ Track forgetting metric: Δ = max(0, perf_before - perf_after)
-- ☐ Track alignment diagnostics: reward margin, preference accuracy, KL, reward confidence, reward correlation
-- ☐ Safety + quality checks: win rate vs base, adversarial safety behavior, reward-model MSE, continual-learning degradation
-
-Architecture extensions (defer until core Phase 5 stack is stable):
-- ✅ **Mixture of Depths (MoD)** token router for variable-compute inference
-- ✅ Interleaved SWA + full attention ablation against pure MLA baseline: `attn_type = "interleaved"` repeats `interleaved_attn_pattern` across physical blocks, including `looped_num_blocks`, so looped-attention shapes can ablate SWA/full-MLA mixes against pure MLA without changing logical depth. SWA now supports packed document masks on the standard fallback path for packed-corpus training.
-
-Interleaved attention validation note (2026-04-27): aggressive-dropout (`dropout=0.2`) 600-step smoke on the Wave 1 all-corpus smoke slice using the best recent 12L/1024H looped-4 compiled shape favored interleaving. Pure MLA: final_loss=`2.9252`, final_val=`4.2775`, best_val=`4.1939@300`, median throughput=`25.9k tok/s`, max memory=`9055MB`. Interleaved `["swa", "mla", "swa", "mla"]`: final_loss=`2.7028`, final_val=`4.2595`, best_val=`4.1615@400`, median throughput=`26.0k tok/s`, max memory=`9067MB`. Prior no-dropout MLA reference best_val=`4.3112@300`, final_val=`5.1336`. Conclusion: interleaving is a small validation-loss improvement at effectively equal speed/memory and is worth carrying forward.
-
-**Exit Criteria**:
-- ☐ Corpus hygiene: WikiText-103 removed; FineWeb/FineWeb-Edu dedup resolved; OWT quality filters + min_length + language filter active
-- ☐ Near-dedup: MinHash LSH run on OWT + FineWeb; dedup rate + updated stats.json committed
-- ☐ Sequence packing: throughput gain vs non-packed baseline measured and documented
-- ☐ Tokenizer decision: 32K trained + validated, or explicit defer with note
-- ☐ Muon + Z-loss first run: curve vs AdamW baseline documented
-- ☐ μP proxy sweep: LR transfer from 5M proxy to 12L/1024H validated
-- ☐ KV-cache: > 2× generation speedup at seq_len 512
-- ☐ YaRN: coherent output at 2048 tokens (2× training length)
-- ☐ LoRA SFT: better instruction-following than base; < 1% trainable parameters
-- ☐ Grounding: ppl improves on held-out grounding examples vs pre-grounding baseline
-- ☐ DPO/GRPO: > 60% preference accuracy on held-out pairs; reward margin trend positive
-- ☐ Safety eval: refusal rate > 80% on adversarial suite; false-refusal < 10% on benign prompts
+- 32K-tokenizer baseline measured against the current P4 recipe.
+- Production Wave 1 corpora prepared and validated.
+- Prompt formatter shared by training, inference, and eval.
+- μP proxy sweep either validated or explicitly deferred.
+- LoRA SFT improves instruction-following with <1% trainable parameters.
+- Grounding improves held-out grounding loss/quality vs pre-grounding baseline.
+- Preference optimization reaches >60% held-out preference accuracy with positive reward-margin trend.
+- Safety eval passes: >80% adversarial refusal and <10% benign false refusal.
 
 ---
 
-### Phase 6: MoE
+## Phase 6: MoE
 
-**Goal**: Sparse MoE on the Phase 5 stack with continual expert specialization. (MLA already in Phase 4.)
+**Goal**: Sparse MoE on the stabilized Phase 5 stack with continual expert specialization. MLA is already in the dense stack.
 
-**Dependencies**: Phase 5 baseline available for dense-vs-sparse comparison.
-**Kill Criteria**: Stop if token drop > 5% or expert collapse persists beyond 3 mitigation attempts.
+**Dependencies**: Phase 5 dense 32K-tokenizer baseline available for dense-vs-sparse comparison.
+**Kill Criteria**: Stop if token drop >5% or expert collapse persists beyond 3 mitigation attempts.
+
+**Planned work**:
+- Add sparse expert layers with load-balancing loss and expert-utilization logging.
+- Keep MoE routing separate from Phase 5 MoD token-depth routing until both are understood.
+- Compare sparse-vs-dense quality at similar compute using the Phase 5 dense baseline as control.
+- Track token drop, expert collapse, throughput, memory, and base-capability degradation.
 
 **Exit Criteria**:
-- ☐ MoE val ppl ≤ dense baseline at same FLOPs
-- ☐ Expert utilization balanced (5–30% per expert, 8 experts); load-balance loss converges
-- ☐ Token drop < 1% during training and inference
-- ☐ Dense-vs-sparse comparison report committed
+- MoE val ppl <= dense baseline at same FLOPs.
+- Expert utilization balanced, roughly 5-30% per expert for 8 experts.
+- Token drop <1% during training and inference.
+- Dense-vs-sparse comparison report committed.
 
 ---
 
-### Phase 7: Dual-Stream Reasoning
+## Phase 7: Dual-Stream Reasoning
 
-**Goal**: GRU reasoning stream parallel to transformer, gated fusion combiner, STaR bootstrap, inference feedback loop.
+**Goal**: GRU reasoning stream parallel to transformer, gated fusion combiner, STaR bootstrap, and inference feedback loop.
 
 **Dependencies**: Phase 6 sparse architecture stabilized.
-**Kill Criteria**: Stop if reasoning model fails to beat GRU-zeroed baseline on GSM8K, or if inference overhead > 30%.
+**Kill Criteria**: Stop if reasoning model fails to beat GRU-zeroed baseline on GSM8K, or if inference overhead >30%.
+
+**Planned work**:
+- Add GRU reasoning stream and gated fusion without changing transformer-only fallback.
+- Build reasoning trace triples and STaR-style bootstrap loop.
+- Compare reasoning-enabled model against transformer-only and GRU-zeroed baselines.
+- Measure reasoning quality, runtime overhead, teacher-forcing schedule behavior, and graceful degradation.
 
 **Exit Criteria**:
-- ☐ Reasoning-enabled model > 10% accuracy improvement over Phase 6 baseline on GSM8K
-- ☐ GRU-zeroed model matches Phase 6 baseline (graceful degradation verified)
-- ☐ GRU inference overhead < 20% vs transformer-only at seq_len 512
-- ☐ STaR bootstrap completed; scheduled teacher forcing curve documented
+- Reasoning-enabled model >10% accuracy improvement over Phase 6 baseline on GSM8K.
+- GRU-zeroed model matches Phase 6 baseline.
+- GRU inference overhead <20% vs transformer-only at seq_len 512.
+- STaR bootstrap completed; scheduled teacher-forcing curve documented.
 
 ---
 
 ## Canonical References
 
-- [MEMORY.md](../.github/MEMORY.md) (current agent working state and focus) + [SESSION_LOG.md](../.github/SESSION_LOG.md) (recent completed-session history) + [SESSION_LOG_ARCHIVE.md](../.github/SESSION_LOG_ARCHIVE.md) (older history)
-- [DESIGN.md](DESIGN.md) (architecture, engineering standards, testing strategy, agent workflow)
-- [PLAN.md](PLAN.md) (this file — phased execution roadmap)
-- [CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow) (workflow and validation gates)
-- [config/*.toml](../config) (authoritative runtime values)
-- [Makefile](../Makefile) (build, test, lint targets)
-
+- [MEMORY.md](../.github/MEMORY.md): current agent working state and focus
+- [SESSION_LOG.md](../.github/SESSION_LOG.md): recent completed-session history
+- [SESSION_LOG_ARCHIVE.md](../.github/SESSION_LOG_ARCHIVE.md): older completed-session history
+- [DESIGN.md](DESIGN.md): architecture, engineering standards, testing strategy, agent workflow
+- [OPTIMIZATION.md](OPTIMIZATION.md): optimization notes
+- [PHASE_1_CLOSEOUT.md](PHASE_1_CLOSEOUT.md), [PHASE_2_CLOSEOUT.md](PHASE_2_CLOSEOUT.md), [PHASE_3_CLOSEOUT.md](PHASE_3_CLOSEOUT.md), [PHASE_4_CLOSEOUT.md](PHASE_4_CLOSEOUT.md), [PHASE_5_CLOSEOUT.md](PHASE_5_CLOSEOUT.md): phase summaries and learning notes
+- [CONTRIBUTING.md](../CONTRIBUTING.md#standard-workflow): workflow and validation gates
+- [config/*.toml](../config): authoritative runtime values
+- [Makefile](../Makefile): build, test, lint targets
